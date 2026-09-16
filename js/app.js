@@ -314,26 +314,26 @@ function bindWorkoutEvents() {
     const last = w.entries[ei].sets[w.entries[ei].sets.length - 1];
     w.entries[ei].sets.push({ weight: last ? last.weight : 0, reps: last ? last.reps : 0, done: false });
     Store.setActive(w);
-    render();
+    go(render);
   }));
   qsa('[data-action="remove-set"]').forEach((btn) => btn.addEventListener('click', () => {
     const w = getActive(); const ei = +btn.dataset.ei, si = +btn.dataset.si;
     w.entries[ei].sets.splice(si, 1);
     Store.setActive(w);
-    render();
+    go(render);
   }));
   qsa('[data-action="toggle-set"]').forEach((btn) => btn.addEventListener('click', () => {
     const w = getActive(); const ei = +btn.dataset.ei, si = +btn.dataset.si;
     w.entries[ei].sets[si].done = !w.entries[ei].sets[si].done;
     Store.setActive(w);
-    render();
+    render(); // lokaler Feder-Bounce am Haken reicht hier – kein Seitenweiter Crossfade nötig
   }));
   qsa('[data-action="remove-exercise"]').forEach((btn) => btn.addEventListener('click', () => {
     const w = getActive(); const ei = +btn.dataset.ei;
     if (!confirm('Übung aus diesem Training entfernen?')) return;
     w.entries.splice(ei, 1);
     Store.setActive(w);
-    render();
+    go(render);
   }));
   qsa('[data-field="weight"], [data-field="reps"]').forEach((input) => input.addEventListener('input', () => {
     const w = getActive();
@@ -715,7 +715,7 @@ function bindSettingsEvents() {
       const data = JSON.parse(await file.text());
       Store.importAll(data);
       toast('Daten importiert');
-      render();
+      go(render);
     } catch {
       alert('Datei konnte nicht gelesen werden.');
     }
@@ -724,7 +724,7 @@ function bindSettingsEvents() {
   qs('[data-action="wipe-data"]')?.addEventListener('click', () => {
     if (confirm('Wirklich ALLE Daten unwiderruflich löschen?')) {
       Store.wipeAll();
-      render();
+      go(render);
       toast('Zurückgesetzt');
     }
   });
@@ -741,31 +741,163 @@ function bindGlobalEvents() {
   qs('[data-action="add-routine"]')?.addEventListener('click', () => openRoutineSheet(null));
 }
 
-// ---- Tabbar-Drag: wie bei Apple über die Leiste wischen, um direkt zu wählen ----
-let tabDragging = false;
+// ---- Tabbar-Drag: das Pill-Element wird wie ein physisches Objekt gegriffen,
+// folgt 1:1 dem Finger und rastet beim Loslassen mit einer echten
+// Feder-Simulation (inkl. Schwung aus der Geste) in die nächste Position ein.
+const TAB_IDS = ['start', 'history', 'library', 'settings'];
+let tabDrag = null; // { startX, startLeft, minLeft, maxLeft, slotWidth, lastX, lastT, velocity }
+let springFrame = null;
+let liveIndicatorLeft = null; // tatsächliche Ist-Position während Drag/Feder, damit ein erneutes Greifen mittendrin nahtlos anschließt
+
+function rubberBand(overshoot, dim = 90) {
+  return (overshoot * dim) / (dim + Math.abs(overshoot));
+}
+
+function clampWithRubberBand(raw, min, max) {
+  if (raw < min) return min - rubberBand(min - raw);
+  if (raw > max) return max + rubberBand(raw - max);
+  return raw;
+}
+
+function indicatorGeometry() {
+  const bar = qs('.tabbar');
+  const indicator = qs('.tab-indicator');
+  if (!bar || !indicator) return null;
+  const barRect = bar.getBoundingClientRect();
+  const indRect = indicator.getBoundingClientRect();
+  const minLeft = indRect.width > 0 ? (indicator.offsetLeft) : 6;
+  return {
+    bar, indicator,
+    slotWidth: indRect.width,
+    minLeft,
+    maxLeft: bar.clientWidth - minLeft - indRect.width,
+    barLeft: barRect.left,
+  };
+}
 
 function onTabbarPointerDown(e) {
   if (!e.target.closest('.tab-btn')) return;
-  tabDragging = true;
-}
-
-function tabAtPoint(x, y) {
-  const el = document.elementFromPoint(x, y);
-  return el && el.closest ? el.closest('.tab-btn') : null;
+  const geo = indicatorGeometry();
+  if (!geo) return;
+  cancelSpring();
+  const currentIdx = Math.max(0, TAB_IDS.indexOf(state.tab));
+  const currentLeft = liveIndicatorLeft !== null ? liveIndicatorLeft : geo.minLeft + currentIdx * geo.slotWidth;
+  tabDrag = {
+    startX: e.clientX,
+    startLeft: currentLeft,
+    minLeft: geo.minLeft,
+    maxLeft: geo.maxLeft,
+    slotWidth: geo.slotWidth,
+    lastX: e.clientX,
+    lastT: performance.now(),
+    velocity: 0,
+    currentLeft,
+  };
+  geo.indicator.style.transition = 'none';
 }
 
 function onWindowPointerMove(e) {
-  if (!tabDragging) return;
-  const btn = tabAtPoint(e.clientX, e.clientY);
-  if (btn && btn.dataset.tab !== state.tab) {
-    // Direkte Manipulation: die Ansicht folgt dem Finger ohne Überblendung.
-    state.tab = btn.dataset.tab;
-    render();
+  if (!tabDrag) return;
+  const now = performance.now();
+  const dt = now - tabDrag.lastT;
+  // dt-Mindestwert verhindert, dass zwei sehr dicht aufeinanderfolgende Events
+  // (z.B. bei synthetischen/gebündelten Pointer-Events) die Geschwindigkeit künstlich in die Höhe treiben.
+  if (dt > 4) {
+    const instVel = Math.max(-2.5, Math.min(2.5, (e.clientX - tabDrag.lastX) / dt)); // px/ms, geclamped
+    // Leicht geglättet, damit ein einzelner hektischer Frame den Schwung nicht verfälscht.
+    tabDrag.velocity = tabDrag.velocity * 0.72 + instVel * 0.28;
+    tabDrag.lastX = e.clientX;
+    tabDrag.lastT = now;
+  }
+
+  const rawLeft = tabDrag.startLeft + (e.clientX - tabDrag.startX);
+  const left = clampWithRubberBand(rawLeft, tabDrag.minLeft, tabDrag.maxLeft);
+  tabDrag.currentLeft = left;
+  liveIndicatorLeft = left;
+
+  const indicator = qs('.tab-indicator');
+  if (indicator) indicator.style.transform = `translateX(${left - tabDrag.minLeft}px)`;
+
+  const idx = clampIdx(Math.round((left - tabDrag.minLeft) / tabDrag.slotWidth));
+  const tabId = TAB_IDS[idx];
+  if (tabId !== state.tab) {
+    state.tab = tabId;
+    render(); // Inhalt folgt sofort, ohne Überblendung – reines Direktmanipulieren.
+    const freshIndicator = qs('.tab-indicator');
+    if (freshIndicator) {
+      freshIndicator.style.transition = 'none';
+      freshIndicator.style.transform = `translateX(${left - tabDrag.minLeft}px)`;
+    }
   }
 }
 
+function clampIdx(i) { return Math.max(0, Math.min(TAB_IDS.length - 1, i)); }
+
 function onWindowPointerUp() {
-  tabDragging = false;
+  if (!tabDrag) return;
+  const { currentLeft, startLeft, minLeft, slotWidth, velocity } = tabDrag;
+  tabDrag = null;
+
+  // Schwung der Geste einbeziehen: nur ein wirklich schneller Flick (oberhalb
+  // einer Totzone) darf das nächste Tab "mitnehmen", wenn die Loslass-Position
+  // es knapp verfehlt. Eine langsame, kontrollierte Bewegung entscheidet rein
+  // über ihre Endposition – sonst würde jede ruhige Bewegung überreagieren.
+  const velPxPerSec = velocity * 1000;
+  const deadZone = 320; // px/s – darunter zählt als "kein Schwung"
+  const fullBiasAt = 1100; // px/s – ab hier zieht der Schwung ein volles Tab mit
+  const excess = Math.max(0, Math.abs(velPxPerSec) - deadZone);
+  const velocityBiasSlots = Math.sign(velPxPerSec) * Math.min(1, excess / (fullBiasAt - deadZone));
+  let idx = clampIdx(Math.round((currentLeft - minLeft) / slotWidth + velocityBiasSlots));
+  const targetTab = TAB_IDS[idx];
+  const targetLeft = minLeft + idx * slotWidth;
+
+  if (targetTab !== state.tab) {
+    state.tab = targetTab;
+    render();
+  }
+  const indicator = qs('.tab-indicator');
+  if (indicator) {
+    indicator.style.transition = 'none';
+    indicator.style.transform = `translateX(${currentLeft - minLeft}px)`;
+    springTo(indicator, currentLeft - minLeft, targetLeft - minLeft, velocity * 1000, minLeft);
+  }
+}
+
+function cancelSpring() {
+  if (springFrame) { cancelAnimationFrame(springFrame); springFrame = null; }
+}
+
+// Gedämpfte Federsimulation (Masse-Feder-Dämpfer), damit das Element nach dem
+// Loslassen weich – mit dem Schwung der Geste – in die Zielposition eingleitet
+// statt abrupt zu stoppen, ähnlich UIKit-Spring-Animationen.
+function springTo(el, from, to, initialVelocityPxPerSec, baseLeft) {
+  cancelSpring();
+  const stiffness = 340;
+  const damping = 30;
+  let pos = from;
+  let vel = initialVelocityPxPerSec;
+  let lastT = performance.now();
+
+  function frame(now) {
+    const dt = Math.min((now - lastT) / 1000, 1 / 30);
+    lastT = now;
+    const displacement = pos - to;
+    const accel = (-stiffness * displacement - damping * vel);
+    vel += accel * dt;
+    pos += vel * dt;
+
+    if (Math.abs(pos - to) < 0.4 && Math.abs(vel) < 15) {
+      el.style.transition = '';
+      el.style.transform = '';
+      springFrame = null;
+      liveIndicatorLeft = null;
+      return;
+    }
+    el.style.transform = `translateX(${pos}px)`;
+    liveIndicatorLeft = baseLeft + pos;
+    springFrame = requestAnimationFrame(frame);
+  }
+  springFrame = requestAnimationFrame(frame);
 }
 
 window.addEventListener('pointermove', onWindowPointerMove);

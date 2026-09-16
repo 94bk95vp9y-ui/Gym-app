@@ -149,6 +149,7 @@ button, input, select, textarea {
   height: var(--tabbar-height);
   padding: 0 6px;
   border-radius: 999px;
+  overflow: hidden;
   background: var(--glass-bg-strong);
   backdrop-filter: blur(30px) saturate(190%);
   -webkit-backdrop-filter: blur(30px) saturate(190%);
