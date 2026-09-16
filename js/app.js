@@ -92,6 +92,7 @@ function render() {
       ${tabButton('history', Icon.history, 'Verlauf')}
       ${tabButton('library', Icon.library, 'Bibliothek')}
       ${tabButton('settings', Icon.settings, 'Einstellungen')}
+      <span class="tab-indicator" aria-hidden="true"></span>
     </nav>`;
 
   bindGlobalEvents();
@@ -358,6 +359,7 @@ function renderHistory() {
     <div class="segmented">
       <button class="${sub === 'log' ? 'active' : ''}" data-action="history-sub" data-sub="log">Verlauf</button>
       <button class="${sub === 'progress' ? 'active' : ''}" data-action="history-sub" data-sub="progress">Fortschritt</button>
+      <span class="segmented-thumb" aria-hidden="true"></span>
     </div>
     ${sub === 'log' ? renderHistoryLog() : renderProgress()}`;
 }
@@ -472,6 +474,7 @@ function renderLibrary() {
     <div class="segmented">
       <button class="${state.librarySubTab === 'exercises' ? 'active' : ''}" data-action="library-sub" data-sub="exercises">Übungen</button>
       <button class="${state.librarySubTab === 'routines' ? 'active' : ''}" data-action="library-sub" data-sub="routines">Routinen</button>
+      <span class="segmented-thumb" aria-hidden="true"></span>
     </div>
     ${state.librarySubTab === 'exercises' ? renderExerciseList() : renderRoutineList()}`;
 }
@@ -639,6 +642,7 @@ function renderSettings() {
       <div class="segmented">
         <button class="${settings.unit === 'kg' ? 'active' : ''}" data-action="set-unit" data-unit="kg">kg</button>
         <button class="${settings.unit === 'lb' ? 'active' : ''}" data-action="set-unit" data-unit="lb">lb</button>
+        <span class="segmented-thumb" aria-hidden="true"></span>
       </div>
       <p class="muted small">Ändert nur die Anzeige-Einheit für neue Einträge, bestehende Werte werden nicht umgerechnet.</p>
     </section>
