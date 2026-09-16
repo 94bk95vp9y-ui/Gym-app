@@ -772,7 +772,19 @@ function indicatorGeometry() {
     minLeft,
     maxLeft: bar.clientWidth - minLeft - indRect.width,
     barLeft: barRect.left,
+    barWidth: barRect.width,
   };
+}
+
+// Bewegt den Lichtreflex auf der Glas-Tabbar mit dem Finger mit – siehe
+// .tabbar::after in styles.css. fraction: 0 (linker Rand) .. 1 (rechter Rand).
+function updateSheen(fraction, velocity = 0) {
+  const bar = qs('.tabbar');
+  if (!bar) return;
+  const x = 8 + Math.max(0, Math.min(1, fraction)) * 84; // 8%..92%, nie ganz am Rand
+  const yBoost = Math.min(1, Math.abs(velocity) / 1.8) * 14;
+  bar.style.setProperty('--sheen-x', `${x.toFixed(1)}%`);
+  bar.style.setProperty('--sheen-y', `${(10 + yBoost).toFixed(1)}%`);
 }
 
 function onTabbarPointerDown(e) {
@@ -788,12 +800,16 @@ function onTabbarPointerDown(e) {
     minLeft: geo.minLeft,
     maxLeft: geo.maxLeft,
     slotWidth: geo.slotWidth,
+    barLeft: geo.barLeft,
+    barWidth: geo.barWidth,
     lastX: e.clientX,
     lastT: performance.now(),
     velocity: 0,
     currentLeft,
   };
   geo.indicator.style.transition = 'none';
+  geo.bar.classList.add('dragging');
+  updateSheen((e.clientX - geo.barLeft) / geo.barWidth);
 }
 
 function onWindowPointerMove(e) {
@@ -828,7 +844,9 @@ function onWindowPointerMove(e) {
       freshIndicator.style.transition = 'none';
       freshIndicator.style.transform = `translateX(${left - tabDrag.minLeft}px)`;
     }
+    qs('.tabbar')?.classList.add('dragging');
   }
+  updateSheen((e.clientX - tabDrag.barLeft) / tabDrag.barWidth, tabDrag.velocity);
 }
 
 function clampIdx(i) { return Math.max(0, Math.min(TAB_IDS.length - 1, i)); }
@@ -860,6 +878,12 @@ function onWindowPointerUp() {
     indicator.style.transition = 'none';
     indicator.style.transform = `translateX(${currentLeft - minLeft}px)`;
     springTo(indicator, currentLeft - minLeft, targetLeft - minLeft, velocity * 1000, minLeft);
+  }
+  const bar = qs('.tabbar');
+  if (bar) {
+    bar.classList.remove('dragging');
+    bar.style.removeProperty('--sheen-x');
+    bar.style.removeProperty('--sheen-y');
   }
 }
 

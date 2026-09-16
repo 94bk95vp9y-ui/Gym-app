@@ -1,3 +1,17 @@
+/* Registriert, damit der Browser --sheen-x/--sheen-y bei Keyframes/Transitions
+   sanft interpoliert statt zwischen Werten zu springen (Safari 16.4+, sonst
+   harmloser Fallback ohne Zwischenschritte). */
+@property --sheen-x {
+  syntax: '<percentage>';
+  inherits: true;
+  initial-value: 28%;
+}
+@property --sheen-y {
+  syntax: '<percentage>';
+  inherits: true;
+  initial-value: 15%;
+}
+
 :root {
   --bg: #f2f2f7;
   --bg-elevated: #ffffff;
@@ -12,12 +26,17 @@
   --danger-bg: rgba(255, 59, 48, 0.1);
 
   /* Liquid-Glass-Material */
-  --glass-bg: rgba(255, 255, 255, 0.55);
-  --glass-bg-strong: rgba(255, 255, 255, 0.72);
-  --glass-border: rgba(255, 255, 255, 0.6);
-  --glass-highlight: rgba(255, 255, 255, 0.85);
-  --glass-shadow: 0 10px 34px rgba(31, 38, 50, 0.16);
+  --glass-bg: rgba(255, 255, 255, 0.42);
+  --glass-bg-strong: rgba(255, 255, 255, 0.56);
+  --glass-border: rgba(255, 255, 255, 0.65);
+  --glass-highlight: rgba(255, 255, 255, 0.9);
+  --glass-rim-dim: rgba(255, 255, 255, 0.18);
+  --glass-shade: rgba(20, 20, 30, 0.1);
+  --glass-sheen: rgba(255, 255, 255, 0.8);
+  --glass-shadow: 0 10px 34px rgba(31, 38, 50, 0.18), 0 1px 1px rgba(31, 38, 50, 0.08);
   --glass-blur: 26px;
+  --sheen-x: 28%;
+  --sheen-y: 15%;
 
   --radius-xl: 28px;
   --radius-lg: 22px;
@@ -42,11 +61,14 @@
     --accent-contrast: #1a0a04;
     --danger-bg: rgba(255, 69, 58, 0.16);
 
-    --glass-bg: rgba(30, 30, 33, 0.55);
-    --glass-bg-strong: rgba(28, 28, 30, 0.78);
-    --glass-border: rgba(255, 255, 255, 0.14);
-    --glass-highlight: rgba(255, 255, 255, 0.16);
-    --glass-shadow: 0 10px 34px rgba(0, 0, 0, 0.5);
+    --glass-bg: rgba(30, 30, 33, 0.42);
+    --glass-bg-strong: rgba(28, 28, 30, 0.6);
+    --glass-border: rgba(255, 255, 255, 0.16);
+    --glass-highlight: rgba(255, 255, 255, 0.22);
+    --glass-rim-dim: rgba(255, 255, 255, 0.05);
+    --glass-shade: rgba(0, 0, 0, 0.35);
+    --glass-sheen: rgba(255, 255, 255, 0.3);
+    --glass-shadow: 0 10px 34px rgba(0, 0, 0, 0.55), 0 1px 1px rgba(0, 0, 0, 0.3);
     color-scheme: dark;
   }
 }
@@ -116,7 +138,11 @@ button, input, select, textarea {
   backdrop-filter: blur(var(--glass-blur)) saturate(180%);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
   border-bottom: 1px solid var(--glass-border);
-  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    inset 1px 0 0 var(--glass-rim-dim),
+    inset -1px 0 0 var(--glass-rim-dim),
+    inset 0 -6px 10px -8px var(--glass-shade);
   position: sticky;
   top: 0;
   z-index: 5;
@@ -139,7 +165,9 @@ button, input, select, textarea {
   gap: 16px;
 }
 
-/* Schwebende Glas-Tabbar im iOS-Stil */
+/* Schwebende Glas-Tabbar im iOS-Stil – eine dünne, gewölbte Glasschicht:
+   Basisfläche (Verzerrung+Blur via @supports oben) + bewegliche Lichtreflexion
+   (::after) + gerichtetes Randlicht (mehrschichtiger inset box-shadow für Tiefe). */
 .tabbar {
   display: flex;
   position: fixed;
@@ -154,11 +182,40 @@ button, input, select, textarea {
   backdrop-filter: blur(30px) saturate(190%);
   -webkit-backdrop-filter: blur(30px) saturate(190%);
   border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+  box-shadow:
+    var(--glass-shadow),
+    inset 0 1.5px 0 var(--glass-highlight),
+    inset 0 -3px 6px -3px var(--glass-shade),
+    inset 1px 0 0 var(--glass-rim-dim),
+    inset -1px 0 0 var(--glass-rim-dim);
   z-index: 10;
   touch-action: none;
   -webkit-touch-callout: none;
   user-select: none;
+}
+
+/* Beweglicher Lichtreflex – reagiert live auf Drag-Position (--sheen-x/--sheen-y aus JS)
+   und driftet im Ruhezustand sanft, damit das Glas nie wie eine statische Textur wirkt. */
+.tabbar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(120% 140% at var(--sheen-x) var(--sheen-y), var(--glass-sheen), transparent 60%);
+  mix-blend-mode: overlay;
+  opacity: 0.9;
+  /* Kurze, physikalisch motivierte Trägheit: ein Lichtreflex "klebt" nicht 1:1
+     am Finger wie das Pill-Element, sondern folgt mit minimaler, organischer
+     Verzögerung – so wie Licht auf einer bewegten Oberfläche nachzieht. */
+  transition: --sheen-x 0.15s ease-out, --sheen-y 0.15s ease-out, opacity 0.3s;
+  animation: sheen-drift 10s ease-in-out infinite;
+}
+.tabbar.dragging::after { animation-play-state: paused; }
+
+@keyframes sheen-drift {
+  0%, 100% { --sheen-x: 22%; --sheen-y: 10%; }
+  50% { --sheen-x: 68%; --sheen-y: 25%; }
 }
 
 .tab-indicator {
@@ -180,7 +237,7 @@ button, input, select, textarea {
 
 .tab-btn {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -314,7 +371,11 @@ button, input, select, textarea {
   border: 1px solid var(--glass-border);
   border-radius: 999px;
   padding: 4px;
-  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    inset 0 -2px 4px -2px var(--glass-shade),
+    inset 1px 0 0 var(--glass-rim-dim),
+    inset -1px 0 0 var(--glass-rim-dim);
 }
 .segmented button {
   position: relative;
@@ -545,3 +606,24 @@ select.text-input { appearance: none; -webkit-appearance: none; }
 .toast.show { opacity: 1; transform: translateY(0); }
 
 ::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+/* ---- Liquid Glass: echte Lichtbrechung statt reinem Weichzeichner ----
+   Bewusst als letzte Regel der Datei, damit sie im Cascade IMMER gegenüber den
+   weiter oben definierten Blur/Saturate-Basiswerten gewinnt (gleiche Spezifität,
+   späterer Quelltext gewinnt) – ohne !important. Der Grundzustand oben ist ein
+   sicherer Fallback, der überall funktioniert; nur wo der Browser
+   backdrop-filter:url(#svg) tatsächlich unterstützt, ersetzt dieser Block ihn
+   durch den echten Verzerrungsfilter: der Hintergrund wird dadurch tatsächlich
+   pixelweise gebrochen/verschoben, nicht nur unscharf. Bricht nirgends etwas –
+   ohne Unterstützung bleibt exakt der Fallback von oben aktiv. */
+@supports (backdrop-filter: url(#liquid-glass-bar)) or (-webkit-backdrop-filter: url(#liquid-glass-bar)) {
+  .tabbar {
+    backdrop-filter: url(#liquid-glass-bar) blur(14px) saturate(190%) brightness(1.05) contrast(1.03);
+    -webkit-backdrop-filter: url(#liquid-glass-bar) blur(14px) saturate(190%) brightness(1.05) contrast(1.03);
+  }
+  /* sanftere Verzerrung, wo Text auf einen Blick lesbar bleiben muss */
+  .topbar, .segmented, .btn-secondary, .toast {
+    backdrop-filter: url(#liquid-glass-surface) blur(18px) saturate(180%) brightness(1.03) contrast(1.02);
+    -webkit-backdrop-filter: url(#liquid-glass-surface) blur(18px) saturate(180%) brightness(1.03) contrast(1.02);
+  }
+}
