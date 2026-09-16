@@ -53,6 +53,19 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
+/* Weicher iOS-Crossfade für bewusste Navigation (View Transitions API) */
+::view-transition-old(root) {
+  animation: view-fade-out 0.18s ease-out both;
+}
+::view-transition-new(root) {
+  animation: view-pop-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes view-fade-out { to { opacity: 0; } }
+@keyframes view-pop-in {
+  from { opacity: 0; transform: scale(0.985) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
 html, body {
   height: 100%;
   margin: 0;
@@ -142,6 +155,9 @@ button, input, select, textarea {
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
   z-index: 10;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 
 .tab-indicator {
@@ -177,9 +193,10 @@ button, input, select, textarea {
   padding: 6px 0 2px;
 }
 
-.tab-btn .tab-icon svg { width: 23px; height: 23px; transition: transform 0.25s; }
+.tab-btn .tab-icon svg { width: 23px; height: 23px; transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.2s; }
+.tab-btn { transition: color 0.2s; }
 .tab-btn.active { color: var(--accent); }
-.tab-btn.active .tab-icon svg { transform: translateY(-1px) scale(1.04); }
+.tab-btn.active .tab-icon svg { transform: translateY(-1px) scale(1.1); }
 
 /* Karten & Listen */
 .card {
@@ -216,8 +233,8 @@ button, input, select, textarea {
 }
 
 .list-item:last-child { border-bottom: none; }
-.list-item.selectable { cursor: pointer; }
-.list-item.selectable:active { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.list-item.selectable { cursor: pointer; transition: background 0.15s, transform 0.15s; }
+.list-item.selectable:active { background: color-mix(in srgb, var(--text) 6%, transparent); transform: scale(0.985); }
 .list-item .list-item-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .list-item svg { width: 18px; height: 18px; color: var(--text-secondary); flex-shrink: 0; }
 .list-item.danger strong { color: var(--danger); }
@@ -238,13 +255,13 @@ button, input, select, textarea {
   font-size: 15.5px;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.15s, filter 0.15s;
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.15s;
 }
 .btn svg { width: 18px; height: 18px; }
 .btn.full { width: 100%; }
 .btn.small { padding: 9px 16px; font-size: 13.5px; }
 .btn:disabled { opacity: 0.4; }
-.btn:active { transform: scale(0.97); }
+.btn:active { transform: scale(0.96); transition-duration: 0.1s; }
 
 .btn-primary {
   background: var(--accent);
@@ -274,14 +291,14 @@ button, input, select, textarea {
   background: transparent;
   color: var(--text);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .icon-btn svg { width: 20px; height: 20px; }
 .icon-btn.small { width: 26px; height: 26px; }
 .icon-btn.small svg { width: 15px; height: 15px; }
 .icon-btn.accent { color: var(--accent); }
 .icon-btn.danger { color: var(--danger); }
-.icon-btn:active { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.icon-btn:active { background: color-mix(in srgb, var(--text) 8%, transparent); transform: scale(0.88); transition-duration: 0.1s; }
 
 .row { display: flex; align-items: center; gap: 8px; }
 .row.gap { gap: 10px; margin-top: 12px; }
@@ -356,7 +373,17 @@ button, input, select, textarea {
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 .elapsed { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent); }
 
-/* Workout-Ansicht */
+/* Workout-Ansicht – wird wie ein iOS-Modal von unten hereingeschoben */
+.workout-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  animation: workout-slide-up 0.38s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+@keyframes workout-slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
 .workout-topbar { justify-content: space-between; }
 .workout-title { display: flex; flex-direction: column; align-items: center; text-align: center; }
 .workout-title strong { font-size: 16px; }
@@ -399,10 +426,11 @@ button, input, select, textarea {
   background: transparent;
   color: transparent;
   display: flex; align-items: center; justify-content: center;
-  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+  transition: background 0.25s, border-color 0.25s, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .check-btn svg { width: 16px; height: 16px; }
-.check-btn.on { background: var(--success); border-color: var(--success); color: white; transform: scale(1.03); }
+.check-btn.on { background: var(--success); border-color: var(--success); color: white; transform: scale(1.08); }
+.check-btn:active { transform: scale(0.88); }
 
 /* Fortschritt / Chart */
 .chart { width: 100%; height: 180px; display: block; }
@@ -467,6 +495,8 @@ select.text-input { appearance: none; -webkit-appearance: none; }
   animation: slideUp 0.32s cubic-bezier(0.32, 0.72, 0, 1) forwards;
 }
 @keyframes slideUp { to { transform: translateY(0); } }
+@keyframes slideDown { to { transform: translateY(100%); } }
+@keyframes fadeOut { to { opacity: 0; } }
 .sheet-handle {
   width: 36px; height: 4px;
   background: var(--border);

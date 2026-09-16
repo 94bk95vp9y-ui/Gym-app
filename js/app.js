@@ -23,6 +23,16 @@ let tickInterval = null;
 function qs(sel, parent = document) { return parent.querySelector(sel); }
 function qsa(sel, parent = document) { return [...parent.querySelectorAll(sel)]; }
 
+// Weicher iOS-artiger Crossfade für bewusste Navigation (Tap auf Tab/Segment).
+// Bei Drag-Gesten wird bewusst NICHT transitioniert – da folgt die Ansicht 1:1 dem Finger.
+function go(fn) {
+  if (document.startViewTransition) {
+    document.startViewTransition(fn);
+  } else {
+    fn();
+  }
+}
+
 function toast(msg) {
   const t = document.createElement('div');
   t.className = 'toast';
@@ -36,8 +46,19 @@ function toast(msg) {
 }
 
 function closeSheet() {
-  sheetRoot.innerHTML = '';
-  sheetRoot.classList.remove('open');
+  const sheetEl = qs('.sheet', sheetRoot);
+  const backdrop = qs('.sheet-backdrop', sheetRoot);
+  if (!sheetEl) {
+    sheetRoot.innerHTML = '';
+    sheetRoot.classList.remove('open');
+    return;
+  }
+  sheetEl.style.animation = 'slideDown 0.26s cubic-bezier(0.32, 0.72, 0, 1) forwards';
+  if (backdrop) backdrop.style.animation = 'fadeOut 0.24s ease forwards';
+  setTimeout(() => {
+    sheetRoot.innerHTML = '';
+    sheetRoot.classList.remove('open');
+  }, 240);
 }
 
 function openSheet(title, bodyHtml, { footer = '', onMount } = {}) {
@@ -243,30 +264,33 @@ function renderWorkout() {
   }).join('');
 
   return `
-    <header class="topbar workout-topbar">
-      <button class="icon-btn" data-action="minimize-workout">${Icon.chevron}</button>
-      <div class="workout-title">
-        <strong>${escapeHtml(w.routineName || 'Freies Training')}</strong>
-        <span id="workout-timer" class="muted small">${elapsedLabel(w.startedAt)}</span>
-      </div>
-      <button class="icon-btn danger" data-action="discard-workout">${Icon.trash}</button>
-    </header>
-    <main class="view">
-      ${entries || '<p class="empty">Füge eine Übung hinzu, um loszulegen.</p>'}
-      <button class="btn btn-secondary full" data-action="add-exercise-to-workout">${Icon.plus} Übung hinzufügen</button>
-      <button class="btn btn-primary full" data-action="finish-workout">Training beenden</button>
-    </main>`;
+    <div class="workout-screen">
+      <header class="topbar workout-topbar">
+        <button class="icon-btn" data-action="minimize-workout">${Icon.chevron}</button>
+        <div class="workout-title">
+          <strong>${escapeHtml(w.routineName || 'Freies Training')}</strong>
+          <span id="workout-timer" class="muted small">${elapsedLabel(w.startedAt)}</span>
+        </div>
+        <button class="icon-btn danger" data-action="discard-workout">${Icon.trash}</button>
+      </header>
+      <main class="view">
+        ${entries || '<p class="empty">Füge eine Übung hinzu, um loszulegen.</p>'}
+        <button class="btn btn-secondary full" data-action="add-exercise-to-workout">${Icon.plus} Übung hinzufügen</button>
+        <button class="btn btn-primary full" data-action="finish-workout">Training beenden</button>
+      </main>
+    </div>`;
 }
 
 function bindWorkoutEvents() {
   const getActive = () => Store.getActive();
 
-  qs('[data-action="minimize-workout"]').addEventListener('click', () => { state.workoutOpen = false; state.tab = 'start'; render(); });
+  qs('[data-action="minimize-workout"]').addEventListener('click', () => {
+    go(() => { state.workoutOpen = false; state.tab = 'start'; render(); });
+  });
   qs('[data-action="discard-workout"]').addEventListener('click', () => {
     if (confirm('Training wirklich verwerfen? Alle Sätze gehen verloren.')) {
       Store.clearActive();
-      state.workoutOpen = false;
-      render();
+      go(() => { state.workoutOpen = false; render(); });
     }
   });
   qs('[data-action="finish-workout"]').addEventListener('click', () => {
@@ -275,10 +299,12 @@ function bindWorkoutEvents() {
     if (totalSets === 0 && !confirm('Keine Sätze abgeschlossen. Training trotzdem speichern?')) return;
     w.finishedAt = new Date().toISOString();
     Store.finishActiveWorkout(w);
-    state.workoutOpen = false;
-    state.tab = 'history';
-    state.historySubTab = 'log';
-    render();
+    go(() => {
+      state.workoutOpen = false;
+      state.tab = 'history';
+      state.historySubTab = 'log';
+      render();
+    });
     toast('Training gespeichert 💪');
   });
   qs('[data-action="add-exercise-to-workout"]').addEventListener('click', openAddExerciseToWorkoutSheet);
@@ -418,8 +444,8 @@ function renderProgress() {
 
 function bindHistoryEvents() {
   qsa('[data-action="history-sub"]').forEach((btn) => btn.addEventListener('click', () => {
-    state.historySubTab = btn.dataset.sub;
-    render();
+    if (btn.dataset.sub === state.historySubTab) return;
+    go(() => { state.historySubTab = btn.dataset.sub; render(); });
   }));
   qsa('[data-action="open-workout"]').forEach((btn) => btn.addEventListener('click', () => openWorkoutDetailSheet(btn.dataset.id)));
 
@@ -501,8 +527,8 @@ function renderRoutineList() {
 
 function bindLibraryEvents() {
   qsa('[data-action="library-sub"]').forEach((btn) => btn.addEventListener('click', () => {
-    state.librarySubTab = btn.dataset.sub;
-    render();
+    if (btn.dataset.sub === state.librarySubTab) return;
+    go(() => { state.librarySubTab = btn.dataset.sub; render(); });
   }));
   qsa('[data-action="edit-exercise"]').forEach((btn) => btn.addEventListener('click', () => openExerciseSheet(btn.dataset.id)));
   qsa('[data-action="edit-routine"]').forEach((btn) => btn.addEventListener('click', () => openRoutineSheet(btn.dataset.id)));
@@ -707,12 +733,44 @@ function bindSettingsEvents() {
 // ---- Globale Events ----
 function bindGlobalEvents() {
   qsa('[data-action="set-tab"]').forEach((btn) => btn.addEventListener('click', () => {
-    state.tab = btn.dataset.tab;
-    render();
+    if (btn.dataset.tab === state.tab) return;
+    go(() => { state.tab = btn.dataset.tab; render(); });
   }));
+  qs('.tabbar')?.addEventListener('pointerdown', onTabbarPointerDown);
   qs('[data-action="add-exercise"]')?.addEventListener('click', () => openExerciseSheet(null));
   qs('[data-action="add-routine"]')?.addEventListener('click', () => openRoutineSheet(null));
 }
+
+// ---- Tabbar-Drag: wie bei Apple über die Leiste wischen, um direkt zu wählen ----
+let tabDragging = false;
+
+function onTabbarPointerDown(e) {
+  if (!e.target.closest('.tab-btn')) return;
+  tabDragging = true;
+}
+
+function tabAtPoint(x, y) {
+  const el = document.elementFromPoint(x, y);
+  return el && el.closest ? el.closest('.tab-btn') : null;
+}
+
+function onWindowPointerMove(e) {
+  if (!tabDragging) return;
+  const btn = tabAtPoint(e.clientX, e.clientY);
+  if (btn && btn.dataset.tab !== state.tab) {
+    // Direkte Manipulation: die Ansicht folgt dem Finger ohne Überblendung.
+    state.tab = btn.dataset.tab;
+    render();
+  }
+}
+
+function onWindowPointerUp() {
+  tabDragging = false;
+}
+
+window.addEventListener('pointermove', onWindowPointerMove);
+window.addEventListener('pointerup', onWindowPointerUp);
+window.addEventListener('pointercancel', onWindowPointerUp);
 
 sheetRoot.addEventListener('click', (e) => {
   if (e.target.closest('[data-action="close-sheet"]')) closeSheet();
