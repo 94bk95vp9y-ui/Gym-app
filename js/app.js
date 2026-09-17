@@ -1,4 +1,4 @@
-import { Store, MUSCLE_GROUPS, uid } from './storage.js';
+import { Store, MUSCLE_GROUPS, ACCENT_COLORS, uid } from './storage.js';
 import { Icon } from './icons.js';
 import {
   formatDate, formatDateTime, formatDuration, elapsedLabel,
@@ -22,6 +22,24 @@ let tickInterval = null;
 
 function qs(sel, parent = document) { return parent.querySelector(sel); }
 function qsa(sel, parent = document) { return [...parent.querySelectorAll(sel)]; }
+
+function applyAccent() {
+  document.documentElement.style.setProperty('--accent', Store.getSettings().accent);
+}
+
+// Neue Übung im Training: startet mit 2 Sätzen. Gibt es ein letztes Mal für diese
+// Übung, werden Gewicht/Wdh davon als "Vorschlag" vorbelegt (grau, bis bestätigt) –
+// sonst leer.
+function defaultSets(exerciseId, excludeWorkoutId) {
+  const last = Store.lastEntryForExercise(exerciseId, excludeWorkoutId);
+  const best = last ? bestSet(last.sets) : null;
+  return [0, 1].map(() => ({
+    weight: best ? best.weight : 0,
+    reps: best ? best.reps : 0,
+    done: false,
+    suggested: !!best,
+  }));
+}
 
 // Weicher iOS-artiger Crossfade für bewusste Navigation (Tap auf Tab/Segment).
 // Bei Drag-Gesten wird bewusst NICHT transitioniert – da folgt die Ansicht 1:1 dem Finger.
@@ -188,12 +206,12 @@ function renderStart() {
         <span class="muted">${r.exerciseIds.length} Übung(en)</span>
       </div>
       <button class="btn btn-small btn-primary" data-action="start-routine" data-id="${r.id}" ${active ? 'disabled' : ''}>Start</button>
-    </div>`).join('') : `<p class="empty">Noch keine Routinen. Leg welche in der Bibliothek an.</p>`;
+    </div>`).join('') : `<p class="empty">Noch keine Pläne. Leg welche in der Bibliothek an.</p>`;
 
   return `
     ${activeCard}
     <section>
-      <div class="section-title">Routine starten</div>
+      <div class="section-title">Plan starten</div>
       <div class="card list">${routineCards}</div>
     </section>
     <section>
@@ -214,7 +232,7 @@ function bindStartEvents() {
     if (!routine) return;
     const entries = routine.exerciseIds.map((eid) => {
       const ex = Store.getExercise(eid);
-      return { exerciseId: eid, exerciseName: ex ? ex.name : 'Unbekannt', sets: [] };
+      return { exerciseId: eid, exerciseName: ex ? ex.name : 'Unbekannt', sets: defaultSets(eid) };
     });
     Store.setActive({ id: uid(), routineId: routine.id, routineName: routine.name, startedAt: new Date().toISOString(), finishedAt: null, entries });
     state.workoutOpen = true;
@@ -239,11 +257,11 @@ function renderWorkout() {
     const sets = entry.sets.map((s, si) => `
       <div class="set-row ${s.done ? 'done' : ''}">
         <span class="set-index">${si + 1}</span>
-        <input type="number" inputmode="decimal" class="set-input" placeholder="${lastBest ? lastBest.weight : '—'}"
-          value="${s.weight || ''}" data-field="weight" data-ei="${ei}" data-si="${si}" />
+        <input type="number" inputmode="decimal" class="set-input ${s.suggested ? 'suggested' : ''}" placeholder="—"
+          value="${s.suggested ? s.weight : (s.weight || '')}" data-field="weight" data-ei="${ei}" data-si="${si}" />
         <span class="set-x">×</span>
-        <input type="number" inputmode="numeric" class="set-input small" placeholder="${lastBest ? lastBest.reps : '—'}"
-          value="${s.reps || ''}" data-field="reps" data-ei="${ei}" data-si="${si}" />
+        <input type="number" inputmode="numeric" class="set-input small ${s.suggested ? 'suggested' : ''}" placeholder="—"
+          value="${s.suggested ? s.reps : (s.reps || '')}" data-field="reps" data-ei="${ei}" data-si="${si}" />
         <button class="check-btn ${s.done ? 'on' : ''}" data-action="toggle-set" data-ei="${ei}" data-si="${si}">${Icon.check}</button>
         <button class="icon-btn small" data-action="remove-set" data-ei="${ei}" data-si="${si}">${Icon.close}</button>
       </div>`).join('');
@@ -324,7 +342,10 @@ function bindWorkoutEvents() {
   }));
   qsa('[data-action="toggle-set"]').forEach((btn) => btn.addEventListener('click', () => {
     const w = getActive(); const ei = +btn.dataset.ei, si = +btn.dataset.si;
-    w.entries[ei].sets[si].done = !w.entries[ei].sets[si].done;
+    const set = w.entries[ei].sets[si];
+    set.done = !set.done;
+    // Abhaken ohne eigene Eingabe übernimmt den grauen Vorschlagswert als echten Wert.
+    if (set.done) set.suggested = false;
     Store.setActive(w);
     render(); // lokaler Feder-Bounce am Haken reicht hier – kein Seitenweiter Crossfade nötig
   }));
@@ -339,7 +360,13 @@ function bindWorkoutEvents() {
     const w = getActive();
     const ei = +input.dataset.ei, si = +input.dataset.si;
     const val = parseFloat(input.value.replace(',', '.')) || 0;
-    w.entries[ei].sets[si][input.dataset.field] = val;
+    const set = w.entries[ei].sets[si];
+    set[input.dataset.field] = val;
+    if (set.suggested) {
+      set.suggested = false;
+      // sofort optisch bestätigen (grau -> normal), ohne die ganze Zeile neu zu rendern
+      qsa(`[data-ei="${ei}"][data-si="${si}"]`).forEach((el) => el.classList.remove('suggested'));
+    }
     Store.setActive(w);
   }));
 }
@@ -368,7 +395,7 @@ function openAddExerciseToWorkoutSheet() {
           const w2 = Store.getActive();
           const ex = Store.getExercise(btn.dataset.id);
           if (!ex || w2.entries.some((e) => e.exerciseId === ex.id)) { closeSheet(); return; }
-          w2.entries.push({ exerciseId: ex.id, exerciseName: ex.name, sets: [] });
+          w2.entries.push({ exerciseId: ex.id, exerciseName: ex.name, sets: defaultSets(ex.id, w2.id) });
           Store.setActive(w2);
           closeSheet();
           render();
@@ -499,7 +526,7 @@ function renderLibrary() {
   return `
     <div class="segmented" id="library-segmented">
       <button class="${state.librarySubTab === 'exercises' ? 'active' : ''}" data-action="library-sub" data-sub="exercises">Übungen</button>
-      <button class="${state.librarySubTab === 'routines' ? 'active' : ''}" data-action="library-sub" data-sub="routines">Routinen</button>
+      <button class="${state.librarySubTab === 'routines' ? 'active' : ''}" data-action="library-sub" data-sub="routines">Pläne</button>
       <span class="segmented-thumb" aria-hidden="true"></span>
     </div>
     ${state.librarySubTab === 'exercises' ? renderExerciseList() : renderRoutineList()}`;
@@ -517,7 +544,7 @@ function renderExerciseList() {
 
 function renderRoutineList() {
   const routines = Store.getRoutines();
-  if (!routines.length) return '<p class="empty">Noch keine Routinen. Tippe oben rechts auf +.</p>';
+  if (!routines.length) return '<p class="empty">Noch keine Pläne. Tippe oben rechts auf +.</p>';
   return `<div class="card list">${routines.map((r) => `
     <button class="list-item selectable" data-action="edit-routine" data-id="${r.id}">
       <div class="list-item-main"><strong>${escapeHtml(r.name)}</strong><span class="muted">${r.exerciseIds.length} Übung(en)</span></div>
@@ -559,7 +586,7 @@ function openExerciseSheet(id) {
         render();
       });
       qs('[data-action="delete-exercise"]')?.addEventListener('click', () => {
-        if (confirm('Übung wirklich löschen? Sie wird auch aus Routinen entfernt.')) {
+        if (confirm('Übung wirklich löschen? Sie wird auch aus Plänen entfernt.')) {
           Store.deleteExercise(ex.id);
           closeSheet();
           render();
@@ -569,24 +596,87 @@ function openExerciseSheet(id) {
   });
 }
 
+// Lang drücken + ziehen, um eine Zeile innerhalb ihres Containers neu zu
+// sortieren (z.B. Übungen in einem Plan). onReorder(fromIndex, toIndex) wird
+// einmalig beim Loslassen aufgerufen, sobald sich die Position geändert hat.
+function enableDragReorder(container, onReorder) {
+  if (!container) return;
+  container.addEventListener('pointerdown', (e) => {
+    const handle = e.target.closest('[data-drag-handle]');
+    if (!handle) return;
+    const row = handle.closest('.list-item');
+    if (!row) return;
+    const rows = qsa('.list-item', container);
+    const startIndex = rows.indexOf(row);
+    const startY = e.clientY;
+    const rowHeight = row.getBoundingClientRect().height;
+    let order = rows.map((_, i) => i);
+    let active = false;
+
+    const pressTimer = setTimeout(() => {
+      active = true;
+      row.classList.add('drag-active');
+    }, 160);
+
+    function onMove(ev) {
+      const dy = ev.clientY - startY;
+      if (!active) {
+        if (Math.abs(dy) > 8) teardown();
+        return;
+      }
+      row.style.transform = `translateY(${dy}px) scale(1.02)`;
+      const rawSlot = startIndex + Math.round(dy / rowHeight);
+      const targetSlot = Math.max(0, Math.min(rows.length - 1, rawSlot));
+      const currentSlot = order.indexOf(startIndex);
+      if (targetSlot !== currentSlot) {
+        order.splice(currentSlot, 1);
+        order.splice(targetSlot, 0, startIndex);
+        rows.forEach((r, i) => {
+          if (i === startIndex) return;
+          const slot = order.indexOf(i);
+          const offset = (slot - i) * rowHeight;
+          r.style.transition = 'transform 0.2s ease';
+          r.style.transform = offset ? `translateY(${offset}px)` : '';
+        });
+      }
+    }
+
+    function onUp() {
+      clearTimeout(pressTimer);
+      teardown();
+      if (!active) return;
+      row.classList.remove('drag-active');
+      rows.forEach((r) => { r.style.transform = ''; r.style.transition = ''; });
+      const finalIndex = order.indexOf(startIndex);
+      if (finalIndex !== startIndex) onReorder(startIndex, finalIndex);
+    }
+
+    function teardown() {
+      clearTimeout(pressTimer);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    }
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  });
+}
+
 function openRoutineSheet(id) {
   const routine = id ? Store.getRoutine(id) : { id: uid(), name: '', exerciseIds: [] };
   const draft = { ...routine, exerciseIds: [...routine.exerciseIds] };
 
   const renderChosen = () => draft.exerciseIds.map((eid, i) => {
     const ex = Store.getExercise(eid);
-    return `<div class="list-item">
+    return `<div class="list-item reorder-item">
+      <span class="drag-handle" data-drag-handle aria-hidden="true">${Icon.grip}</span>
       <div class="list-item-main"><strong>${ex ? escapeHtml(ex.name) : 'Unbekannt'}</strong></div>
-      <div class="row">
-        <button class="icon-btn small" data-action="move-up" data-i="${i}" ${i === 0 ? 'disabled' : ''}>↑</button>
-        <button class="icon-btn small" data-action="move-down" data-i="${i}" ${i === draft.exerciseIds.length - 1 ? 'disabled' : ''}>↓</button>
-        <button class="icon-btn small danger" data-action="remove-from-routine" data-i="${i}">${Icon.close}</button>
-      </div>
+      <button class="icon-btn small danger" data-action="remove-from-routine" data-i="${i}">${Icon.close}</button>
     </div>`;
   }).join('') || '<p class="empty small">Noch keine Übungen gewählt.</p>';
 
   function renderEditor() {
-    openSheet(id ? 'Routine bearbeiten' : 'Neue Routine', `
+    openSheet(id ? 'Plan bearbeiten' : 'Neuer Plan', `
       <label class="field-label">Name</label>
       <input type="text" id="f-rname" class="text-input" value="${escapeHtml(draft.name)}" placeholder="z.B. Push Day" />
       <label class="field-label">Übungen</label>
@@ -602,18 +692,13 @@ function openRoutineSheet(id) {
   }
 
   function bindEditor() {
-    qsa('[data-action="move-up"]').forEach((b) => b.addEventListener('click', () => {
-      const i = +b.dataset.i;
-      [draft.exerciseIds[i - 1], draft.exerciseIds[i]] = [draft.exerciseIds[i], draft.exerciseIds[i - 1]];
+    const chosenList = qs('#chosen-list');
+    enableDragReorder(chosenList, (from, to) => {
+      const [moved] = draft.exerciseIds.splice(from, 1);
+      draft.exerciseIds.splice(to, 0, moved);
       draft.name = qs('#f-rname').value;
       renderEditor();
-    }));
-    qsa('[data-action="move-down"]').forEach((b) => b.addEventListener('click', () => {
-      const i = +b.dataset.i;
-      [draft.exerciseIds[i + 1], draft.exerciseIds[i]] = [draft.exerciseIds[i], draft.exerciseIds[i + 1]];
-      draft.name = qs('#f-rname').value;
-      renderEditor();
-    }));
+    });
     qsa('[data-action="remove-from-routine"]').forEach((b) => b.addEventListener('click', () => {
       draft.exerciseIds.splice(+b.dataset.i, 1);
       draft.name = qs('#f-rname').value;
@@ -631,7 +716,7 @@ function openRoutineSheet(id) {
       render();
     });
     qs('[data-action="delete-routine"]')?.addEventListener('click', () => {
-      if (confirm('Routine wirklich löschen?')) {
+      if (confirm('Plan wirklich löschen?')) {
         Store.deleteRoutine(draft.id);
         closeSheet();
         render();
@@ -672,6 +757,15 @@ function renderSettings() {
       </div>
       <p class="muted small">Ändert nur die Anzeige-Einheit für neue Einträge, bestehende Werte werden nicht umgerechnet.</p>
     </section>
+    <section class="card">
+      <div class="section-title">Akzentfarbe</div>
+      <div class="swatch-row">
+        ${ACCENT_COLORS.map((c) => `
+          <button class="swatch ${settings.accent === c.value ? 'active' : ''}" data-action="set-accent" data-color="${c.value}"
+            style="background:${c.value}" aria-label="${c.label}">${settings.accent === c.value ? Icon.check : ''}</button>
+        `).join('')}
+      </div>
+    </section>
     <section class="card list">
       <button class="list-item selectable" data-action="export-data">
         <div class="list-item-main"><strong>Daten exportieren</strong><span class="muted">Backup als JSON-Datei speichern</span></div>
@@ -695,6 +789,11 @@ function renderSettings() {
 function bindSettingsEvents() {
   qsa('[data-action="set-unit"]').forEach((btn) => btn.addEventListener('click', () => {
     Store.saveSettings({ ...Store.getSettings(), unit: btn.dataset.unit });
+    render();
+  }));
+  qsa('[data-action="set-accent"]').forEach((btn) => btn.addEventListener('click', () => {
+    Store.saveSettings({ ...Store.getSettings(), accent: btn.dataset.color });
+    applyAccent();
     render();
   }));
   qs('[data-action="export-data"]')?.addEventListener('click', () => {
@@ -980,6 +1079,7 @@ sheetRoot.addEventListener('click', (e) => {
 
 window.addEventListener('beforeunload', () => stopTicking());
 
+applyAccent();
 render();
 
 if ('serviceWorker' in navigator) {

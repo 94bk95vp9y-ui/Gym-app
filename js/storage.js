@@ -37,11 +37,24 @@ export const MUSCLE_GROUPS = [
   'Brust', 'Rücken', 'Beine', 'Schultern', 'Bizeps', 'Trizeps', 'Bauch', 'Cardio', 'Sonstiges',
 ];
 
+// Bewusst keine Standard-Rot/Blau/Grün-Töne, sondern ein paar kräftige,
+// unverwechselbare Akzentfarben, die alle mit weißer Schrift gut lesbar bleiben.
+export const ACCENT_COLORS = [
+  { id: 'sunset', label: 'Sonnenuntergang', value: '#ff5a36' },
+  { id: 'raspberry', label: 'Himbeere', value: '#e1306c' },
+  { id: 'indigo', label: 'Indigo', value: '#6c5ce7' },
+  { id: 'teal', label: 'Türkis', value: '#12b3a6' },
+  { id: 'amber', label: 'Bernstein', value: '#cc7a00' },
+  { id: 'emerald', label: 'Smaragd', value: '#12a454' },
+];
+
+const DEFAULT_SETTINGS = { unit: 'kg', accent: ACCENT_COLORS[0].value };
+
 function seedIfEmpty() {
   if (read(KEYS.exercises, null) === null) write(KEYS.exercises, DEFAULT_EXERCISES);
   if (read(KEYS.routines, null) === null) write(KEYS.routines, []);
   if (read(KEYS.workouts, null) === null) write(KEYS.workouts, []);
-  if (read(KEYS.settings, null) === null) write(KEYS.settings, { unit: 'kg' });
+  if (read(KEYS.settings, null) === null) write(KEYS.settings, DEFAULT_SETTINGS);
 }
 seedIfEmpty();
 
@@ -123,7 +136,7 @@ export const Store = {
 
   // Einstellungen
   getSettings() {
-    return read(KEYS.settings, { unit: 'kg' });
+    return { ...DEFAULT_SETTINGS, ...read(KEYS.settings, DEFAULT_SETTINGS) };
   },
   saveSettings(settings) {
     write(KEYS.settings, settings);
