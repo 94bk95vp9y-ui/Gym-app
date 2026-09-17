@@ -106,10 +106,18 @@ function startTicking(fn) {
 
 // ---------- Rendering ----------
 
+// Nur beim tatsächlichen Betreten der Trainingsansicht soll sie von unten
+// hereingleiten. render() wird aber bei jeder kleinsten Änderung (Satz
+// hinzufügen, Übung wählen, Haken setzen ...) erneut aufgerufen und baut die
+// ganze .workout-screen neu auf – ohne dieses Flag würde die Eingangs-
+// Animation dabei jedes Mal erneut abspielen und wie ein Neuladen wirken.
+let workoutEntering = false;
+
 function render() {
   stopTicking();
   if (state.workoutOpen && Store.getActive()) {
     root.innerHTML = renderWorkout();
+    workoutEntering = false;
     bindWorkoutEvents();
     startTicking(() => {
       const el = qs('#workout-timer');
@@ -224,6 +232,7 @@ function bindStartEvents() {
     if (Store.getActive()) return;
     Store.setActive({ id: uid(), routineId: null, routineName: null, startedAt: new Date().toISOString(), finishedAt: null, entries: [] });
     state.workoutOpen = true;
+    workoutEntering = true;
     render();
   });
   qsa('[data-action="start-routine"]').forEach((btn) => btn.addEventListener('click', () => {
@@ -236,9 +245,14 @@ function bindStartEvents() {
     });
     Store.setActive({ id: uid(), routineId: routine.id, routineName: routine.name, startedAt: new Date().toISOString(), finishedAt: null, entries });
     state.workoutOpen = true;
+    workoutEntering = true;
     render();
   }));
-  qs('[data-action="resume-workout"]')?.addEventListener('click', () => { state.workoutOpen = true; render(); });
+  qs('[data-action="resume-workout"]')?.addEventListener('click', () => {
+    state.workoutOpen = true;
+    workoutEntering = true;
+    render();
+  });
   qs('[data-action="discard-workout"]')?.addEventListener('click', () => {
     if (confirm('Aktuelles Training wirklich verwerfen? Alle Sätze gehen verloren.')) {
       Store.clearActive();
@@ -282,7 +296,7 @@ function renderWorkout() {
   }).join('');
 
   return `
-    <div class="workout-screen">
+    <div class="workout-screen ${workoutEntering ? 'entering' : ''}">
       <header class="topbar workout-topbar">
         <button class="icon-btn" data-action="minimize-workout">${Icon.chevron}</button>
         <div class="workout-title">

@@ -373,6 +373,11 @@ button, input, select, textarea {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+/* Nur beim Betreten des Trainings gesetzt (siehe workoutEntering in app.js) –
+   sonst würde jede kleine Änderung (Satz hinzufügen, Haken setzen ...) die
+   ganze Ansicht erneut von unten hereingleiten lassen wie ein Neuladen. */
+.workout-screen.entering {
   animation: workout-slide-up 0.38s cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 @keyframes workout-slide-up {
