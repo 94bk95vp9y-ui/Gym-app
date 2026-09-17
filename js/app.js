@@ -952,23 +952,7 @@ const tabSwipe = createSwipeSelector({
   getActive: () => state.tab,
   setActive: (id) => { state.tab = id; },
   onChange: render,
-  dragClass: 'dragging',
-  onMove: (fraction) => updateSheen(fraction),
 });
-
-// Bewegt den Lichtreflex auf der Glas-Tabbar mit dem Finger mit – siehe
-// .tabbar::after in styles.css. fraction: 0 (linker Rand) .. 1 (rechter Rand); null = zurücksetzen.
-function updateSheen(fraction) {
-  const bar = qs('.tabbar');
-  if (!bar) return;
-  if (fraction === null) {
-    bar.style.removeProperty('--sheen-x');
-    bar.style.removeProperty('--sheen-y');
-    return;
-  }
-  const x = 8 + Math.max(0, Math.min(1, fraction)) * 84; // 8%..92%, nie ganz am Rand
-  bar.style.setProperty('--sheen-x', `${x.toFixed(1)}%`);
-}
 
 const historySwipe = createSwipeSelector({
   barSelector: '#history-segmented',

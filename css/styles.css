@@ -1,17 +1,3 @@
-/* Registriert, damit der Browser --sheen-x/--sheen-y bei Keyframes/Transitions
-   sanft interpoliert statt zwischen Werten zu springen (Safari 16.4+, sonst
-   harmloser Fallback ohne Zwischenschritte). */
-@property --sheen-x {
-  syntax: '<percentage>';
-  inherits: true;
-  initial-value: 28%;
-}
-@property --sheen-y {
-  syntax: '<percentage>';
-  inherits: true;
-  initial-value: 15%;
-}
-
 :root {
   --bg: #f2f2f7;
   --bg-elevated: #ffffff;
@@ -24,19 +10,8 @@
   --success: #34c759;
   --danger: #ff3b30;
   --danger-bg: rgba(255, 59, 48, 0.1);
-
-  /* Liquid-Glass-Material */
-  --glass-bg: rgba(255, 255, 255, 0.42);
-  --glass-bg-strong: rgba(255, 255, 255, 0.56);
-  --glass-border: rgba(255, 255, 255, 0.65);
-  --glass-highlight: rgba(255, 255, 255, 0.9);
-  --glass-rim-dim: rgba(255, 255, 255, 0.18);
-  --glass-shade: rgba(20, 20, 30, 0.1);
-  --glass-sheen: rgba(255, 255, 255, 0.8);
-  --glass-shadow: 0 10px 34px rgba(31, 38, 50, 0.18), 0 1px 1px rgba(31, 38, 50, 0.08);
-  --glass-blur: 26px;
-  --sheen-x: 28%;
-  --sheen-y: 15%;
+  --shadow-sm: 0 1px 3px rgba(31, 38, 50, 0.08);
+  --shadow-md: 0 8px 24px rgba(31, 38, 50, 0.14);
 
   --radius-xl: 28px;
   --radius-lg: 22px;
@@ -60,15 +35,8 @@
     --accent: #ff6b45;
     --accent-contrast: #1a0a04;
     --danger-bg: rgba(255, 69, 58, 0.16);
-
-    --glass-bg: rgba(30, 30, 33, 0.42);
-    --glass-bg-strong: rgba(28, 28, 30, 0.6);
-    --glass-border: rgba(255, 255, 255, 0.16);
-    --glass-highlight: rgba(255, 255, 255, 0.22);
-    --glass-rim-dim: rgba(255, 255, 255, 0.05);
-    --glass-shade: rgba(0, 0, 0, 0.35);
-    --glass-sheen: rgba(255, 255, 255, 0.3);
-    --glass-shadow: 0 10px 34px rgba(0, 0, 0, 0.55), 0 1px 1px rgba(0, 0, 0, 0.3);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
     color-scheme: dark;
   }
 }
@@ -99,21 +67,6 @@ body {
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
-  position: relative;
-}
-
-/* Ambient-Glow im Hintergrund – gibt dem Glas etwas zum Brechen */
-body::before {
-  content: "";
-  position: fixed;
-  inset: -10%;
-  background:
-    radial-gradient(circle at 12% 6%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 45%),
-    radial-gradient(circle at 92% 14%, color-mix(in srgb, #5ac8fa 9%, transparent), transparent 42%),
-    radial-gradient(circle at 15% 96%, color-mix(in srgb, #bf5af2 7%, transparent), transparent 42%);
-  filter: blur(80px);
-  z-index: -1;
-  pointer-events: none;
 }
 
 button, input, select, textarea {
@@ -134,15 +87,8 @@ button, input, select, textarea {
   align-items: center;
   justify-content: space-between;
   padding: calc(var(--safe-top) + 10px) 18px 12px;
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
-  border-bottom: 1px solid var(--glass-border);
-  box-shadow:
-    inset 0 1px 0 var(--glass-highlight),
-    inset 1px 0 0 var(--glass-rim-dim),
-    inset -1px 0 0 var(--glass-rim-dim),
-    inset 0 -6px 10px -8px var(--glass-shade);
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
   z-index: 5;
@@ -165,9 +111,7 @@ button, input, select, textarea {
   gap: 16px;
 }
 
-/* Schwebende Glas-Tabbar im iOS-Stil – eine dünne, gewölbte Glasschicht:
-   Basisfläche (Verzerrung+Blur via @supports oben) + bewegliche Lichtreflexion
-   (::after) + gerichtetes Randlicht (mehrschichtiger inset box-shadow für Tiefe). */
+/* Schwebende Tabbar im iOS-Stil */
 .tabbar {
   display: flex;
   position: fixed;
@@ -178,44 +122,13 @@ button, input, select, textarea {
   padding: 0 6px;
   border-radius: 999px;
   overflow: hidden;
-  background: var(--glass-bg-strong);
-  backdrop-filter: blur(30px) saturate(190%);
-  -webkit-backdrop-filter: blur(30px) saturate(190%);
-  border: 1px solid var(--glass-border);
-  box-shadow:
-    var(--glass-shadow),
-    inset 0 1.5px 0 var(--glass-highlight),
-    inset 0 -3px 6px -3px var(--glass-shade),
-    inset 1px 0 0 var(--glass-rim-dim),
-    inset -1px 0 0 var(--glass-rim-dim);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
   z-index: 10;
   touch-action: none;
   -webkit-touch-callout: none;
   user-select: none;
-}
-
-/* Beweglicher Lichtreflex – reagiert live auf Drag-Position (--sheen-x/--sheen-y aus JS)
-   und driftet im Ruhezustand sanft, damit das Glas nie wie eine statische Textur wirkt. */
-.tabbar::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  background: radial-gradient(120% 140% at var(--sheen-x) var(--sheen-y), var(--glass-sheen), transparent 60%);
-  mix-blend-mode: overlay;
-  opacity: 0.9;
-  /* Kurze, physikalisch motivierte Trägheit: ein Lichtreflex "klebt" nicht 1:1
-     am Finger wie das Pill-Element, sondern folgt mit minimaler, organischer
-     Verzögerung – so wie Licht auf einer bewegten Oberfläche nachzieht. */
-  transition: --sheen-x 0.15s ease-out, --sheen-y 0.15s ease-out, opacity 0.3s;
-  animation: sheen-drift 10s ease-in-out infinite;
-}
-.tabbar.dragging::after { animation-play-state: paused; }
-
-@keyframes sheen-drift {
-  0%, 100% { --sheen-x: 22%; --sheen-y: 10%; }
-  50% { --sheen-x: 68%; --sheen-y: 25%; }
 }
 
 .tab-indicator {
@@ -327,12 +240,9 @@ button, input, select, textarea {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 6px 16px color-mix(in srgb, var(--accent) 38%, transparent);
 }
 .btn-secondary {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
-  border: 1px solid var(--glass-border);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
   color: var(--text);
-  box-shadow: inset 0 1px 0 var(--glass-highlight);
 }
 .btn-ghost { background: transparent; color: var(--accent); }
 .btn-ghost:active { background: color-mix(in srgb, var(--text) 8%, transparent); }
@@ -361,21 +271,13 @@ button, input, select, textarea {
 .row { display: flex; align-items: center; gap: 8px; }
 .row.gap { gap: 10px; margin-top: 12px; }
 
-/* Glas-Segmented-Control mit gleitendem Thumb */
+/* Segmented-Control mit gleitendem Thumb */
 .segmented {
   position: relative;
   display: flex;
-  background: var(--glass-bg);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid var(--glass-border);
+  background: var(--bg-input);
   border-radius: 999px;
   padding: 4px;
-  box-shadow:
-    inset 0 1px 0 var(--glass-highlight),
-    inset 0 -2px 4px -2px var(--glass-shade),
-    inset 1px 0 0 var(--glass-rim-dim),
-    inset -1px 0 0 var(--glass-rim-dim);
 }
 .segmented button {
   position: relative;
@@ -399,7 +301,7 @@ button, input, select, textarea {
   width: calc(50% - 4px);
   border-radius: 999px;
   background: var(--bg-elevated);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  box-shadow: var(--shadow-sm);
   transition: transform 0.35s cubic-bezier(0.34, 1.3, 0.4, 1);
   z-index: 0;
 }
@@ -409,7 +311,7 @@ button, input, select, textarea {
 /* Aktives Training-Karte */
 .active-card {
   background: color-mix(in srgb, var(--accent) 7%, var(--bg-elevated));
-  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--glass-border));
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
 }
 .active-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .active-card h3 { margin: 4px 0 2px; font-size: 18px; }
@@ -537,8 +439,6 @@ select.text-input { appearance: none; -webkit-appearance: none; }
 .sheet-backdrop {
   position: absolute; inset: 0;
   background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
   opacity: 0;
   animation: fadeIn 0.2s forwards;
 }
@@ -589,11 +489,8 @@ select.text-input { appearance: none; -webkit-appearance: none; }
   pointer-events: none;
 }
 .toast {
-  background: var(--glass-bg-strong);
-  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
-  border: 1px solid var(--glass-border);
-  color: var(--text);
+  background: var(--text);
+  color: var(--bg);
   padding: 10px 18px;
   border-radius: 999px;
   font-size: 14px;
@@ -601,7 +498,7 @@ select.text-input { appearance: none; -webkit-appearance: none; }
   opacity: 0;
   transform: translateY(8px);
   transition: opacity 0.2s, transform 0.2s;
-  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+  box-shadow: var(--shadow-md);
 }
 .toast.show { opacity: 1; transform: translateY(0); }
 
