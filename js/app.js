@@ -23,16 +23,6 @@ let tickInterval = null;
 function qs(sel, parent = document) { return parent.querySelector(sel); }
 function qsa(sel, parent = document) { return [...parent.querySelectorAll(sel)]; }
 
-// Weicher iOS-artiger Crossfade für bewusste Navigation (Tap auf Tab/Segment).
-// Bei Drag-Gesten wird bewusst NICHT transitioniert – da folgt die Ansicht 1:1 dem Finger.
-function go(fn) {
-  if (document.startViewTransition) {
-    document.startViewTransition(fn);
-  } else {
-    fn();
-  }
-}
-
 function toast(msg) {
   const t = document.createElement('div');
   t.className = 'toast';
@@ -46,19 +36,8 @@ function toast(msg) {
 }
 
 function closeSheet() {
-  const sheetEl = qs('.sheet', sheetRoot);
-  const backdrop = qs('.sheet-backdrop', sheetRoot);
-  if (!sheetEl) {
-    sheetRoot.innerHTML = '';
-    sheetRoot.classList.remove('open');
-    return;
-  }
-  sheetEl.style.animation = 'slideDown 0.26s cubic-bezier(0.32, 0.72, 0, 1) forwards';
-  if (backdrop) backdrop.style.animation = 'fadeOut 0.24s ease forwards';
-  setTimeout(() => {
-    sheetRoot.innerHTML = '';
-    sheetRoot.classList.remove('open');
-  }, 240);
+  sheetRoot.innerHTML = '';
+  sheetRoot.classList.remove('open');
 }
 
 function openSheet(title, bodyHtml, { footer = '', onMount } = {}) {
@@ -113,7 +92,6 @@ function render() {
       ${tabButton('history', Icon.history, 'Verlauf')}
       ${tabButton('library', Icon.library, 'Bibliothek')}
       ${tabButton('settings', Icon.settings, 'Einstellungen')}
-      <span class="tab-indicator" aria-hidden="true"></span>
     </nav>`;
 
   bindGlobalEvents();
@@ -264,33 +242,30 @@ function renderWorkout() {
   }).join('');
 
   return `
-    <div class="workout-screen">
-      <header class="topbar workout-topbar">
-        <button class="icon-btn" data-action="minimize-workout">${Icon.chevron}</button>
-        <div class="workout-title">
-          <strong>${escapeHtml(w.routineName || 'Freies Training')}</strong>
-          <span id="workout-timer" class="muted small">${elapsedLabel(w.startedAt)}</span>
-        </div>
-        <button class="icon-btn danger" data-action="discard-workout">${Icon.trash}</button>
-      </header>
-      <main class="view">
-        ${entries || '<p class="empty">Füge eine Übung hinzu, um loszulegen.</p>'}
-        <button class="btn btn-secondary full" data-action="add-exercise-to-workout">${Icon.plus} Übung hinzufügen</button>
-        <button class="btn btn-primary full" data-action="finish-workout">Training beenden</button>
-      </main>
-    </div>`;
+    <header class="topbar workout-topbar">
+      <button class="icon-btn" data-action="minimize-workout">${Icon.chevron}</button>
+      <div class="workout-title">
+        <strong>${escapeHtml(w.routineName || 'Freies Training')}</strong>
+        <span id="workout-timer" class="muted small">${elapsedLabel(w.startedAt)}</span>
+      </div>
+      <button class="icon-btn danger" data-action="discard-workout">${Icon.trash}</button>
+    </header>
+    <main class="view">
+      ${entries || '<p class="empty">Füge eine Übung hinzu, um loszulegen.</p>'}
+      <button class="btn btn-secondary full" data-action="add-exercise-to-workout">${Icon.plus} Übung hinzufügen</button>
+      <button class="btn btn-primary full" data-action="finish-workout">Training beenden</button>
+    </main>`;
 }
 
 function bindWorkoutEvents() {
   const getActive = () => Store.getActive();
 
-  qs('[data-action="minimize-workout"]').addEventListener('click', () => {
-    go(() => { state.workoutOpen = false; state.tab = 'start'; render(); });
-  });
+  qs('[data-action="minimize-workout"]').addEventListener('click', () => { state.workoutOpen = false; state.tab = 'start'; render(); });
   qs('[data-action="discard-workout"]').addEventListener('click', () => {
     if (confirm('Training wirklich verwerfen? Alle Sätze gehen verloren.')) {
       Store.clearActive();
-      go(() => { state.workoutOpen = false; render(); });
+      state.workoutOpen = false;
+      render();
     }
   });
   qs('[data-action="finish-workout"]').addEventListener('click', () => {
@@ -299,12 +274,10 @@ function bindWorkoutEvents() {
     if (totalSets === 0 && !confirm('Keine Sätze abgeschlossen. Training trotzdem speichern?')) return;
     w.finishedAt = new Date().toISOString();
     Store.finishActiveWorkout(w);
-    go(() => {
-      state.workoutOpen = false;
-      state.tab = 'history';
-      state.historySubTab = 'log';
-      render();
-    });
+    state.workoutOpen = false;
+    state.tab = 'history';
+    state.historySubTab = 'log';
+    render();
     toast('Training gespeichert 💪');
   });
   qs('[data-action="add-exercise-to-workout"]').addEventListener('click', openAddExerciseToWorkoutSheet);
@@ -314,7 +287,7 @@ function bindWorkoutEvents() {
     const last = w.entries[ei].sets[w.entries[ei].sets.length - 1];
     w.entries[ei].sets.push({ weight: last ? last.weight : 0, reps: last ? last.reps : 0, done: false });
     Store.setActive(w);
-    render(); // sofort – ein einzelner Satz ist zu klein/häufig für einen Seitenübergang
+    render();
   }));
   qsa('[data-action="remove-set"]').forEach((btn) => btn.addEventListener('click', () => {
     const w = getActive(); const ei = +btn.dataset.ei, si = +btn.dataset.si;
@@ -326,7 +299,7 @@ function bindWorkoutEvents() {
     const w = getActive(); const ei = +btn.dataset.ei, si = +btn.dataset.si;
     w.entries[ei].sets[si].done = !w.entries[ei].sets[si].done;
     Store.setActive(w);
-    render(); // lokaler Feder-Bounce am Haken reicht hier – kein Seitenweiter Crossfade nötig
+    render();
   }));
   qsa('[data-action="remove-exercise"]').forEach((btn) => btn.addEventListener('click', () => {
     const w = getActive(); const ei = +btn.dataset.ei;
@@ -382,10 +355,9 @@ function openAddExerciseToWorkoutSheet() {
 function renderHistory() {
   const sub = state.historySubTab;
   return `
-    <div class="segmented" id="history-segmented">
+    <div class="segmented">
       <button class="${sub === 'log' ? 'active' : ''}" data-action="history-sub" data-sub="log">Verlauf</button>
       <button class="${sub === 'progress' ? 'active' : ''}" data-action="history-sub" data-sub="progress">Fortschritt</button>
-      <span class="segmented-thumb" aria-hidden="true"></span>
     </div>
     ${sub === 'log' ? renderHistoryLog() : renderProgress()}`;
 }
@@ -444,9 +416,9 @@ function renderProgress() {
 
 function bindHistoryEvents() {
   qsa('[data-action="history-sub"]').forEach((btn) => btn.addEventListener('click', () => {
-    historySwipe.selectWithSlide(btn.dataset.sub);
+    state.historySubTab = btn.dataset.sub;
+    render();
   }));
-  qs('#history-segmented')?.addEventListener('pointerdown', historySwipe.onPointerDown);
   qsa('[data-action="open-workout"]').forEach((btn) => btn.addEventListener('click', () => openWorkoutDetailSheet(btn.dataset.id)));
 
   if (state.historySubTab === 'progress') {
@@ -497,10 +469,9 @@ function openWorkoutDetailSheet(id) {
 // ---- Bibliothek-Tab ----
 function renderLibrary() {
   return `
-    <div class="segmented" id="library-segmented">
+    <div class="segmented">
       <button class="${state.librarySubTab === 'exercises' ? 'active' : ''}" data-action="library-sub" data-sub="exercises">Übungen</button>
       <button class="${state.librarySubTab === 'routines' ? 'active' : ''}" data-action="library-sub" data-sub="routines">Routinen</button>
-      <span class="segmented-thumb" aria-hidden="true"></span>
     </div>
     ${state.librarySubTab === 'exercises' ? renderExerciseList() : renderRoutineList()}`;
 }
@@ -527,9 +498,9 @@ function renderRoutineList() {
 
 function bindLibraryEvents() {
   qsa('[data-action="library-sub"]').forEach((btn) => btn.addEventListener('click', () => {
-    librarySwipe.selectWithSlide(btn.dataset.sub);
+    state.librarySubTab = btn.dataset.sub;
+    render();
   }));
-  qs('#library-segmented')?.addEventListener('pointerdown', librarySwipe.onPointerDown);
   qsa('[data-action="edit-exercise"]').forEach((btn) => btn.addEventListener('click', () => openExerciseSheet(btn.dataset.id)));
   qsa('[data-action="edit-routine"]').forEach((btn) => btn.addEventListener('click', () => openRoutineSheet(btn.dataset.id)));
 }
@@ -668,7 +639,6 @@ function renderSettings() {
       <div class="segmented">
         <button class="${settings.unit === 'kg' ? 'active' : ''}" data-action="set-unit" data-unit="kg">kg</button>
         <button class="${settings.unit === 'lb' ? 'active' : ''}" data-action="set-unit" data-unit="lb">lb</button>
-        <span class="segmented-thumb" aria-hidden="true"></span>
       </div>
       <p class="muted small">Ändert nur die Anzeige-Einheit für neue Einträge, bestehende Werte werden nicht umgerechnet.</p>
     </section>
@@ -715,7 +685,7 @@ function bindSettingsEvents() {
       const data = JSON.parse(await file.text());
       Store.importAll(data);
       toast('Daten importiert');
-      go(render);
+      render();
     } catch {
       alert('Datei konnte nicht gelesen werden.');
     }
@@ -724,7 +694,7 @@ function bindSettingsEvents() {
   qs('[data-action="wipe-data"]')?.addEventListener('click', () => {
     if (confirm('Wirklich ALLE Daten unwiderruflich löschen?')) {
       Store.wipeAll();
-      go(render);
+      render();
       toast('Zurückgesetzt');
     }
   });
@@ -733,246 +703,12 @@ function bindSettingsEvents() {
 // ---- Globale Events ----
 function bindGlobalEvents() {
   qsa('[data-action="set-tab"]').forEach((btn) => btn.addEventListener('click', () => {
-    tabSwipe.selectWithSlide(btn.dataset.tab);
+    state.tab = btn.dataset.tab;
+    render();
   }));
-  qs('.tabbar')?.addEventListener('pointerdown', tabSwipe.onPointerDown);
   qs('[data-action="add-exercise"]')?.addEventListener('click', () => openExerciseSheet(null));
   qs('[data-action="add-routine"]')?.addEventListener('click', () => openRoutineSheet(null));
 }
-
-// ---- Wischbare Auswahl (Tabbar + Segmented Controls): das Pill-/Thumb-Element
-// wird wie ein physisches Objekt gegriffen, folgt 1:1 dem Finger, rastet beim
-// Loslassen per Feder-Simulation (inkl. Schwung) ein – UND gleitet bei einem
-// simplen Klick genau so weich zur Zielposition, statt instantan zu springen
-// (da render() den ganzen Container neu aufbaut und CSS-Transitions dabei
-// nicht greifen würden). Eine Fabrik, damit Tabbar und beide Segmented
-// Controls exakt dasselbe Verhalten teilen, ohne Code zu duplizieren.
-function rubberBand(overshoot, dim = 90) {
-  return (overshoot * dim) / (dim + Math.abs(overshoot));
-}
-
-function clampWithRubberBand(raw, min, max) {
-  if (raw < min) return min - rubberBand(min - raw);
-  if (raw > max) return max + rubberBand(raw - max);
-  return raw;
-}
-
-function createSwipeSelector({
-  barSelector, indicatorSelector, handleSelector, ids, getActive, setActive, onChange, onMove, dragClass,
-}) {
-  let drag = null; // { startX, startLeft, minLeft, maxLeft, slotWidth, barLeft, barWidth, lastX, lastT, velocity, currentLeft }
-  let springFrame = null;
-  let liveLeft = null; // Ist-Position während Drag/Feder, für nahtloses erneutes Greifen
-
-  function clampIdx(i) { return Math.max(0, Math.min(ids.length - 1, i)); }
-
-  function geometry() {
-    const bar = qs(barSelector);
-    const indicator = qs(indicatorSelector);
-    if (!bar || !indicator) return null;
-    const barRect = bar.getBoundingClientRect();
-    const indRect = indicator.getBoundingClientRect();
-    const minLeft = indRect.width > 0 ? indicator.offsetLeft : 6;
-    return {
-      bar, indicator,
-      slotWidth: indRect.width,
-      minLeft,
-      maxLeft: bar.clientWidth - minLeft - indRect.width,
-      barLeft: barRect.left,
-      barWidth: barRect.width,
-    };
-  }
-
-  function cancelSpring() {
-    if (springFrame) { cancelAnimationFrame(springFrame); springFrame = null; }
-  }
-
-  // Gedämpfte Federsimulation (Masse-Feder-Dämpfer): weiches, dynamisches
-  // Eingleiten statt abruptem Stopp, ähnlich UIKit-Spring-Animationen.
-  function springTo(el, from, to, initialVelocityPxPerSec, baseLeft) {
-    cancelSpring();
-    const stiffness = 340;
-    const damping = 30;
-    let pos = from;
-    let vel = initialVelocityPxPerSec;
-    let lastT = performance.now();
-    function frame(now) {
-      const dt = Math.min((now - lastT) / 1000, 1 / 30);
-      lastT = now;
-      const displacement = pos - to;
-      const accel = (-stiffness * displacement - damping * vel);
-      vel += accel * dt;
-      pos += vel * dt;
-      if (Math.abs(pos - to) < 0.4 && Math.abs(vel) < 15) {
-        el.style.transition = '';
-        el.style.transform = '';
-        springFrame = null;
-        liveLeft = null;
-        return;
-      }
-      el.style.transform = `translateX(${pos}px)`;
-      liveLeft = baseLeft + pos;
-      springFrame = requestAnimationFrame(frame);
-    }
-    springFrame = requestAnimationFrame(frame);
-  }
-
-  function onPointerDown(e) {
-    if (!e.target.closest(handleSelector)) return;
-    const geo = geometry();
-    if (!geo) return;
-    cancelSpring();
-    const idx = Math.max(0, ids.indexOf(getActive()));
-    const currentLeft = liveLeft !== null ? liveLeft : geo.minLeft + idx * geo.slotWidth;
-    drag = {
-      startX: e.clientX,
-      startLeft: currentLeft,
-      minLeft: geo.minLeft,
-      maxLeft: geo.maxLeft,
-      slotWidth: geo.slotWidth,
-      barLeft: geo.barLeft,
-      barWidth: geo.barWidth,
-      lastX: e.clientX,
-      lastT: performance.now(),
-      velocity: 0,
-      currentLeft,
-    };
-    geo.indicator.style.transition = 'none';
-    if (dragClass) geo.bar.classList.add(dragClass);
-    activeSwipeSelector = { onPointerMove, onPointerUp };
-    onMove?.((e.clientX - geo.barLeft) / geo.barWidth, 0);
-  }
-
-  function onPointerMove(e) {
-    if (!drag) return;
-    const now = performance.now();
-    const dt = now - drag.lastT;
-    // dt-Mindestwert verhindert, dass sehr dicht aufeinanderfolgende Events
-    // die Geschwindigkeit künstlich in die Höhe treiben.
-    if (dt > 4) {
-      const instVel = Math.max(-2.5, Math.min(2.5, (e.clientX - drag.lastX) / dt));
-      drag.velocity = drag.velocity * 0.72 + instVel * 0.28;
-      drag.lastX = e.clientX;
-      drag.lastT = now;
-    }
-
-    const rawLeft = drag.startLeft + (e.clientX - drag.startX);
-    const left = clampWithRubberBand(rawLeft, drag.minLeft, drag.maxLeft);
-    drag.currentLeft = left;
-    liveLeft = left;
-
-    const indicator = qs(indicatorSelector);
-    if (indicator) indicator.style.transform = `translateX(${left - drag.minLeft}px)`;
-
-    const idx = clampIdx(Math.round((left - drag.minLeft) / drag.slotWidth));
-    const id = ids[idx];
-    if (id !== getActive()) {
-      setActive(id);
-      onChange();
-      const fresh = qs(indicatorSelector);
-      if (fresh) {
-        fresh.style.transition = 'none';
-        fresh.style.transform = `translateX(${left - drag.minLeft}px)`;
-      }
-      if (dragClass) qs(barSelector)?.classList.add(dragClass);
-    }
-    onMove?.((e.clientX - drag.barLeft) / drag.barWidth, drag.velocity);
-  }
-
-  function onPointerUp() {
-    if (!drag) return;
-    const { currentLeft, minLeft, slotWidth, velocity } = drag;
-    drag = null;
-    activeSwipeSelector = null;
-
-    // Schwung der Geste einbeziehen: nur ein wirklich schneller Flick (oberhalb
-    // einer Totzone) darf die nächste Option "mitnehmen", wenn die Loslass-
-    // Position sie knapp verfehlt. Eine langsame, kontrollierte Bewegung
-    // entscheidet rein über ihre Endposition.
-    const velPxPerSec = velocity * 1000;
-    const deadZone = 320;
-    const fullBiasAt = 1100;
-    const excess = Math.max(0, Math.abs(velPxPerSec) - deadZone);
-    const bias = Math.sign(velPxPerSec) * Math.min(1, excess / (fullBiasAt - deadZone));
-    const idx = clampIdx(Math.round((currentLeft - minLeft) / slotWidth + bias));
-    const targetId = ids[idx];
-    const targetLeft = minLeft + idx * slotWidth;
-
-    if (targetId !== getActive()) {
-      setActive(targetId);
-      onChange();
-    }
-    const indicator = qs(indicatorSelector);
-    if (indicator) {
-      indicator.style.transition = 'none';
-      indicator.style.transform = `translateX(${currentLeft - minLeft}px)`;
-      springTo(indicator, currentLeft - minLeft, targetLeft - minLeft, velocity * 1000, minLeft);
-    }
-    const bar = qs(barSelector);
-    if (bar && dragClass) bar.classList.remove(dragClass);
-    onMove?.(null);
-  }
-
-  // Für Klicks: dieselbe Feder-Physik wie beim Loslassen einer Ziehgeste,
-  // nur ohne Anfangsschwung – damit ein Tap genauso "clean rüberswiped"
-  // statt instantan zu springen (render() baut den Container ja neu auf).
-  function selectWithSlide(id) {
-    if (id === getActive()) return;
-    const geo = geometry();
-    if (!geo) { setActive(id); onChange(); return; }
-    cancelSpring();
-    const fromIdx = Math.max(0, ids.indexOf(getActive()));
-    const fromLeft = liveLeft !== null ? liveLeft : geo.minLeft + fromIdx * geo.slotWidth;
-    setActive(id);
-    onChange();
-    const indicator = qs(indicatorSelector);
-    if (!indicator) return;
-    const toIdx = Math.max(0, ids.indexOf(id));
-    const toLeft = geo.minLeft + toIdx * geo.slotWidth;
-    indicator.style.transition = 'none';
-    indicator.style.transform = `translateX(${fromLeft - geo.minLeft}px)`;
-    void indicator.offsetHeight; // Reflow erzwingen: Startzustand sichtbar malen, bevor die Feder losläuft
-    springTo(indicator, fromLeft - geo.minLeft, toLeft - geo.minLeft, 0, geo.minLeft);
-  }
-
-  return { onPointerDown, selectWithSlide };
-}
-
-let activeSwipeSelector = null;
-window.addEventListener('pointermove', (e) => activeSwipeSelector?.onPointerMove(e));
-window.addEventListener('pointerup', () => activeSwipeSelector?.onPointerUp());
-window.addEventListener('pointercancel', () => activeSwipeSelector?.onPointerUp());
-
-const TAB_IDS = ['start', 'history', 'library', 'settings'];
-const tabSwipe = createSwipeSelector({
-  barSelector: '.tabbar',
-  indicatorSelector: '.tab-indicator',
-  handleSelector: '.tab-btn',
-  ids: TAB_IDS,
-  getActive: () => state.tab,
-  setActive: (id) => { state.tab = id; },
-  onChange: render,
-});
-
-const historySwipe = createSwipeSelector({
-  barSelector: '#history-segmented',
-  indicatorSelector: '#history-segmented .segmented-thumb',
-  handleSelector: 'button',
-  ids: ['log', 'progress'],
-  getActive: () => state.historySubTab,
-  setActive: (id) => { state.historySubTab = id; },
-  onChange: render,
-});
-
-const librarySwipe = createSwipeSelector({
-  barSelector: '#library-segmented',
-  indicatorSelector: '#library-segmented .segmented-thumb',
-  handleSelector: 'button',
-  ids: ['exercises', 'routines'],
-  getActive: () => state.librarySubTab,
-  setActive: (id) => { state.librarySubTab = id; },
-  onChange: render,
-});
 
 sheetRoot.addEventListener('click', (e) => {
   if (e.target.closest('[data-action="close-sheet"]')) closeSheet();
