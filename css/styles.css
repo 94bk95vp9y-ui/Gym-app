@@ -606,24 +606,3 @@ select.text-input { appearance: none; -webkit-appearance: none; }
 .toast.show { opacity: 1; transform: translateY(0); }
 
 ::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
-
-/* ---- Liquid Glass: echte Lichtbrechung statt reinem Weichzeichner ----
-   Bewusst als letzte Regel der Datei, damit sie im Cascade IMMER gegenüber den
-   weiter oben definierten Blur/Saturate-Basiswerten gewinnt (gleiche Spezifität,
-   späterer Quelltext gewinnt) – ohne !important. Der Grundzustand oben ist ein
-   sicherer Fallback, der überall funktioniert; nur wo der Browser
-   backdrop-filter:url(#svg) tatsächlich unterstützt, ersetzt dieser Block ihn
-   durch den echten Verzerrungsfilter: der Hintergrund wird dadurch tatsächlich
-   pixelweise gebrochen/verschoben, nicht nur unscharf. Bricht nirgends etwas –
-   ohne Unterstützung bleibt exakt der Fallback von oben aktiv. */
-@supports (backdrop-filter: url(#liquid-glass-bar)) or (-webkit-backdrop-filter: url(#liquid-glass-bar)) {
-  .tabbar {
-    backdrop-filter: url(#liquid-glass-bar) blur(14px) saturate(190%) brightness(1.05) contrast(1.03);
-    -webkit-backdrop-filter: url(#liquid-glass-bar) blur(14px) saturate(190%) brightness(1.05) contrast(1.03);
-  }
-  /* sanftere Verzerrung, wo Text auf einen Blick lesbar bleiben muss */
-  .topbar, .segmented, .btn-secondary, .toast {
-    backdrop-filter: url(#liquid-glass-surface) blur(18px) saturate(180%) brightness(1.03) contrast(1.02);
-    -webkit-backdrop-filter: url(#liquid-glass-surface) blur(18px) saturate(180%) brightness(1.03) contrast(1.02);
-  }
-}

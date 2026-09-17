@@ -19,25 +19,6 @@
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
-  <!-- Liquid-Glass-Verzerrungsfilter: bricht den Hintergrund hinter den Glasflächen
-       tatsächlich (echte Pixel-Verschiebung), statt ihn nur unscharf zu machen.
-       Wird per @supports nur dort aktiviert, wo backdrop-filter:url(#...) greift;
-       überall sonst bleibt der reine Blur/Saturate-Fallback bestehen. -->
-  <svg aria-hidden="true" style="position:absolute; width:0; height:0; overflow:hidden;">
-    <defs>
-      <filter id="liquid-glass-bar" x="-30%" y="-60%" width="160%" height="220%" color-interpolation-filters="sRGB">
-        <feTurbulence type="fractalNoise" baseFrequency="0.012 0.05" numOctaves="2" seed="11" result="noise" />
-        <feGaussianBlur in="noise" stdDeviation="3" result="softNoise" />
-        <feDisplacementMap in="SourceGraphic" in2="softNoise" scale="22" xChannelSelector="R" yChannelSelector="G" />
-      </filter>
-      <filter id="liquid-glass-surface" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
-        <feTurbulence type="fractalNoise" baseFrequency="0.009 0.018" numOctaves="2" seed="4" result="noise" />
-        <feGaussianBlur in="noise" stdDeviation="4" result="softNoise" />
-        <feDisplacementMap in="SourceGraphic" in2="softNoise" scale="8" xChannelSelector="R" yChannelSelector="G" />
-      </filter>
-    </defs>
-  </svg>
-
   <div id="app-root"></div>
   <div id="sheet-root"></div>
   <div id="toast-root"></div>
