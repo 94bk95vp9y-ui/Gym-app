@@ -88,6 +88,54 @@ function defaultSets(exercise, excludeWorkoutId) {
 const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
 function prefersReducedMotion() { return reducedMotionQuery.matches; }
 
+// Beim Screenwechsel gleiten die Blöcke leicht versetzt aus der Richtung des
+// Wechsels herein. Während einer Ziehgeste bleibt es aus: dort folgt der
+// Inhalt schon dem Finger, eine zusätzliche Animation würde nur flackern.
+let isSwipeDragging = false;
+
+function animateScreenIn(view) {
+  const from = lastScreenPosition;
+  const to = screenPosition();
+  lastScreenPosition = to;
+  // Beim View-Transition-Crossfade (Training verlassen/beenden) würde die
+  // Einblendung doppelt laufen.
+  if (prefersReducedMotion() || isSwipeDragging || inViewTransition || from === to) return;
+  // Beim allerersten Rendern gibt es keine Richtung – dann nur sanft einblenden.
+  view.style.setProperty('--enter-x', from === null ? '0px' : (to > from ? '16px' : '-16px'));
+  view.classList.remove('screen-in');
+  void view.offsetWidth;
+  view.classList.add('screen-in');
+}
+
+// Ein frisch eingefügtes Element einmalig einblenden lassen.
+function dropIn(el) {
+  if (!el || prefersReducedMotion()) return;
+  el.classList.add('item-in');
+  el.addEventListener('animationend', () => el.classList.remove('item-in'), { once: true });
+}
+
+// Ein Element erst wegklappen, dann die eigentliche Änderung ausführen –
+// sonst würde die Zeile beim Löschen einfach verschwinden.
+function collapseAway(el, done) {
+  if (!el || prefersReducedMotion()) { done(); return; }
+  const height = el.getBoundingClientRect().height;
+  const style = getComputedStyle(el);
+  el.style.height = `${height}px`;
+  el.style.marginTop = style.marginTop;
+  el.style.marginBottom = style.marginBottom;
+  el.style.overflow = 'hidden';
+  void el.offsetHeight;
+  el.style.transition = 'height 0.22s ease, opacity 0.16s ease, transform 0.22s ease, margin 0.22s ease, padding 0.22s ease';
+  el.style.height = '0px';
+  el.style.opacity = '0';
+  el.style.transform = 'scale(0.97)';
+  el.style.marginTop = '0px';
+  el.style.marginBottom = '0px';
+  el.style.paddingTop = '0px';
+  el.style.paddingBottom = '0px';
+  setTimeout(done, 210);
+}
+
 // Sheet nach unten wegwischen, wie in iOS: der Griff (und der Kopfbereich)
 // folgt 1:1 dem Finger, beim Loslassen entscheidet Strecke ODER Schwung.
 function enableSheetDragToClose(sheetEl) {
@@ -139,9 +187,12 @@ function enableSheetDragToClose(sheetEl) {
 
 // Weicher iOS-artiger Crossfade für bewusste Navigation (Tap auf Tab/Segment).
 // Bei Drag-Gesten wird bewusst NICHT transitioniert – da folgt die Ansicht 1:1 dem Finger.
+let inViewTransition = false;
 function go(fn) {
   if (document.startViewTransition) {
-    document.startViewTransition(fn);
+    inViewTransition = true;
+    const transition = document.startViewTransition(fn);
+    transition.finished.catch(() => {}).finally(() => { inViewTransition = false; });
   } else {
     fn();
   }
@@ -261,11 +312,23 @@ let workoutEntering = false;
 // Datenänderung), nicht bei echter Navigation zu einer anderen Ansicht.
 let lastRenderKey = null;
 
+// Position des aktuellen Screens auf einer gedachten Achse (Tab + Unter-Tab).
+// Daraus ergibt sich, ob ein Wechsel nach links oder rechts geht – der Inhalt
+// gleitet dann aus der passenden Richtung herein.
+function screenPosition() {
+  const base = TAB_IDS.indexOf(state.tab);
+  if (state.tab === 'history') return base + (state.historySubTab === 'progress' ? 0.5 : 0);
+  if (state.tab === 'library') return base + (state.librarySubTab === 'routines' ? 0.5 : 0);
+  return base;
+}
+let lastScreenPosition = null;
+
 function render() {
   stopTicking();
   const key = `${state.tab}:${state.workoutOpen}:${state.historySubTab}:${state.librarySubTab}`;
   const prevView = qs('.view');
   const scrollTop = key === lastRenderKey && prevView ? prevView.scrollTop : 0;
+  const screenChanged = key !== lastRenderKey;
   lastRenderKey = key;
 
   if (state.workoutOpen && Store.getActive()) {
@@ -297,7 +360,10 @@ function render() {
       <span class="tab-indicator" aria-hidden="true"></span>
     </nav>`;
   const newView = qs('.view');
-  if (newView) newView.scrollTop = scrollTop;
+  if (newView) {
+    newView.scrollTop = scrollTop;
+    if (screenChanged) animateScreenIn(newView);
+  }
 
   bindGlobalEvents();
   if (state.tab === 'start') bindStartEvents();
@@ -428,7 +494,7 @@ function renderWorkout() {
     const lastBest = last ? bestSet(last.sets) : null;
     const overload = overloadOn ? getOverloadSuggestion(Store.getExercise(entry.exerciseId), w.id) : null;
     const sets = entry.sets.map((s, si) => `
-      <div class="set-row ${s.done ? 'done' : ''}">
+      <div class="set-row ${s.done ? 'done' : ''}" data-ei="${ei}" data-si="${si}">
         <span class="set-index">${si + 1}</span>
         <input type="number" inputmode="decimal" class="set-input ${s.suggested ? 'suggested' : ''}" placeholder="—"
           value="${s.suggested ? s.weight : (s.weight || '')}" data-field="weight" data-ei="${ei}" data-si="${si}" />
@@ -440,7 +506,7 @@ function renderWorkout() {
       </div>`).join('');
 
     return `
-      <section class="card exercise-block">
+      <section class="card exercise-block" data-ei="${ei}">
         <div class="exercise-block-header">
           <strong>${escapeHtml(entry.exerciseName)}</strong>
           <button class="icon-btn small danger" data-action="remove-exercise" data-ei="${ei}">${Icon.trash}</button>
@@ -505,14 +571,18 @@ function bindWorkoutEvents() {
     const w = getActive(); const ei = +btn.dataset.ei;
     const last = w.entries[ei].sets[w.entries[ei].sets.length - 1];
     w.entries[ei].sets.push({ weight: last ? last.weight : 0, reps: last ? last.reps : 0, done: false });
+    const si = w.entries[ei].sets.length - 1;
     Store.setActive(w);
     render(); // sofort – ein einzelner Satz ist zu klein/häufig für einen Seitenübergang
+    dropIn(qs(`.set-row[data-ei="${ei}"][data-si="${si}"]`));
   }));
   qsa('[data-action="remove-set"]').forEach((btn) => btn.addEventListener('click', () => {
     const w = getActive(); const ei = +btn.dataset.ei, si = +btn.dataset.si;
-    w.entries[ei].sets.splice(si, 1);
-    Store.setActive(w);
-    render();
+    collapseAway(btn.closest('.set-row'), () => {
+      w.entries[ei].sets.splice(si, 1);
+      Store.setActive(w);
+      render();
+    });
   }));
   qsa('[data-action="toggle-set"]').forEach((btn) => btn.addEventListener('click', () => {
     const w = getActive(); const ei = +btn.dataset.ei, si = +btn.dataset.si;
@@ -521,14 +591,21 @@ function bindWorkoutEvents() {
     // Abhaken ohne eigene Eingabe übernimmt den grauen Vorschlagswert als echten Wert.
     if (set.done) set.suggested = false;
     Store.setActive(w);
-    render(); // lokaler Feder-Bounce am Haken reicht hier – kein Seitenweiter Crossfade nötig
+    // Bewusst KEIN render(): ein Neuaufbau würde den Knopf durch ein frisches,
+    // unanimiertes Element ersetzen – die Feder-Animation am Haken liefe nie.
+    // Lokal umschalten ist außerdem spürbar direkter.
+    btn.classList.toggle('on', set.done);
+    btn.closest('.set-row')?.classList.toggle('done', set.done);
+    qsa(`.set-input[data-ei="${ei}"][data-si="${si}"]`).forEach((el) => el.classList.remove('suggested'));
   }));
   qsa('[data-action="remove-exercise"]').forEach((btn) => btn.addEventListener('click', () => {
     const w = getActive(); const ei = +btn.dataset.ei;
     if (!confirm('Übung aus diesem Training entfernen?')) return;
-    w.entries.splice(ei, 1);
-    Store.setActive(w);
-    render();
+    collapseAway(btn.closest('.exercise-block'), () => {
+      w.entries.splice(ei, 1);
+      Store.setActive(w);
+      render();
+    });
   }));
   qsa('[data-field="weight"], [data-field="reps"]').forEach((input) => input.addEventListener('input', () => {
     const w = getActive();
@@ -539,7 +616,7 @@ function bindWorkoutEvents() {
     if (set.suggested) {
       set.suggested = false;
       // sofort optisch bestätigen (grau -> normal), ohne die ganze Zeile neu zu rendern
-      qsa(`[data-ei="${ei}"][data-si="${si}"]`).forEach((el) => el.classList.remove('suggested'));
+      qsa(`.set-input[data-ei="${ei}"][data-si="${si}"]`).forEach((el) => el.classList.remove('suggested'));
     }
     Store.setActive(w);
   }));
@@ -605,6 +682,7 @@ function openAddExerciseToWorkoutSheet() {
       // Das Training im Hintergrund aktualisieren – das Sheet lebt in einem
       // eigenen Container und bleibt dabei offen.
       render();
+      dropIn(qs(`.exercise-block[data-ei="${w.entries.length - 1}"]`));
     },
   });
 }
@@ -657,6 +735,30 @@ function renderCalendar() {
       <div class="calendar-weekdays">${weekdayLabels.map((w) => `<span>${w}</span>`).join('')}</div>
       <div class="calendar-grid">${cells}</div>
     </div>`;
+}
+
+function bindCalendarEvents() {
+  qs('[data-action="cal-prev"]')?.addEventListener('click', () => shiftCalendar(-1));
+  qs('[data-action="cal-next"]')?.addEventListener('click', () => shiftCalendar(1));
+}
+
+// Nur die Kalenderkarte austauschen statt der ganzen Seite – das hält die
+// Scroll-Position und erlaubt, das neue Raster in Blätterrichtung einzublenden.
+function shiftCalendar(direction) {
+  const month = state.calendarMonth + direction;
+  state.calendarYear += Math.floor(month / 12);
+  state.calendarMonth = ((month % 12) + 12) % 12;
+
+  const card = qs('.calendar');
+  if (!card) { render(); return; }
+  card.outerHTML = renderCalendar();
+  bindCalendarEvents();
+  const grid = qs('.calendar-grid');
+  if (grid && !prefersReducedMotion()) {
+    grid.style.setProperty('--enter-x', direction > 0 ? '20px' : '-20px');
+    grid.classList.add('item-in');
+    grid.addEventListener('animationend', () => grid.classList.remove('item-in'), { once: true });
+  }
 }
 
 function renderHistoryLog() {
@@ -717,16 +819,7 @@ function bindHistoryEvents() {
   }));
   qs('#history-segmented')?.addEventListener('pointerdown', historySwipe.onPointerDown);
   qsa('[data-action="open-workout"]').forEach((btn) => btn.addEventListener('click', () => openWorkoutDetailSheet(btn.dataset.id)));
-  qs('[data-action="cal-prev"]')?.addEventListener('click', () => {
-    state.calendarMonth -= 1;
-    if (state.calendarMonth < 0) { state.calendarMonth = 11; state.calendarYear -= 1; }
-    render();
-  });
-  qs('[data-action="cal-next"]')?.addEventListener('click', () => {
-    state.calendarMonth += 1;
-    if (state.calendarMonth > 11) { state.calendarMonth = 0; state.calendarYear += 1; }
-    render();
-  });
+  bindCalendarEvents();
 
   if (state.historySubTab === 'progress') {
     qs('#progress-select')?.addEventListener('change', (e) => { state.progressExerciseId = e.target.value; render(); });
@@ -740,9 +833,22 @@ function bindHistoryEvents() {
         if (!best) return null;
         return { value: estimate1RM(best.weight, best.reps), label: formatDate(w.startedAt) };
       }).filter(Boolean);
-      drawLineChart(canvas, points);
+      animateChart(canvas, points);
     }
   }
+}
+
+function animateChart(canvas, points) {
+  if (prefersReducedMotion() || points.length < 2) { drawLineChart(canvas, points); return; }
+  const duration = 620;
+  const start = performance.now();
+  const frame = (now) => {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - (1 - t) ** 3;
+    drawLineChart(canvas, points, { progress: eased });
+    if (t < 1 && document.contains(canvas)) requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
 }
 
 function openWorkoutDetailSheet(id) {
@@ -1306,6 +1412,7 @@ function createSwipeSelector({
     };
     geo.indicator.style.transition = 'none';
     if (dragClass) geo.bar.classList.add(dragClass);
+    isSwipeDragging = true;
     activeSwipeSelector = { onPointerMove, onPointerUp };
     onMove?.((e.clientX - geo.barLeft) / geo.barWidth, 0);
   }
@@ -1350,6 +1457,7 @@ function createSwipeSelector({
     if (!drag) return;
     const { currentLeft, minLeft, slotWidth, velocity } = drag;
     drag = null;
+    isSwipeDragging = false;
     activeSwipeSelector = null;
 
     // Schwung der Geste einbeziehen: nur ein wirklich schneller Flick (oberhalb

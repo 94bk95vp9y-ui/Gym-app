@@ -49,7 +49,9 @@ export function unitLabel(unit) {
 }
 
 // Zeichnet einen einfachen Linienchart in ein <canvas> (keine Abhängigkeiten).
-export function drawLineChart(canvas, points, opts = {}) {
+// progress (0..1) blendet die Linie beim ersten Zeichnen auf: der Verlauf
+// wächst von links nach rechts, statt schlagartig dazustehen.
+export function drawLineChart(canvas, points, { progress = 1 } = {}) {
   const dpr = window.devicePixelRatio || 1;
   const cssW = canvas.clientWidth || 320;
   const cssH = canvas.clientHeight || 160;
@@ -93,7 +95,12 @@ export function drawLineChart(canvas, points, opts = {}) {
     ctx.fillText(Math.round(v).toString(), 4, yy + 3);
   });
 
-  // Linie
+  // Linie, Fläche und Punkte wachsen von links nach rechts ein
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, pad.left + w * progress + 1, cssH);
+  ctx.clip();
+
   ctx.beginPath();
   points.forEach((p, i) => {
     const xx = x(i); const yy = y(p.value);
@@ -123,11 +130,15 @@ export function drawLineChart(canvas, points, opts = {}) {
     ctx.fill();
   });
 
+  ctx.restore();
+
   // x-Achsen Labels (erstes, letztes)
+  ctx.globalAlpha = progress;
   ctx.fillStyle = textColor;
   ctx.textAlign = 'left';
   ctx.fillText(points[0].label, pad.left, cssH - 6);
   ctx.textAlign = 'right';
   ctx.fillText(points[points.length - 1].label, cssW - pad.right, cssH - 6);
   ctx.textAlign = 'left';
+  ctx.globalAlpha = 1;
 }
