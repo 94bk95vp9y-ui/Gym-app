@@ -1,4 +1,4 @@
-import { Store, MUSCLE_GROUPS, ACCENT_COLORS, uid } from './storage.js';
+import { Store, MUSCLE_GROUPS, ACCENT_COLORS, REST_OPTIONS, uid } from './storage.js';
 import { Icon } from './icons.js';
 import {
   formatDate, formatDateTime, formatDuration, elapsedLabel,
@@ -337,10 +337,12 @@ function render() {
     bindWorkoutEvents();
     const newView = qs('.view');
     if (newView) newView.scrollTop = scrollTop;
+    syncRestBar(); // eine laufende Pause überlebt auch ein Neuladen
     startTicking(() => {
       const el = qs('#workout-timer');
       const active = Store.getActive();
       if (el && active) el.textContent = elapsedLabel(active.startedAt);
+      syncRestBar();
     });
     return;
   }
@@ -441,6 +443,7 @@ function renderStart() {
 
   return `
     ${activeCard}
+    ${renderWeekCard()}
     <section>
       <div class="section-title">Plan starten</div>
       <div class="card list">${routineCards}</div>
@@ -448,6 +451,44 @@ function renderStart() {
     <section>
       <button class="btn btn-secondary full" data-action="start-blank" ${active ? 'disabled' : ''}>${Icon.plus} Leeres Training starten</button>
     </section>`;
+}
+
+// Kleine Wochenübersicht: an welchen Tagen war ich da, wie viel kam zusammen.
+function renderWeekCard() {
+  const now = new Date();
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+  const done = Store.getWorkouts().filter((w) => w.finishedAt && new Date(w.startedAt) >= monday);
+  if (!Store.getWorkouts().some((w) => w.finishedAt)) return '';
+
+  const unit = unitLabel(Store.getSettings().unit);
+  const volume = done.reduce((sum, w) => sum + workoutVolume(w), 0);
+  const minutes = done.reduce((sum, w) => sum + (new Date(w.finishedAt) - new Date(w.startedAt)) / 60000, 0);
+  const trainedDays = new Set(done.map((w) => (new Date(w.startedAt).getDay() + 6) % 7));
+
+  const dots = ['M', 'D', 'M', 'D', 'F', 'S', 'S'].map((label, i) => `
+    <span class="week-day ${trainedDays.has(i) ? 'on' : ''} ${i === (now.getDay() + 6) % 7 ? 'today' : ''}">
+      <span class="week-dot"></span>${label}
+    </span>`).join('');
+
+  return `
+    <section class="card week-card">
+      <div class="section-title">Diese Woche</div>
+      <div class="week-strip">${dots}</div>
+      <div class="stat-row">
+        <div><span class="stat-value">${done.length}</span><span class="muted small">Trainings</span></div>
+        <div><span class="stat-value">${formatVolume(volume)}</span><span class="muted small">Volumen (${unit})</span></div>
+        <div><span class="stat-value">${Math.round(minutes)}</span><span class="muted small">Minuten</span></div>
+      </div>
+    </section>`;
+}
+
+function workoutVolume(workout) {
+  return workout.entries.reduce((sum, e) =>
+    sum + e.sets.filter((s) => s.done).reduce((n, s) => n + (s.weight || 0) * (s.reps || 0), 0), 0);
+}
+
+function formatVolume(value) {
+  return Math.round(value).toLocaleString('de-DE');
 }
 
 function bindStartEvents() {
@@ -503,6 +544,7 @@ function renderWorkout() {
           value="${s.suggested ? s.reps : (s.reps || '')}" data-field="reps" data-ei="${ei}" data-si="${si}" />
         <button class="check-btn ${s.done ? 'on' : ''}" data-action="toggle-set" data-ei="${ei}" data-si="${si}">${Icon.check}</button>
         <button class="icon-btn small" data-action="remove-set" data-ei="${ei}" data-si="${si}">${Icon.close}</button>
+        ${s.pr ? '<span class="pr-badge">PR</span>' : ''}
       </div>`).join('');
 
     return `
@@ -536,7 +578,128 @@ function renderWorkout() {
         <button class="btn btn-secondary full" data-action="add-exercise-to-workout">${Icon.plus} Übung hinzufügen</button>
         <button class="btn btn-primary full" data-action="finish-workout">Training beenden</button>
       </main>
+      <div id="rest-slot"></div>
     </div>`;
+}
+
+// Rekord-Markierung für eine Übung neu bestimmen: ausgezeichnet wird der
+// beste abgeschlossene Satz dieser Einheit – aber nur, wenn er auch alles
+// übertrifft, was für die Übung bereits im Verlauf steht. Es wird immer die
+// ganze Übung neu bewertet, damit eine Markierung mitwandert (oder verfällt),
+// sobald ein stärkerer Satz dazukommt oder der bisher beste entfernt wird.
+function refreshPrFlags(workout, ei) {
+  const entry = workout.entries[ei];
+  const historyBest = Store.getWorkouts()
+    .filter((w) => w.finishedAt && w.id !== workout.id)
+    .flatMap((w) => w.entries.filter((e) => e.exerciseId === entry.exerciseId))
+    .flatMap((e) => e.sets.filter((s) => s.done))
+    .reduce((best, s) => Math.max(best, estimate1RM(s.weight, s.reps)), 0);
+
+  let bestIndex = -1;
+  let bestValue = historyBest;
+  entry.sets.forEach((set, i) => {
+    set.pr = false;
+    if (!set.done) return;
+    const value = estimate1RM(set.weight, set.reps);
+    if (value > bestValue) { bestValue = value; bestIndex = i; }
+  });
+  if (bestIndex >= 0) entry.sets[bestIndex].pr = true;
+  return bestIndex;
+}
+
+function updatePrBadges(entry, ei) {
+  entry.sets.forEach((set, si) => {
+    const row = qs(`.set-row[data-ei="${ei}"][data-si="${si}"]`);
+    if (!row) return;
+    const existing = qs('.pr-badge', row);
+    if (!!set.pr === !!existing) return;
+    if (!set.pr) { existing.remove(); return; }
+    const badge = document.createElement('span');
+    badge.className = 'pr-badge item-in';
+    badge.textContent = 'PR';
+    row.append(badge); // absolut positioniert – verschiebt das Spaltenraster nicht
+  });
+}
+
+// ---- Satzpause ----
+// Nach dem Abhaken eines Satzes läuft (falls eingeschaltet) eine Pause. Die
+// Leiste wird direkt ins DOM gehängt statt über render(), damit das Abhaken
+// re-render-frei bleibt und die Animationen sauber durchlaufen.
+function restBarHtml(remaining, duration) {
+  const pct = Math.max(0, Math.min(100, (remaining / duration) * 100));
+  return `
+    <div class="rest-bar" id="rest-bar">
+      <div class="rest-fill" id="rest-fill" style="width:${pct}%"></div>
+      <div class="rest-content">
+        <span class="rest-label">Pause</span>
+        <span class="rest-time" id="rest-time">${formatClock(remaining)}</span>
+        <button class="rest-btn" data-action="rest-adjust" data-delta="-15">−15</button>
+        <button class="rest-btn" data-action="rest-adjust" data-delta="15">+15</button>
+        <button class="rest-btn primary" data-action="rest-skip">Fertig</button>
+      </div>
+    </div>`;
+}
+
+function formatClock(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function startRest() {
+  const seconds = Store.getSettings().restSeconds;
+  if (!seconds) return;
+  Store.setRest({ endsAt: Date.now() + seconds * 1000, duration: seconds });
+  syncRestBar();
+}
+
+function adjustRest(delta) {
+  const rest = Store.getRest();
+  if (!rest) return;
+  const endsAt = Math.max(Date.now() + 1000, rest.endsAt + delta * 1000);
+  const duration = Math.max(rest.duration + delta, Math.round((endsAt - Date.now()) / 1000));
+  Store.setRest({ endsAt, duration });
+  syncRestBar();
+}
+
+function stopRest() {
+  Store.setRest(null);
+  const bar = qs('#rest-bar');
+  if (!bar) return;
+  bar.classList.add('leaving');
+  setTimeout(() => bar.remove(), 240);
+}
+
+// Baut die Leiste auf, entfernt sie oder aktualisiert nur die Zahl – je
+// nachdem, was gerade nötig ist.
+function syncRestBar() {
+  const slot = qs('#rest-slot');
+  if (!slot) return;
+  const rest = Store.getRest();
+  const bar = qs('#rest-bar');
+
+  if (!rest) {
+    if (bar && !bar.classList.contains('leaving')) {
+      bar.classList.add('leaving');
+      setTimeout(() => bar.remove(), 240);
+      toast('Pause vorbei 🔔');
+    }
+    return;
+  }
+
+  const remaining = (rest.endsAt - Date.now()) / 1000;
+  if (!bar) {
+    slot.innerHTML = restBarHtml(remaining, rest.duration);
+    bindRestEvents();
+    return;
+  }
+  qs('#rest-time').textContent = formatClock(remaining);
+  qs('#rest-fill').style.width = `${Math.max(0, Math.min(100, (remaining / rest.duration) * 100))}%`;
+}
+
+function bindRestEvents() {
+  qsa('[data-action="rest-adjust"]').forEach((btn) =>
+    btn.addEventListener('click', () => adjustRest(+btn.dataset.delta)));
+  qs('[data-action="rest-skip"]')?.addEventListener('click', stopRest);
 }
 
 function bindWorkoutEvents() {
@@ -590,13 +753,17 @@ function bindWorkoutEvents() {
     set.done = !set.done;
     // Abhaken ohne eigene Eingabe übernimmt den grauen Vorschlagswert als echten Wert.
     if (set.done) set.suggested = false;
+    const prIndex = refreshPrFlags(w, ei);
     Store.setActive(w);
     // Bewusst KEIN render(): ein Neuaufbau würde den Knopf durch ein frisches,
     // unanimiertes Element ersetzen – die Feder-Animation am Haken liefe nie.
     // Lokal umschalten ist außerdem spürbar direkter.
+    const row = btn.closest('.set-row');
     btn.classList.toggle('on', set.done);
-    btn.closest('.set-row')?.classList.toggle('done', set.done);
+    row?.classList.toggle('done', set.done);
     qsa(`.set-input[data-ei="${ei}"][data-si="${si}"]`).forEach((el) => el.classList.remove('suggested'));
+    updatePrBadges(w.entries[ei], ei);
+    if (set.done) { startRest(); if (prIndex === si) toast('Neuer Rekord 🏆'); }
   }));
   qsa('[data-action="remove-exercise"]').forEach((btn) => btn.addEventListener('click', () => {
     const w = getActive(); const ei = +btn.dataset.ei;
@@ -859,11 +1026,17 @@ function openWorkoutDetailSheet(id) {
     <div class="detail-exercise">
       <strong>${escapeHtml(e.exerciseName)}</strong>
       <div class="detail-sets">
-        ${e.sets.filter((s) => s.done).map((s, i) => `<span class="set-chip">${i + 1}. ${s.weight}${unit} × ${s.reps}</span>`).join('') || '<span class="muted small">Keine Sätze</span>'}
+        ${e.sets.filter((s) => s.done).map((s, i) => `<span class="set-chip ${s.pr ? 'pr' : ''}">${i + 1}. ${s.weight}${unit} × ${s.reps}${s.pr ? ' 🏆' : ''}</span>`).join('') || '<span class="muted small">Keine Sätze</span>'}
       </div>
     </div>`).join('');
+  const doneSets = w.entries.reduce((n, e) => n + e.sets.filter((s) => s.done).length, 0);
   openSheet(escapeHtml(w.routineName || 'Freies Training'), `
-    <p class="muted">${formatDateTime(w.startedAt)} · ${formatDuration(new Date(w.finishedAt) - new Date(w.startedAt))}</p>
+    <p class="muted">${formatDateTime(w.startedAt)}</p>
+    <div class="card stat-row detail-stats">
+      <div><span class="stat-value">${formatDuration(new Date(w.finishedAt) - new Date(w.startedAt))}</span><span class="muted small">Dauer</span></div>
+      <div><span class="stat-value">${doneSets}</span><span class="muted small">Sätze</span></div>
+      <div><span class="stat-value">${formatVolume(workoutVolume(w))}</span><span class="muted small">Volumen (${unit})</span></div>
+    </div>
     ${body}
   `, {
     footer: `<button class="btn btn-ghost danger full" data-action="delete-workout" data-id="${w.id}">${Icon.trash} Training löschen</button>`,
@@ -1026,9 +1199,38 @@ function bindLibraryEvents() {
   }
 }
 
+// Beste je geschaffte Leistung einer Übung, damit man beim Nachschlagen
+// nicht erst in den Verlauf wechseln muss.
+function exerciseBestHtml(exerciseId) {
+  const unit = unitLabel(Store.getSettings().unit);
+  let best = null;
+  let bestDate = null;
+  let sessions = 0;
+  Store.getWorkouts().filter((w) => w.finishedAt).forEach((w) => {
+    const entries = w.entries.filter((e) => e.exerciseId === exerciseId);
+    if (!entries.length) return;
+    const top = bestSet(entries.flatMap((e) => e.sets));
+    if (!top) return;
+    sessions += 1;
+    if (!best || estimate1RM(top.weight, top.reps) > estimate1RM(best.weight, best.reps)) {
+      best = top;
+      bestDate = w.startedAt;
+    }
+  });
+  if (!best) return '';
+  return `
+    <div class="card stat-row detail-stats">
+      <div><span class="stat-value">${best.weight}${unit}</span><span class="muted small">Bestes Gewicht</span></div>
+      <div><span class="stat-value">${best.reps}</span><span class="muted small">bei Wdh</span></div>
+      <div><span class="stat-value">${sessions}</span><span class="muted small">Einheiten</span></div>
+    </div>
+    <p class="muted small">Bestleistung am ${formatDate(bestDate)}</p>`;
+}
+
 function openExerciseSheet(id) {
   const ex = id ? Store.getExercise(id) : { id: uid(), name: '', muscleGroup: MUSCLE_GROUPS[0], notes: '' };
   openSheet(id ? 'Übung bearbeiten' : 'Neue Übung', `
+    ${id ? exerciseBestHtml(ex.id) : ''}
     <label class="field-label">Name</label>
     <input type="text" id="f-name" class="text-input" value="${escapeHtml(ex.name)}" placeholder="z.B. Bankdrücken" autofocus />
     <label class="field-label">Muskelgruppe</label>
@@ -1226,6 +1428,16 @@ function renderSettings() {
       </div>
     </section>
     <section class="card">
+      <div class="section-title">Pause zwischen Sätzen</div>
+      <div class="chip-row">
+        ${REST_OPTIONS.map((s) => `
+          <button class="chip ${settings.restSeconds === s ? 'active' : ''}" data-action="set-rest" data-seconds="${s}">
+            ${s === 0 ? 'Aus' : `${s}s`}
+          </button>`).join('')}
+      </div>
+      <p class="muted small">Startet automatisch, sobald du einen Satz abhakst.</p>
+    </section>
+    <section class="card">
       <div class="toggle-row">
         <div>
           <strong>Progressive Overload</strong>
@@ -1261,6 +1473,10 @@ function bindSettingsEvents() {
   qsa('[data-action="set-unit"]').forEach((btn) => btn.addEventListener('click', () => {
     Store.saveSettings({ ...Store.getSettings(), unit: btn.dataset.unit });
     render();
+  }));
+  qsa('[data-action="set-rest"]').forEach((btn) => btn.addEventListener('click', () => {
+    Store.saveSettings({ ...Store.getSettings(), restSeconds: +btn.dataset.seconds });
+    qsa('[data-action="set-rest"]').forEach((b) => b.classList.toggle('active', b === btn));
   }));
   qs('#toggle-overload')?.addEventListener('change', (e) => {
     Store.saveSettings({ ...Store.getSettings(), progressiveOverload: e.target.checked });

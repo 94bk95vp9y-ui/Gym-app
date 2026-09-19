@@ -488,6 +488,7 @@ button, input, select, textarea {
 
 /* Workout-Ansicht – wird wie ein iOS-Modal von unten hereingeschoben */
 .workout-screen {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -524,6 +525,7 @@ button, input, select, textarea {
   align-items: center;
   gap: 6px;
   padding: 4px 0;
+  position: relative;
   transition: opacity 0.25s ease;
 }
 .set-row.done { opacity: 0.6; }
@@ -555,6 +557,113 @@ button, input, select, textarea {
 .check-btn svg { width: 16px; height: 16px; }
 .check-btn.on { background: var(--success); border-color: var(--success); color: white; transform: scale(1.08); }
 .check-btn:active { transform: scale(0.88); }
+
+/* Satzpause: Leiste am unteren Rand der Trainingsansicht */
+.rest-bar {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: calc(var(--safe-bottom) + 14px);
+  height: 52px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg-elevated);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  box-shadow: var(--shadow-md);
+  z-index: 8;
+  animation: rest-in 0.34s cubic-bezier(0.32, 1.25, 0.5, 1) both;
+}
+.rest-bar.leaving { animation: rest-out 0.22s ease forwards; }
+@keyframes rest-in { from { opacity: 0; transform: translateY(70px); } to { opacity: 1; transform: none; } }
+@keyframes rest-out { to { opacity: 0; transform: translateY(30px); } }
+.rest-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  transition: width 1s linear;
+}
+.rest-content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 12px;
+}
+.rest-label { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.rest-time {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  margin-right: auto;
+}
+.rest-btn {
+  border: none;
+  background: var(--bg-input);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 7px 11px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.rest-btn:active { transform: scale(0.9); }
+.rest-btn.primary { background: var(--accent); color: var(--accent-contrast); }
+
+/* Rekord-Markierung an einer Satzzeile */
+.pr-badge {
+  position: absolute;
+  top: -3px;
+  left: 14px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  pointer-events: none;
+}
+.set-chip.pr { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-weight: 600; }
+
+/* Wochenübersicht auf dem Start-Tab */
+.week-strip { display: flex; justify-content: space-between; margin: 2px 0 14px; }
+.week-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.week-dot {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--bg-input);
+  transition: background 0.2s, transform 0.2s;
+}
+.week-day.on .week-dot { background: var(--accent); transform: scale(1.05); }
+.week-day.today { color: var(--text); font-weight: 700; }
+.week-day.today .week-dot { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+.detail-stats { margin-bottom: 6px; }
+
+/* Auswahl-Chips (z.B. Pausenlänge) */
+.chip-row { display: flex; gap: 6px; }
+.chip {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 9px 4px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.2s, color 0.2s, transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:active { transform: scale(0.94); }
+.chip.active { background: var(--accent); color: var(--accent-contrast); border-color: transparent; }
 
 /* Fortschritt / Chart */
 .chart { width: 100%; height: 180px; display: block; }

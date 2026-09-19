@@ -10,6 +10,7 @@ const KEYS = {
   active: 'gym.active',
   settings: 'gym.settings',
   catalogVersion: 'gym.catalogVersion',
+  rest: 'gym.rest',
 };
 
 function read(key, fallback) {
@@ -44,7 +45,15 @@ export const ACCENT_COLORS = [
   { id: 'emerald', label: 'Smaragd', value: '#12a454' },
 ];
 
-const DEFAULT_SETTINGS = { unit: 'kg', accent: ACCENT_COLORS[0].value, progressiveOverload: false };
+// restSeconds: 0 schaltet den Pausentimer ab.
+const DEFAULT_SETTINGS = {
+  unit: 'kg',
+  accent: ACCENT_COLORS[0].value,
+  progressiveOverload: false,
+  restSeconds: 90,
+};
+
+export const REST_OPTIONS = [0, 60, 90, 120, 180];
 
 function seedIfEmpty() {
   if (read(KEYS.exercises, null) === null) {
@@ -153,6 +162,19 @@ export const Store = {
   },
   clearActive() {
     localStorage.removeItem(KEYS.active);
+    localStorage.removeItem(KEYS.rest);
+  },
+
+  // Laufende Satzpause – überlebt bewusst auch ein Neuladen der App,
+  // damit die Pause beim Zurückkehren noch stimmt.
+  getRest() {
+    const rest = read(KEYS.rest, null);
+    if (!rest || rest.endsAt <= Date.now()) return null;
+    return rest;
+  },
+  setRest(rest) {
+    if (rest) write(KEYS.rest, rest);
+    else localStorage.removeItem(KEYS.rest);
   },
 
   // Einstellungen
