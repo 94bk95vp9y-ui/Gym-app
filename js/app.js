@@ -16,6 +16,8 @@ const state = {
   progressExerciseId: null,
   workoutOpen: false,
   workoutAddExerciseQuery: '',
+  calendarYear: new Date().getFullYear(),
+  calendarMonth: new Date().getMonth(),
 };
 
 let tickInterval = null;
@@ -27,14 +29,56 @@ function applyAccent() {
   document.documentElement.style.setProperty('--accent', Store.getSettings().accent);
 }
 
+// Progressive Overload (opt-in in den Einstellungen): klassische
+// "Doppelprogression" – wer eine Übung in den letzten 2 abgeschlossenen
+// Einheiten jeweils bei GLEICHEM Gewicht und durchweg ≥10 Wiederholungen
+// geschafft hat, ist bereit für mehr Gewicht. Größere Grundübungen
+// (Beine/Rücken/Brust) bekommen einen größeren Sprung als Isolationsübungen,
+// und der Schritt richtet sich nach der eingestellten Einheit.
+const OVERLOAD_REP_THRESHOLD = 10;
+const OVERLOAD_BIG_LIFT_GROUPS = ['Beine', 'Rücken', 'Brust'];
+
+function overloadStep(muscleGroup, unit) {
+  const big = OVERLOAD_BIG_LIFT_GROUPS.includes(muscleGroup);
+  if (unit === 'lb') return big ? 10 : 5;
+  return big ? 5 : 2.5;
+}
+
+function getOverloadSuggestion(exercise, excludeWorkoutId) {
+  if (!exercise) return null;
+  const sessions = Store.getWorkouts()
+    .filter((w) => w.finishedAt && w.id !== excludeWorkoutId)
+    .map((w) => w.entries.find((e) => e.exerciseId === exercise.id))
+    .filter((e) => e && e.sets.some((s) => s.done))
+    .slice(0, 2);
+  if (sessions.length < 2) return null;
+
+  const analyzed = sessions.map((entry) => {
+    const done = entry.sets.filter((s) => s.done && s.weight > 0);
+    if (!done.length) return null;
+    const weight = done[0].weight;
+    const sameWeight = done.every((s) => s.weight === weight);
+    const hitThreshold = done.every((s) => s.reps >= OVERLOAD_REP_THRESHOLD);
+    return sameWeight && hitThreshold ? { weight } : null;
+  });
+  if (!analyzed[0] || !analyzed[1] || analyzed[0].weight !== analyzed[1].weight) return null;
+
+  const unit = Store.getSettings().unit;
+  const step = overloadStep(exercise.muscleGroup, unit);
+  return { from: analyzed[0].weight, to: Math.round((analyzed[0].weight + step) * 10) / 10, threshold: OVERLOAD_REP_THRESHOLD };
+}
+
 // Neue Übung im Training: startet mit 2 Sätzen. Gibt es ein letztes Mal für diese
 // Übung, werden Gewicht/Wdh davon als "Vorschlag" vorbelegt (grau, bis bestätigt) –
-// sonst leer.
-function defaultSets(exerciseId, excludeWorkoutId) {
-  const last = Store.lastEntryForExercise(exerciseId, excludeWorkoutId);
+// sonst leer. Ist Progressive Overload aktiv und die Übung bereit für mehr
+// Gewicht, wird direkt das gesteigerte Gewicht als Vorschlag genommen.
+function defaultSets(exercise, excludeWorkoutId) {
+  const last = Store.lastEntryForExercise(exercise.id, excludeWorkoutId);
   const best = last ? bestSet(last.sets) : null;
+  const overload = Store.getSettings().progressiveOverload ? getOverloadSuggestion(exercise, excludeWorkoutId) : null;
+  const weight = overload ? overload.to : (best ? best.weight : 0);
   return [0, 1].map(() => ({
-    weight: best ? best.weight : 0,
+    weight,
     reps: best ? best.reps : 0,
     done: false,
     suggested: !!best,
@@ -113,12 +157,27 @@ function startTicking(fn) {
 // Animation dabei jedes Mal erneut abspielen und wie ein Neuladen wirken.
 let workoutEntering = false;
 
+// render() ersetzt bei jeder Änderung das komplette innerHTML, wodurch ein
+// brandneues .view-Element entsteht, das immer bei scrollTop 0 startet – ohne
+// Gegenmaßnahme würde z.B. ein Satz-Haken mitten in einer langen Übungsliste
+// die Seite jedes Mal nach oben springen lassen. Deshalb: Scroll-Position nur
+// dann übernehmen, wenn es sich um den GLEICHEN Screen handelt (reine
+// Datenänderung), nicht bei echter Navigation zu einer anderen Ansicht.
+let lastRenderKey = null;
+
 function render() {
   stopTicking();
+  const key = `${state.tab}:${state.workoutOpen}:${state.historySubTab}:${state.librarySubTab}`;
+  const prevView = qs('.view');
+  const scrollTop = key === lastRenderKey && prevView ? prevView.scrollTop : 0;
+  lastRenderKey = key;
+
   if (state.workoutOpen && Store.getActive()) {
     root.innerHTML = renderWorkout();
     workoutEntering = false;
     bindWorkoutEvents();
+    const newView = qs('.view');
+    if (newView) newView.scrollTop = scrollTop;
     startTicking(() => {
       const el = qs('#workout-timer');
       const active = Store.getActive();
@@ -141,6 +200,8 @@ function render() {
       ${tabButton('settings', Icon.settings, 'Einstellungen')}
       <span class="tab-indicator" aria-hidden="true"></span>
     </nav>`;
+  const newView = qs('.view');
+  if (newView) newView.scrollTop = scrollTop;
 
   bindGlobalEvents();
   if (state.tab === 'start') bindStartEvents();
@@ -241,7 +302,7 @@ function bindStartEvents() {
     if (!routine) return;
     const entries = routine.exerciseIds.map((eid) => {
       const ex = Store.getExercise(eid);
-      return { exerciseId: eid, exerciseName: ex ? ex.name : 'Unbekannt', sets: defaultSets(eid) };
+      return { exerciseId: eid, exerciseName: ex ? ex.name : 'Unbekannt', sets: ex ? defaultSets(ex) : [] };
     });
     Store.setActive({ id: uid(), routineId: routine.id, routineName: routine.name, startedAt: new Date().toISOString(), finishedAt: null, entries });
     state.workoutOpen = true;
@@ -265,9 +326,11 @@ function bindStartEvents() {
 function renderWorkout() {
   const w = Store.getActive();
   const unit = unitLabel(Store.getSettings().unit);
+  const overloadOn = Store.getSettings().progressiveOverload;
   const entries = w.entries.map((entry, ei) => {
     const last = Store.lastEntryForExercise(entry.exerciseId, w.id);
     const lastBest = last ? bestSet(last.sets) : null;
+    const overload = overloadOn ? getOverloadSuggestion(Store.getExercise(entry.exerciseId), w.id) : null;
     const sets = entry.sets.map((s, si) => `
       <div class="set-row ${s.done ? 'done' : ''}">
         <span class="set-index">${si + 1}</span>
@@ -287,6 +350,7 @@ function renderWorkout() {
           <button class="icon-btn small danger" data-action="remove-exercise" data-ei="${ei}">${Icon.trash}</button>
         </div>
         ${last ? `<p class="muted small">Letztes Mal: ${lastBest ? `${lastBest.weight}${unit} × ${lastBest.reps}` : '—'}</p>` : ''}
+        ${overload ? `<p class="overload-tip">💪 ${overload.threshold}+ Wdh bei ${overload.from}${unit} in Folge – neues Ziel ${overload.to}${unit}</p>` : ''}
         <div class="set-header-row">
           <span class="set-index"></span><span>${unit}</span><span></span><span>Wdh</span><span></span><span></span>
         </div>
@@ -409,7 +473,7 @@ function openAddExerciseToWorkoutSheet() {
           const w2 = Store.getActive();
           const ex = Store.getExercise(btn.dataset.id);
           if (!ex || w2.entries.some((e) => e.exerciseId === ex.id)) { closeSheet(); return; }
-          w2.entries.push({ exerciseId: ex.id, exerciseName: ex.name, sets: defaultSets(ex.id, w2.id) });
+          w2.entries.push({ exerciseId: ex.id, exerciseName: ex.name, sets: defaultSets(ex, w2.id) });
           Store.setActive(w2);
           closeSheet();
           render();
@@ -428,7 +492,45 @@ function renderHistory() {
       <button class="${sub === 'progress' ? 'active' : ''}" data-action="history-sub" data-sub="progress">Fortschritt</button>
       <span class="segmented-thumb" aria-hidden="true"></span>
     </div>
-    ${sub === 'log' ? renderHistoryLog() : renderProgress()}`;
+    ${sub === 'log' ? renderCalendar() + renderHistoryLog() : renderProgress()}`;
+}
+
+// Simpler Monatskalender: markiert Tage, an denen ein Training abgeschlossen wurde.
+function renderCalendar() {
+  const { calendarYear: year, calendarMonth: month } = state;
+  const first = new Date(year, month, 1);
+  const startWeekday = (first.getDay() + 6) % 7; // Woche beginnt Montag
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today = new Date();
+
+  const workoutDays = new Set(
+    Store.getWorkouts().filter((w) => w.finishedAt).map((w) => {
+      const d = new Date(w.startedAt);
+      return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    }),
+  );
+
+  const monthLabel = first.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+  const weekdayLabels = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+
+  let cells = '';
+  for (let i = 0; i < startWeekday; i++) cells += '<span class="cal-cell empty"></span>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const hasWorkout = workoutDays.has(`${year}-${month}-${d}`);
+    const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
+    cells += `<span class="cal-cell ${hasWorkout ? 'has-workout' : ''} ${isToday ? 'today' : ''}">${d}</span>`;
+  }
+
+  return `
+    <div class="card calendar">
+      <div class="calendar-header">
+        <button class="icon-btn small" data-action="cal-prev" aria-label="Vorheriger Monat">${Icon.chevron}</button>
+        <strong>${monthLabel}</strong>
+        <button class="icon-btn small" data-action="cal-next" aria-label="Nächster Monat">${Icon.chevron}</button>
+      </div>
+      <div class="calendar-weekdays">${weekdayLabels.map((w) => `<span>${w}</span>`).join('')}</div>
+      <div class="calendar-grid">${cells}</div>
+    </div>`;
 }
 
 function renderHistoryLog() {
@@ -489,6 +591,16 @@ function bindHistoryEvents() {
   }));
   qs('#history-segmented')?.addEventListener('pointerdown', historySwipe.onPointerDown);
   qsa('[data-action="open-workout"]').forEach((btn) => btn.addEventListener('click', () => openWorkoutDetailSheet(btn.dataset.id)));
+  qs('[data-action="cal-prev"]')?.addEventListener('click', () => {
+    state.calendarMonth -= 1;
+    if (state.calendarMonth < 0) { state.calendarMonth = 11; state.calendarYear -= 1; }
+    render();
+  });
+  qs('[data-action="cal-next"]')?.addEventListener('click', () => {
+    state.calendarMonth += 1;
+    if (state.calendarMonth > 11) { state.calendarMonth = 0; state.calendarYear += 1; }
+    render();
+  });
 
   if (state.historySubTab === 'progress') {
     qs('#progress-select')?.addEventListener('change', (e) => { state.progressExerciseId = e.target.value; render(); });
@@ -780,6 +892,18 @@ function renderSettings() {
         `).join('')}
       </div>
     </section>
+    <section class="card">
+      <div class="toggle-row">
+        <div>
+          <strong>Progressive Overload</strong>
+          <p class="muted small">Schlägt vor, das Gewicht zu erhöhen, sobald du eine Übung in den letzten 2 Einheiten bei gleichem Gewicht mit durchweg 10+ Wiederholungen geschafft hast.</p>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggle-overload" ${settings.progressiveOverload ? 'checked' : ''} />
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+    </section>
     <section class="card list">
       <button class="list-item selectable" data-action="export-data">
         <div class="list-item-main"><strong>Daten exportieren</strong><span class="muted">Backup als JSON-Datei speichern</span></div>
@@ -805,6 +929,9 @@ function bindSettingsEvents() {
     Store.saveSettings({ ...Store.getSettings(), unit: btn.dataset.unit });
     render();
   }));
+  qs('#toggle-overload')?.addEventListener('change', (e) => {
+    Store.saveSettings({ ...Store.getSettings(), progressiveOverload: e.target.checked });
+  });
   qsa('[data-action="set-accent"]').forEach((btn) => btn.addEventListener('click', () => {
     Store.saveSettings({ ...Store.getSettings(), accent: btn.dataset.color });
     applyAccent();

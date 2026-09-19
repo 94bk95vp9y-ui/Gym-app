@@ -48,7 +48,7 @@ export const ACCENT_COLORS = [
   { id: 'emerald', label: 'Smaragd', value: '#12a454' },
 ];
 
-const DEFAULT_SETTINGS = { unit: 'kg', accent: ACCENT_COLORS[0].value };
+const DEFAULT_SETTINGS = { unit: 'kg', accent: ACCENT_COLORS[0].value, progressiveOverload: false };
 
 function seedIfEmpty() {
   if (read(KEYS.exercises, null) === null) write(KEYS.exercises, DEFAULT_EXERCISES);
