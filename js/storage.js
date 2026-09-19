@@ -1,10 +1,15 @@
 // Datenlayer: alles liegt in localStorage, die App läuft rein clientseitig.
+import { EXERCISE_CATALOG, MUSCLE_GROUPS } from './exercise-catalog.js';
+
+export { MUSCLE_GROUPS };
+
 const KEYS = {
   exercises: 'gym.exercises',
   routines: 'gym.routines',
   workouts: 'gym.workouts',
   active: 'gym.active',
   settings: 'gym.settings',
+  catalogVersion: 'gym.catalogVersion',
 };
 
 function read(key, fallback) {
@@ -24,18 +29,9 @@ export function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-const DEFAULT_EXERCISES = [
-  { id: uid(), name: 'Bankdrücken', muscleGroup: 'Brust', notes: '' },
-  { id: uid(), name: 'Kniebeuge', muscleGroup: 'Beine', notes: '' },
-  { id: uid(), name: 'Kreuzheben', muscleGroup: 'Rücken', notes: '' },
-  { id: uid(), name: 'Klimmzug', muscleGroup: 'Rücken', notes: '' },
-  { id: uid(), name: 'Schulterdrücken', muscleGroup: 'Schultern', notes: '' },
-  { id: uid(), name: 'Bizepscurl', muscleGroup: 'Bizeps', notes: '' },
-];
-
-export const MUSCLE_GROUPS = [
-  'Brust', 'Rücken', 'Beine', 'Schultern', 'Bizeps', 'Trizeps', 'Bauch', 'Cardio', 'Sonstiges',
-];
+// Wird hochgezählt, wenn neue Übungen in den Katalog kommen: bestehende
+// Bibliotheken bekommen sie dann einmalig nachgeliefert.
+const CATALOG_VERSION = 1;
 
 // Bewusst keine Standard-Rot/Blau/Grün-Töne, sondern ein paar kräftige,
 // unverwechselbare Akzentfarben, die alle mit weißer Schrift gut lesbar bleiben.
@@ -51,12 +47,37 @@ export const ACCENT_COLORS = [
 const DEFAULT_SETTINGS = { unit: 'kg', accent: ACCENT_COLORS[0].value, progressiveOverload: false };
 
 function seedIfEmpty() {
-  if (read(KEYS.exercises, null) === null) write(KEYS.exercises, DEFAULT_EXERCISES);
+  if (read(KEYS.exercises, null) === null) {
+    write(KEYS.exercises, EXERCISE_CATALOG.map((e) => ({ ...e })));
+    write(KEYS.catalogVersion, CATALOG_VERSION);
+  }
   if (read(KEYS.routines, null) === null) write(KEYS.routines, []);
   if (read(KEYS.workouts, null) === null) write(KEYS.workouts, []);
   if (read(KEYS.settings, null) === null) write(KEYS.settings, DEFAULT_SETTINGS);
 }
+
+// Namen normalisieren, damit "Bankdrücken" aus einer alten Installation nicht
+// neben "Bankdrücken (Langhantel)" ... – exakte Dubletten aber sicher erkannt
+// und nicht ein zweites Mal angelegt werden.
+function normalizeName(name) {
+  return String(name).toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+// Bestehende Bibliotheken bekommen neue Katalog-Übungen nachgeliefert, ohne
+// dass eigene Übungen, IDs oder deren Historie angefasst werden.
+function mergeCatalog() {
+  if (read(KEYS.catalogVersion, 0) >= CATALOG_VERSION) return;
+  const existing = read(KEYS.exercises, []);
+  const known = new Set(existing.map((e) => normalizeName(e.name)));
+  const additions = EXERCISE_CATALOG
+    .filter((e) => !known.has(normalizeName(e.name)))
+    .map((e) => ({ ...e }));
+  if (additions.length) write(KEYS.exercises, [...existing, ...additions]);
+  write(KEYS.catalogVersion, CATALOG_VERSION);
+}
+
 seedIfEmpty();
+mergeCatalog();
 
 export const Store = {
   // Übungen
@@ -157,6 +178,9 @@ export const Store = {
     if (data.routines) write(KEYS.routines, data.routines);
     if (data.workouts) write(KEYS.workouts, data.workouts);
     if (data.settings) write(KEYS.settings, data.settings);
+    // Das Backup ist maßgeblich: gelöschte Katalog-Übungen sollen durch den
+    // Import nicht wieder auftauchen.
+    write(KEYS.catalogVersion, CATALOG_VERSION);
   },
   wipeAll() {
     Object.values(KEYS).forEach((k) => localStorage.removeItem(k));

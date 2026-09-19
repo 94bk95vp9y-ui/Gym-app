@@ -239,6 +239,43 @@ button, input, select, textarea {
 .list-item svg { width: 18px; height: 18px; color: var(--text-secondary); flex-shrink: 0; }
 .list-item.danger strong { color: var(--danger); }
 
+/* Übungsliste: Suche + aufklappbare Muskelgruppen */
+.ex-groups { display: flex; flex-direction: column; gap: 8px; }
+.ex-group-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  text-align: left;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+.ex-group-header:active { transform: scale(0.985); background: color-mix(in srgb, var(--text) 5%, var(--bg-elevated)); }
+.ex-group-header strong { flex: 1; font-size: 15px; }
+.ex-group-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+.ex-group-chevron { display: flex; color: var(--text-secondary); }
+.ex-group-chevron svg { width: 18px; height: 18px; transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1); }
+.ex-group.open .ex-group-chevron svg { transform: rotate(90deg); }
+.ex-group-body { height: 0; overflow: hidden; }
+.ex-group.open > .ex-group-body { height: auto; }
+.ex-group-body > .card { margin-top: 6px; }
+
+.search-input { margin-bottom: 0; }
+.search-input::-webkit-search-cancel-button { -webkit-appearance: none; }
+
 .muted { color: var(--text-secondary); font-size: 13px; }
 .muted.small, p.empty.small { font-size: 12px; }
 .empty { color: var(--text-secondary); font-size: 14px; text-align: center; padding: 18px 8px; }
@@ -400,6 +437,7 @@ button, input, select, textarea {
   background: var(--bg-input);
   color: var(--text-secondary);
 }
+.pill-chosen { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
 .pill-live { background: var(--accent); color: var(--accent-contrast); }
 .pill-live::before {
   content: "";
@@ -583,6 +621,11 @@ select.text-input { appearance: none; -webkit-appearance: none; }
 .sheet-header h2 { font-size: 17px; margin: 0; font-weight: 700; }
 .sheet-body { padding: 14px 16px; overflow-y: auto; }
 .sheet-body .card + .btn { margin-top: 12px; }
+.sheet-body.sheet-content-in { animation: sheet-content-in 0.26s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes sheet-content-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .sheet-footer { padding: 4px 16px 16px; display: flex; flex-direction: column; gap: 8px; }
 
 /* Toasts */

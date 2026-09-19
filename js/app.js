@@ -85,6 +85,58 @@ function defaultSets(exercise, excludeWorkoutId) {
   }));
 }
 
+const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+function prefersReducedMotion() { return reducedMotionQuery.matches; }
+
+// Sheet nach unten wegwischen, wie in iOS: der Griff (und der Kopfbereich)
+// folgt 1:1 dem Finger, beim Loslassen entscheidet Strecke ODER Schwung.
+function enableSheetDragToClose(sheetEl) {
+  if (!sheetEl) return;
+  const grabArea = () => [qs('.sheet-handle', sheetEl), qs('.sheet-header', sheetEl)];
+
+  sheetEl.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button, input, textarea, select')) return;
+    if (!grabArea().some((el) => el && el.contains(e.target))) return;
+
+    const startY = e.clientY;
+    let dy = 0;
+    let lastY = startY;
+    let lastT = performance.now();
+    let velocity = 0;
+    sheetEl.style.transition = 'none';
+
+    const onMove = (ev) => {
+      dy = Math.max(0, ev.clientY - startY);
+      const now = performance.now();
+      const dt = now - lastT;
+      if (dt > 4) {
+        velocity = velocity * 0.7 + ((ev.clientY - lastY) / dt) * 0.3;
+        lastY = ev.clientY;
+        lastT = now;
+      }
+      sheetEl.style.transform = `translateY(${dy}px)`;
+      const backdrop = qs('.sheet-backdrop', sheetRoot);
+      if (backdrop) backdrop.style.opacity = String(Math.max(0, 1 - dy / 400));
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      const shouldClose = dy > sheetEl.getBoundingClientRect().height * 0.3 || velocity > 0.7;
+      if (shouldClose) { dismissSheet(); return; }
+      sheetEl.style.transition = 'transform 0.35s cubic-bezier(0.32, 1.3, 0.4, 1)';
+      sheetEl.style.transform = '';
+      const backdrop = qs('.sheet-backdrop', sheetRoot);
+      if (backdrop) { backdrop.style.transition = 'opacity 0.25s'; backdrop.style.opacity = ''; }
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  });
+}
+
 // Weicher iOS-artiger Crossfade für bewusste Navigation (Tap auf Tab/Segment).
 // Bei Drag-Gesten wird bewusst NICHT transitioniert – da folgt die Ansicht 1:1 dem Finger.
 function go(fn) {
@@ -107,7 +159,12 @@ function toast(msg) {
   }, 2200);
 }
 
+// Wird ein Sheet über Backdrop/X geschlossen, darf das etwas anderes bedeuten
+// als "weg damit" – z.B. zurück zum Plan-Editor statt Entwurf verwerfen.
+let sheetOnDismiss = null;
+
 function closeSheet() {
+  sheetOnDismiss = null;
   const sheetEl = qs('.sheet', sheetRoot);
   const backdrop = qs('.sheet-backdrop', sheetRoot);
   if (!sheetEl) {
@@ -123,20 +180,59 @@ function closeSheet() {
   }, 240);
 }
 
-function openSheet(title, bodyHtml, { footer = '', onMount } = {}) {
-  sheetRoot.innerHTML = `
-    <div class="sheet-backdrop" data-action="close-sheet"></div>
-    <div class="sheet">
-      <div class="sheet-handle"></div>
-      <div class="sheet-header">
-        <h2>${title}</h2>
-        <button class="icon-btn" data-action="close-sheet" aria-label="Schließen">${Icon.close}</button>
-      </div>
-      <div class="sheet-body">${bodyHtml}</div>
-      ${footer ? `<div class="sheet-footer">${footer}</div>` : ''}
-    </div>`;
-  sheetRoot.classList.add('open');
+function dismissSheet() {
+  const handler = sheetOnDismiss;
+  if (handler) { sheetOnDismiss = null; handler(); return; }
+  closeSheet();
+}
+
+function openSheet(title, bodyHtml, { footer = '', onMount, onDismiss = null } = {}) {
+  sheetOnDismiss = onDismiss;
+  const inner = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <h2>${title}</h2>
+      <button class="icon-btn" data-action="close-sheet" aria-label="Schließen">${Icon.close}</button>
+    </div>
+    <div class="sheet-body">${bodyHtml}</div>
+    ${footer ? `<div class="sheet-footer">${footer}</div>` : ''}`;
+
+  const existing = qs('.sheet', sheetRoot);
+  if (existing) {
+    // Innerhalb eines offenen Sheets nur den Inhalt tauschen (z.B. Plan-Editor
+    // -> Übungsauswahl): sonst würde die Einblend-Animation jedes Mal erneut
+    // laufen und wie ein Neuladen wirken. Die Höhe wandert dabei weich mit.
+    swapSheetContent(existing, inner);
+  } else {
+    sheetRoot.innerHTML = `
+      <div class="sheet-backdrop" data-action="close-sheet"></div>
+      <div class="sheet">${inner}</div>`;
+    sheetRoot.classList.add('open');
+    enableSheetDragToClose(qs('.sheet', sheetRoot));
+  }
   if (onMount) onMount(sheetRoot);
+}
+
+function swapSheetContent(sheetEl, inner) {
+  if (prefersReducedMotion()) { sheetEl.innerHTML = inner; return; }
+  const from = sheetEl.getBoundingClientRect().height;
+  sheetEl.innerHTML = inner;
+  const to = sheetEl.getBoundingClientRect().height;
+  if (Math.abs(to - from) > 1) {
+    sheetEl.style.height = `${from}px`;
+    void sheetEl.offsetHeight;
+    sheetEl.style.transition = 'height 0.32s cubic-bezier(0.32, 0.72, 0, 1)';
+    sheetEl.style.height = `${to}px`;
+    const done = (e) => {
+      if (e.target !== sheetEl || e.propertyName !== 'height') return;
+      sheetEl.style.transition = '';
+      sheetEl.style.height = '';
+      sheetEl.removeEventListener('transitionend', done);
+    };
+    sheetEl.addEventListener('transitionend', done);
+  }
+  const body = qs('.sheet-body', sheetEl);
+  if (body) body.classList.add('sheet-content-in');
 }
 
 function stopTicking() {
@@ -449,36 +545,66 @@ function bindWorkoutEvents() {
   }));
 }
 
-function openAddExerciseToWorkoutSheet() {
-  const w = Store.getActive();
-  const usedIds = new Set(w.entries.map((e) => e.exerciseId));
-  const renderList = (query) => Store.getExercises()
-    .filter((ex) => ex.name.toLowerCase().includes(query.toLowerCase()))
-    .map((ex) => `
-      <button class="list-item selectable" data-action="pick-exercise" data-id="${ex.id}">
-        <div class="list-item-main"><strong>${escapeHtml(ex.name)}</strong><span class="muted">${ex.muscleGroup}</span></div>
-        ${usedIds.has(ex.id) ? `<span class="pill">bereits dabei</span>` : Icon.plus}
-      </button>`).join('') || '<p class="empty">Keine Übung gefunden.</p>';
+// Auswahl-Sheet für Übungen, geteilt von Training und Plan-Editor: Suche,
+// Gliederung nach Muskelgruppe und Mehrfachauswahl, ohne dass sich das Sheet
+// nach jeder Übung schließt.
+function openExercisePickerSheet({ title, isChosen, chosenLabel, onPick, onDone }) {
+  groupState.picker.query = '';
 
-  openSheet('Übung hinzufügen', `
-    <input type="text" id="ex-search" class="text-input" placeholder="Übung suchen…" autofocus />
-    <div class="card list" id="ex-pick-list">${renderList('')}</div>
+  const rowHtml = (ex) => `
+    <button class="list-item selectable" data-action="pick-exercise" data-id="${ex.id}">
+      <div class="list-item-main"><strong>${escapeHtml(ex.name)}</strong></div>
+      ${isChosen(ex.id) ? `<span class="pill pill-chosen">${chosenLabel}</span>` : Icon.plus}
+    </button>`;
+
+  const listHtml = () => groupedExercisesHtml(Store.getExercises(), {
+    query: groupState.picker.query,
+    open: groupState.picker.open,
+    rowHtml,
+  });
+
+  openSheet(title, `
+    <input type="search" id="ex-search" class="text-input search-input" placeholder="Übung suchen…" />
+    <div id="ex-pick-list" class="ex-groups">${listHtml()}</div>
   `, {
+    footer: `<button class="btn btn-secondary full" data-action="picker-done">Fertig</button>`,
+    onDismiss: onDone,
     onMount: () => {
+      qs('[data-action="picker-done"]').addEventListener('click', () => (onDone ? onDone() : closeSheet()));
       const list = qs('#ex-pick-list');
-      qs('#ex-search').addEventListener('input', (e) => { list.innerHTML = renderList(e.target.value); bindPick(); });
-      bindPick();
-      function bindPick() {
+      const refresh = () => { list.innerHTML = listHtml(); bind(); };
+      function bind() {
+        bindGroupToggles(list, groupState.picker.open);
         qsa('[data-action="pick-exercise"]', list).forEach((btn) => btn.addEventListener('click', () => {
-          const w2 = Store.getActive();
+          if (isChosen(btn.dataset.id)) return;
+          onPick(btn.dataset.id);
+          // Nur die betroffene Zeile umschreiben – so bleibt die Scroll-
+          // Position erhalten und die Auswahl fühlt sich direkt an.
           const ex = Store.getExercise(btn.dataset.id);
-          if (!ex || w2.entries.some((e) => e.exerciseId === ex.id)) { closeSheet(); return; }
-          w2.entries.push({ exerciseId: ex.id, exerciseName: ex.name, sets: defaultSets(ex, w2.id) });
-          Store.setActive(w2);
-          closeSheet();
-          render();
+          if (ex) btn.outerHTML = rowHtml(ex);
+          bind();
         }));
       }
+      bind();
+      qs('#ex-search').addEventListener('input', (e) => { groupState.picker.query = e.target.value; refresh(); });
+    },
+  });
+}
+
+function openAddExerciseToWorkoutSheet() {
+  openExercisePickerSheet({
+    title: 'Übung hinzufügen',
+    chosenLabel: 'dabei',
+    isChosen: (id) => (Store.getActive()?.entries || []).some((e) => e.exerciseId === id),
+    onPick: (id) => {
+      const w = Store.getActive();
+      const ex = Store.getExercise(id);
+      if (!w || !ex) return;
+      w.entries.push({ exerciseId: ex.id, exerciseName: ex.name, sets: defaultSets(ex, w.id) });
+      Store.setActive(w);
+      // Das Training im Hintergrund aktualisieren – das Sheet lebt in einem
+      // eigenen Container und bleibt dabei offen.
+      render();
     },
   });
 }
@@ -647,6 +773,85 @@ function openWorkoutDetailSheet(id) {
   });
 }
 
+// ---- Übungslisten: Suche + Gliederung nach Muskelgruppe ----
+// Bei über 130 Übungen ist eine flache Liste unbrauchbar. Deshalb überall
+// dieselbe Darstellung: oben ein Suchfeld, darunter die Muskelgruppen als
+// aufklappbare Abschnitte. Eine aktive Suche klappt alle Treffer automatisch
+// auf, damit man nicht erst suchen und dann noch aufklappen muss.
+const groupState = {
+  library: { query: '', open: new Set() },
+  picker: { query: '', open: new Set() },
+};
+
+function groupOf(exercise) {
+  return MUSCLE_GROUPS.includes(exercise.muscleGroup) ? exercise.muscleGroup : 'Sonstiges';
+}
+
+function filterExercises(exercises, query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return exercises;
+  return exercises.filter((ex) => `${ex.name} ${ex.muscleGroup}`.toLowerCase().includes(q));
+}
+
+function groupedExercisesHtml(exercises, { query, open, rowHtml, emptyText = 'Keine Übung gefunden.' }) {
+  const matches = filterExercises(exercises, query);
+  if (!matches.length) return `<p class="empty">${emptyText}</p>`;
+  const searching = !!query.trim();
+
+  return MUSCLE_GROUPS.map((group) => {
+    const rows = matches
+      .filter((ex) => groupOf(ex) === group)
+      .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+    if (!rows.length) return '';
+    const isOpen = searching || open.has(group);
+    return `
+      <section class="ex-group ${isOpen ? 'open' : ''}" data-group="${group}">
+        <button class="ex-group-header" data-action="toggle-group" data-group="${group}">
+          <strong>${group}</strong>
+          <span class="ex-group-count">${rows.length}</span>
+          <span class="ex-group-chevron">${Icon.chevron}</span>
+        </button>
+        <div class="ex-group-body"><div class="card list">${rows.map(rowHtml).join('')}</div></div>
+      </section>`;
+  }).join('');
+}
+
+function bindGroupToggles(container, openSet) {
+  qsa('[data-action="toggle-group"]', container).forEach((btn) => btn.addEventListener('click', () => {
+    const section = btn.closest('.ex-group');
+    const group = btn.dataset.group;
+    const willOpen = !section.classList.contains('open');
+    if (willOpen) openSet.add(group); else openSet.delete(group);
+    animateGroup(section, willOpen);
+  }));
+}
+
+// Auf-/Zuklappen mit echter Höhen-Animation: die Zielhöhe wird gemessen,
+// animiert und danach wieder an das CSS zurückgegeben, damit sich der Inhalt
+// frei ändern kann (z.B. wenn ein Treffer dazukommt).
+function animateGroup(section, open) {
+  const body = qs('.ex-group-body', section);
+  if (!body) return;
+  const inner = body.firstElementChild;
+  const from = body.getBoundingClientRect().height;
+  const to = open ? inner.getBoundingClientRect().height : 0;
+  section.classList.toggle('open', open);
+
+  if (prefersReducedMotion()) { body.style.height = ''; return; }
+
+  body.style.height = `${from}px`;
+  void body.offsetHeight;
+  body.style.transition = 'height 0.3s cubic-bezier(0.32, 0.72, 0, 1)';
+  body.style.height = `${to}px`;
+  const done = (e) => {
+    if (e.target !== body || e.propertyName !== 'height') return;
+    body.style.transition = '';
+    body.style.height = '';
+    body.removeEventListener('transitionend', done);
+  };
+  body.addEventListener('transitionend', done);
+}
+
 // ---- Bibliothek-Tab ----
 function renderLibrary() {
   return `
@@ -658,14 +863,26 @@ function renderLibrary() {
     ${state.librarySubTab === 'exercises' ? renderExerciseList() : renderRoutineList()}`;
 }
 
+const exerciseRowHtml = (ex) => `
+  <button class="list-item selectable" data-action="edit-exercise" data-id="${ex.id}">
+    <div class="list-item-main"><strong>${escapeHtml(ex.name)}</strong></div>
+    ${Icon.chevron}
+  </button>`;
+
 function renderExerciseList() {
-  const exercises = Store.getExercises().slice().sort((a, b) => a.muscleGroup.localeCompare(b.muscleGroup) || a.name.localeCompare(b.name));
-  if (!exercises.length) return '<p class="empty">Noch keine Übungen. Tippe oben rechts auf +.</p>';
-  return `<div class="card list">${exercises.map((ex) => `
-    <button class="list-item selectable" data-action="edit-exercise" data-id="${ex.id}">
-      <div class="list-item-main"><strong>${escapeHtml(ex.name)}</strong><span class="muted">${escapeHtml(ex.muscleGroup)}</span></div>
-      ${Icon.chevron}
-    </button>`).join('')}</div>`;
+  if (!Store.getExercises().length) return '<p class="empty">Noch keine Übungen. Tippe oben rechts auf +.</p>';
+  return `
+    <input type="search" id="exercise-search" class="text-input search-input" placeholder="Übung suchen…"
+      value="${escapeHtml(groupState.library.query)}" />
+    <div id="exercise-groups" class="ex-groups">${renderExerciseGroups()}</div>`;
+}
+
+function renderExerciseGroups() {
+  return groupedExercisesHtml(Store.getExercises(), {
+    query: groupState.library.query,
+    open: groupState.library.open,
+    rowHtml: exerciseRowHtml,
+  });
 }
 
 function renderRoutineList() {
@@ -683,8 +900,24 @@ function bindLibraryEvents() {
     librarySwipe.selectWithSlide(btn.dataset.sub);
   }));
   qs('#library-segmented')?.addEventListener('pointerdown', librarySwipe.onPointerDown);
-  qsa('[data-action="edit-exercise"]').forEach((btn) => btn.addEventListener('click', () => openExerciseSheet(btn.dataset.id)));
   qsa('[data-action="edit-routine"]').forEach((btn) => btn.addEventListener('click', () => openRoutineSheet(btn.dataset.id)));
+
+  const groups = qs('#exercise-groups');
+  if (groups) {
+    const bindRows = () => {
+      bindGroupToggles(groups, groupState.library.open);
+      qsa('[data-action="edit-exercise"]', groups).forEach((btn) =>
+        btn.addEventListener('click', () => openExerciseSheet(btn.dataset.id)));
+    };
+    bindRows();
+    // Nur die Liste neu aufbauen statt render(): sonst verlöre das Suchfeld
+    // bei jedem Tastendruck den Fokus.
+    qs('#exercise-search')?.addEventListener('input', (e) => {
+      groupState.library.query = e.target.value;
+      groups.innerHTML = renderExerciseGroups();
+      bindRows();
+    });
+  }
 }
 
 function openExerciseSheet(id) {
@@ -852,19 +1085,12 @@ function openRoutineSheet(id) {
   }
 
   function openExercisePicker() {
-    const list = Store.getExercises().map((ex) => `
-      <button class="list-item selectable" data-action="pick" data-id="${ex.id}">
-        <div class="list-item-main"><strong>${escapeHtml(ex.name)}</strong><span class="muted">${ex.muscleGroup}</span></div>
-        ${draft.exerciseIds.includes(ex.id) ? `<span class="pill">gewählt</span>` : Icon.plus}
-      </button>`).join('') || '<p class="empty">Noch keine Übungen in der Bibliothek.</p>';
-    openSheet('Übung wählen', `<div class="card list">${list}</div>`, {
-      onMount: (el) => {
-        qsa('[data-action="pick"]', el).forEach((btn) => btn.addEventListener('click', () => {
-          const eid = btn.dataset.id;
-          if (!draft.exerciseIds.includes(eid)) draft.exerciseIds.push(eid);
-          renderEditor();
-        }));
-      },
+    openExercisePickerSheet({
+      title: 'Übung wählen',
+      chosenLabel: 'gewählt',
+      isChosen: (id) => draft.exerciseIds.includes(id),
+      onPick: (id) => { draft.exerciseIds.push(id); },
+      onDone: renderEditor,
     });
   }
 
@@ -1216,7 +1442,7 @@ const librarySwipe = createSwipeSelector({
 });
 
 sheetRoot.addEventListener('click', (e) => {
-  if (e.target.closest('[data-action="close-sheet"]')) closeSheet();
+  if (e.target.closest('[data-action="close-sheet"]')) dismissSheet();
 });
 
 window.addEventListener('beforeunload', () => stopTicking());
