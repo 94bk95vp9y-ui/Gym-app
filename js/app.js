@@ -732,6 +732,7 @@ function enableDragReorder(container, onReorder) {
     if (!handle) return;
     const row = handle.closest('.list-item');
     if (!row) return;
+    e.preventDefault();
     const rows = qsa('.list-item', container);
     const startIndex = rows.indexOf(row);
     const startY = e.clientY;
