@@ -354,13 +354,15 @@ function render() {
       ${tabAction()}
     </header>
     <main class="view">${renderTab()}</main>
-    <nav class="tabbar">
-      ${tabButton('start', Icon.home, 'Start')}
-      ${tabButton('history', Icon.history, 'Verlauf')}
-      ${tabButton('library', Icon.library, 'Bibliothek')}
-      ${tabButton('settings', Icon.settings, 'Einstellungen')}
-      <span class="tab-indicator" aria-hidden="true"></span>
-    </nav>`;
+    <div class="tabbar-wrap">
+      <nav class="tabbar">
+        ${tabButton('start', Icon.home, 'Start')}
+        ${tabButton('history', Icon.history, 'Verlauf')}
+        ${tabButton('library', Icon.library, 'Bibliothek')}
+        ${tabButton('settings', Icon.settings, 'Einstellungen')}
+        <span class="tab-indicator" aria-hidden="true"></span>
+      </nav>
+    </div>`;
   const newView = qs('.view');
   if (newView) {
     newView.scrollTop = scrollTop;
@@ -1466,10 +1468,43 @@ function renderSettings() {
         ${Icon.trash}
       </button>
     </section>
+    <section class="card">
+      <div class="section-title">Anzeige-Diagnose</div>
+      <pre class="diag" id="diag-out">…</pre>
+      <p class="muted small">Zeigt, wie viel Platz das System unten reserviert. Nur zur Feinjustierung der Leiste – kann später wieder raus.</p>
+    </section>
     <p class="empty small">Alle Daten bleiben ausschließlich lokal auf diesem Gerät gespeichert.</p>`;
 }
 
+// Misst, wie hoch die Seite tatsächlich ist und was iOS als sicheren Bereich
+// meldet. Ohne diese Zahlen lässt sich vom Screenshot nicht unterscheiden, ob
+// ein Abstand aus dem eigenen CSS kommt oder das System die Seite von unten
+// abschneidet.
+function renderDiagnostics() {
+  const out = qs('#diag-out');
+  if (!out) return;
+
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;left:0;bottom:0;visibility:hidden;'
+    + 'height:env(safe-area-inset-bottom, 0px);width:env(safe-area-inset-top, 0px);';
+  document.body.appendChild(probe);
+  const rect = probe.getBoundingClientRect();
+  probe.remove();
+
+  const missing = Math.round(window.screen.height - window.innerHeight);
+  out.textContent = [
+    `Bildschirm     ${window.screen.width} × ${window.screen.height}`,
+    `Seite (innen)  ${window.innerWidth} × ${window.innerHeight}`,
+    `fehlt insgesamt ${missing} px`,
+    `safe-area oben  ${Math.round(rect.width)} px`,
+    `safe-area unten ${Math.round(rect.height)} px`,
+    `als App installiert: ${navigator.standalone === true ? 'ja' : 'nein'}`,
+    `Pixeldichte ${window.devicePixelRatio}`,
+  ].join('\n');
+}
+
 function bindSettingsEvents() {
+  renderDiagnostics();
   qsa('[data-action="set-unit"]').forEach((btn) => btn.addEventListener('click', () => {
     Store.saveSettings({ ...Store.getSettings(), unit: btn.dataset.unit });
     render();
