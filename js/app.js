@@ -1,6 +1,7 @@
-import { Store, MUSCLE_GROUPS, ACCENT_COLORS, REST_OPTIONS, uid } from './storage.js';
+import { Store, MUSCLE_GROUPS, ACCENT_COLORS, REST_OPTIONS, WEEKLY_GOALS, uid } from './storage.js';
 import { Icon } from './icons.js';
 import { buildPlanPrompt, parsePlanText, normalizeExerciseName } from './plan-import.js';
+import { buildMotivation } from './motivation.js';
 import {
   formatDate, formatDateTime, formatDuration, elapsedLabel,
   estimate1RM, bestSet, escapeHtml, unitLabel, drawLineChart,
@@ -467,7 +468,7 @@ function renderStart() {
 
   return `
     ${activeCard}
-    ${renderWeekCard()}
+    ${Store.getSettings().motivation ? renderMotivationCard() : renderWeekCard()}
     <section>
       <div class="section-title">Plan starten</div>
       <div class="card list">${routineCards}</div>
@@ -475,6 +476,15 @@ function renderStart() {
     <section>
       <button class="btn btn-secondary full" data-action="start-blank" ${active ? 'disabled' : ''}>${Icon.plus} Leeres Training starten</button>
     </section>`;
+}
+
+const WEEKDAY_LETTERS = ['M', 'D', 'M', 'D', 'F', 'S', 'S'];
+
+function weekStripHtml(days, todayIndex) {
+  return `<div class="week-strip">${WEEKDAY_LETTERS.map((label, i) => `
+    <span class="week-day ${days[i] ? 'on' : ''} ${i === todayIndex ? 'today' : ''}">
+      <span class="week-dot"></span>${label}
+    </span>`).join('')}</div>`;
 }
 
 // Kleine Wochenübersicht: an welchen Tagen war ich da, wie viel kam zusammen.
@@ -487,22 +497,54 @@ function renderWeekCard() {
   const unit = unitLabel(Store.getSettings().unit);
   const volume = done.reduce((sum, w) => sum + workoutVolume(w), 0);
   const minutes = done.reduce((sum, w) => sum + (new Date(w.finishedAt) - new Date(w.startedAt)) / 60000, 0);
-  const trainedDays = new Set(done.map((w) => (new Date(w.startedAt).getDay() + 6) % 7));
-
-  const dots = ['M', 'D', 'M', 'D', 'F', 'S', 'S'].map((label, i) => `
-    <span class="week-day ${trainedDays.has(i) ? 'on' : ''} ${i === (now.getDay() + 6) % 7 ? 'today' : ''}">
-      <span class="week-dot"></span>${label}
-    </span>`).join('');
+  const days = Array.from({ length: 7 }, () => false);
+  done.forEach((w) => { days[(new Date(w.startedAt).getDay() + 6) % 7] = true; });
 
   return `
     <section class="card week-card">
       <div class="section-title">Diese Woche</div>
-      <div class="week-strip">${dots}</div>
+      ${weekStripHtml(days, (now.getDay() + 6) % 7)}
       <div class="stat-row">
         <div><span class="stat-value">${done.length}</span><span class="muted small">Trainings</span></div>
         <div><span class="stat-value">${formatVolume(volume)}</span><span class="muted small">Volumen (${unit})</span></div>
         <div><span class="stat-value">${Math.round(minutes)}</span><span class="muted small">Minuten</span></div>
       </div>
+    </section>`;
+}
+
+// Standortbestimmung: ein Urteil, die Belege dazu und ein konkreter nächster
+// Schritt. Ersetzt die reine Wochenübersicht, wenn eingeschaltet.
+function renderMotivationCard() {
+  const settings = Store.getSettings();
+  const m = buildMotivation({
+    workouts: Store.getWorkouts(),
+    exercises: Store.getExercises(),
+    goal: settings.weeklyGoal,
+    unit: unitLabel(settings.unit),
+    stepFor: (ex) => overloadStep(ex.muscleGroup, settings.unit),
+  });
+
+  const trendRow = m.trend.comparable ? `
+    <div class="trend-row">
+      <span class="trend up">${m.trend.up}<small>↑</small></span>
+      <span class="trend flat">${m.trend.flat}<small>→</small></span>
+      <span class="trend down">${m.trend.down}<small>↓</small></span>
+      <span class="muted small">Übungen, 4 Wochen</span>
+    </div>` : '';
+
+  return `
+    <section class="card motivation tone-${m.verdict.tone}">
+      <div class="verdict-row">
+        <span class="verdict">${m.verdict.label}</span>
+        ${m.streak ? `<span class="streak-badge">🔥 ${m.streak} ${m.streak === 1 ? 'Woche' : 'Wochen'}</span>` : ''}
+      </div>
+      <div class="goal-row">
+        <span class="goal-count">${m.week.count}<span class="muted">/${m.week.goal}</span></span>
+        <span class="muted small">Einheiten diese Woche</span>
+      </div>
+      ${weekStripHtml(m.week.days, m.week.todayIndex)}
+      ${trendRow}
+      <p class="coach-line">${escapeHtml(m.coachLine)}</p>
     </section>`;
 }
 
@@ -1467,6 +1509,25 @@ function renderSettings() {
       </div>
     </section>
     <section class="card">
+      <div class="toggle-row">
+        <div>
+          <strong>Standortbestimmung</strong>
+          <p class="muted small">Zeigt auf der Startseite ein ehrliches Urteil zu Konstanz und Kraftentwicklung – samt dem nächsten konkreten Schritt.</p>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggle-motivation" ${settings.motivation ? 'checked' : ''} />
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+      ${settings.motivation ? `
+        <div class="section-title" style="margin-top:14px">Wochenziel</div>
+        <div class="chip-row">
+          ${WEEKLY_GOALS.map((g) => `
+            <button class="chip ${settings.weeklyGoal === g ? 'active' : ''}" data-action="set-goal" data-goal="${g}">${g}×</button>
+          `).join('')}
+        </div>` : ''}
+    </section>
+    <section class="card">
       <div class="section-title">Pause zwischen Sätzen</div>
       <div class="chip-row">
         ${REST_OPTIONS.map((s) => `
@@ -1515,51 +1576,9 @@ function renderSettings() {
       <button class="btn btn-secondary full" data-action="copy-plan-prompt">${Icon.copy} Prompt kopieren</button>
       <textarea id="plan-import-text" class="text-input import-area" rows="3"
         placeholder="Antwort der KI hier einfügen…"></textarea>
-      <div class="row gap">
-        <button class="btn btn-primary" data-action="parse-plan-import">Pläne einlesen</button>
-        <label class="btn btn-secondary" for="plan-file">Datei wählen</label>
-        <input type="file" id="plan-file" accept=".txt,.md,.text,text/plain,text/markdown" hidden />
-      </div>
-    </section>
-    <section class="card">
-      <div class="section-title">Anzeige-Diagnose</div>
-      <pre class="diag" id="diag-out">…</pre>
-      <p class="muted small">Zeigt, wie viel Platz das System unten reserviert. Nur zur Feinjustierung der Leiste – kann später wieder raus.</p>
+      <button class="btn btn-primary full" data-action="parse-plan-import">Pläne einlesen</button>
     </section>
     <p class="empty small">Alle Daten bleiben ausschließlich lokal auf diesem Gerät gespeichert.</p>`;
-}
-
-// Misst, wie hoch die Seite tatsächlich ist und was iOS als sicheren Bereich
-// meldet. Ohne diese Zahlen lässt sich vom Screenshot nicht unterscheiden, ob
-// ein Abstand aus dem eigenen CSS kommt oder das System die Seite von unten
-// abschneidet.
-function renderDiagnostics() {
-  const out = qs('#diag-out');
-  if (!out) return;
-
-  const probe = document.createElement('div');
-  probe.style.cssText = 'position:fixed;left:0;bottom:0;visibility:hidden;'
-    + 'height:env(safe-area-inset-bottom, 0px);width:env(safe-area-inset-top, 0px);';
-  document.body.appendChild(probe);
-  const rect = probe.getBoundingClientRect();
-  probe.remove();
-
-  const { reserved, systemReservedBottom } = calibrateSafeArea();
-  const barGap = qs('.tabbar')
-    ? Math.round(window.innerHeight - qs('.tabbar').getBoundingClientRect().bottom)
-    : 0;
-
-  out.textContent = [
-    `Bildschirm      ${window.screen.width} × ${window.screen.height}`,
-    `Seite (innen)   ${window.innerWidth} × ${window.innerHeight}`,
-    `vom System belegt ${reserved} px`,
-    `safe-area oben   ${Math.round(rect.width)} px`,
-    `safe-area unten  ${Math.round(rect.height)} px`,
-    `unten gerechnet  ${systemReservedBottom ? '0 (System hat schon)' : `${Math.round(rect.height)} px`}`,
-    `Leiste über Seitenrand ${barGap} px`,
-    `Leiste über Bildschirmrand ${barGap + reserved} px`,
-    `als App installiert: ${navigator.standalone === true ? 'ja' : 'nein'}`,
-  ].join('\n');
 }
 
 // ---- Pläne per KI importieren ----
@@ -1695,16 +1714,9 @@ function bindPlanImportEvents() {
     openImportPreview(text);
   });
 
-  qs('#plan-file')?.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    openImportPreview(await file.text());
-    e.target.value = '';
-  });
 }
 
 function bindSettingsEvents() {
-  renderDiagnostics();
   bindPlanImportEvents();
   qsa('[data-action="set-unit"]').forEach((btn) => btn.addEventListener('click', () => {
     Store.saveSettings({ ...Store.getSettings(), unit: btn.dataset.unit });
@@ -1713,6 +1725,14 @@ function bindSettingsEvents() {
   qsa('[data-action="set-rest"]').forEach((btn) => btn.addEventListener('click', () => {
     Store.saveSettings({ ...Store.getSettings(), restSeconds: +btn.dataset.seconds });
     qsa('[data-action="set-rest"]').forEach((b) => b.classList.toggle('active', b === btn));
+  }));
+  qs('#toggle-motivation')?.addEventListener('change', (e) => {
+    Store.saveSettings({ ...Store.getSettings(), motivation: e.target.checked });
+    render(); // blendet das Wochenziel direkt ein oder aus
+  });
+  qsa('[data-action="set-goal"]').forEach((btn) => btn.addEventListener('click', () => {
+    Store.saveSettings({ ...Store.getSettings(), weeklyGoal: +btn.dataset.goal });
+    qsa('[data-action="set-goal"]').forEach((b) => b.classList.toggle('active', b === btn));
   }));
   qs('#toggle-overload')?.addEventListener('change', (e) => {
     Store.saveSettings({ ...Store.getSettings(), progressiveOverload: e.target.checked });

@@ -51,9 +51,12 @@ const DEFAULT_SETTINGS = {
   accent: ACCENT_COLORS[0].value,
   progressiveOverload: false,
   restSeconds: 90,
+  motivation: true,
+  weeklyGoal: 3,
 };
 
 export const REST_OPTIONS = [0, 60, 90, 120, 180];
+export const WEEKLY_GOALS = [2, 3, 4, 5, 6];
 
 function seedIfEmpty() {
   if (read(KEYS.exercises, null) === null) {

@@ -10,6 +10,7 @@
   --success: #34c759;
   --danger: #ff3b30;
   --danger-bg: rgba(255, 59, 48, 0.1);
+  --warn: #c77700;
   --shadow-sm: 0 1px 3px rgba(31, 38, 50, 0.08);
   --shadow-md: 0 8px 24px rgba(31, 38, 50, 0.14);
 
@@ -34,6 +35,7 @@
     --text-secondary: #98989d;
     --border: rgba(255, 255, 255, 0.12);
     --danger-bg: rgba(255, 69, 58, 0.16);
+    --warn: #ffb020;
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
     --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
     color-scheme: dark;
@@ -638,6 +640,58 @@ button, input, select, textarea {
   pointer-events: none;
 }
 .set-chip.pr { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-weight: 600; }
+
+/* Standortbestimmung: das Urteil trägt die Farbe der ganzen Karte */
+.motivation { border-width: 1px; }
+.motivation.tone-good { background: color-mix(in srgb, var(--accent) 7%, var(--bg-elevated)); border-color: color-mix(in srgb, var(--accent) 32%, var(--border)); }
+.motivation.tone-warn { background: color-mix(in srgb, var(--warn) 8%, var(--bg-elevated)); border-color: color-mix(in srgb, var(--warn) 34%, var(--border)); }
+.motivation.tone-bad { background: color-mix(in srgb, var(--danger) 7%, var(--bg-elevated)); border-color: color-mix(in srgb, var(--danger) 30%, var(--border)); }
+
+.verdict-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.verdict {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+  line-height: 1.1;
+}
+.tone-good .verdict { color: var(--accent); }
+.tone-warn .verdict { color: var(--warn); }
+.tone-bad .verdict { color: var(--danger); }
+.streak-badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--bg-input);
+  white-space: nowrap;
+}
+
+.goal-row { display: flex; align-items: baseline; gap: 8px; margin: 10px 0 6px; }
+.goal-count { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.goal-count .muted { font-size: 15px; font-weight: 600; }
+
+.trend-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.trend {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+.trend small { font-size: 12px; }
+.trend.up { color: var(--success); }
+.trend.flat { color: var(--text-secondary); }
+.trend.down { color: var(--danger); }
+
+.coach-line {
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.4;
+}
 
 /* Wochenübersicht auf dem Start-Tab */
 .week-strip { display: flex; justify-content: space-between; margin: 2px 0 14px; }
