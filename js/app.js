@@ -2,6 +2,8 @@ import { Store, MUSCLE_GROUPS, ACCENT_COLORS, REST_OPTIONS, WEEKLY_GOALS, uid } 
 import { Icon } from './icons.js';
 import { buildPlanPrompt, parsePlanText, normalizeExerciseName } from './plan-import.js';
 import { buildMotivation } from './motivation.js';
+import { Sound, setSoundEnabled } from './sound.js';
+import { fatigueOf, muscleGroupLookup } from './fatigue.js';
 import {
   formatDate, formatDateTime, formatDuration, elapsedLabel,
   estimate1RM, bestSet, escapeHtml, unitLabel, drawLineChart,
@@ -67,13 +69,38 @@ function overloadStep(muscleGroup, unit) {
   return big ? 5 : 2.5;
 }
 
+// Letzte abgeschlossene Einheit, in der diese Übung wirklich trainiert wurde –
+// inklusive Trainingskontext, um die Vorbelastung bestimmen zu können.
+function lastSessionFor(exerciseId, excludeWorkoutId) {
+  for (const w of Store.getWorkouts()) {
+    if (!w.finishedAt || w.id === excludeWorkoutId) continue;
+    const entryIndex = w.entries.findIndex(
+      (e) => e.exerciseId === exerciseId && e.sets.some((s) => s.done),
+    );
+    if (entryIndex >= 0) return { workout: w, entryIndex, entry: w.entries[entryIndex] };
+  }
+  return null;
+}
+
 function getOverloadSuggestion(exercise, excludeWorkoutId) {
   if (!exercise) return null;
-  const sessions = Store.getWorkouts()
+  const groupOf = muscleGroupLookup(Store.getExercises());
+  const candidates = Store.getWorkouts()
     .filter((w) => w.finishedAt && w.id !== excludeWorkoutId)
-    .map((w) => w.entries.find((e) => e.exerciseId === exercise.id))
-    .filter((e) => e && e.sets.some((s) => s.done))
-    .slice(0, 2);
+    .map((w) => {
+      const entryIndex = w.entries.findIndex(
+        (e) => e.exerciseId === exercise.id && e.sets.some((s) => s.done),
+      );
+      return entryIndex < 0 ? null : { entry: w.entries[entryIndex], bucket: fatigueOf(w, entryIndex, groupOf).bucket };
+    })
+    .filter(Boolean);
+  if (candidates.length < 2) return null;
+
+  // Nur Einheiten mit vergleichbarer Vorbelastung heranziehen: zwei gleich
+  // schwere Einheiten aus völlig verschiedenen Positionen im Training sagen
+  // nichts darüber aus, ob mehr Gewicht fällig ist.
+  const sameBucket = candidates.filter((c) => c.bucket === candidates[0].bucket);
+  const sessions = (sameBucket.length >= 2 ? sameBucket : candidates).slice(0, 2).map((c) => c.entry);
   if (sessions.length < 2) return null;
 
   const analyzed = sessions.map((entry) => {
@@ -597,10 +624,24 @@ function renderWorkout() {
   const w = Store.getActive();
   const unit = unitLabel(Store.getSettings().unit);
   const overloadOn = Store.getSettings().progressiveOverload;
+  const groupOf = muscleGroupLookup(Store.getExercises());
   const entries = w.entries.map((entry, ei) => {
-    const last = Store.lastEntryForExercise(entry.exerciseId, w.id);
+    const lastSession = lastSessionFor(entry.exerciseId, w.id);
+    const last = lastSession ? lastSession.entry : null;
     const lastBest = last ? bestSet(last.sets) : null;
     const overload = overloadOn ? getOverloadSuggestion(Store.getExercise(entry.exerciseId), w.id) : null;
+
+    // Wenn die Übung damals unter deutlich anderer Vorbelastung lief, ist der
+    // Vergleich mit "letztes Mal" irreführend – dann lieber dazusagen, warum.
+    let contextNote = '';
+    if (lastSession) {
+      const then = fatigueOf(lastSession.workout, lastSession.entryIndex, groupOf);
+      const nowCtx = fatigueOf(w, ei, groupOf);
+      if (then.bucket !== nowCtx.bucket) {
+        contextNote = `<p class="fatigue-note">Damals ${then.position}. Übung, heute ${nowCtx.position}. – `
+          + `${nowCtx.priorSets > then.priorSets ? 'mehr' : 'weniger'} Vorbelastung, Zahlen nur bedingt vergleichbar.</p>`;
+      }
+    }
     const sets = entry.sets.map((s, si) => `
       <div class="set-row ${s.done ? 'done' : ''}" data-ei="${ei}" data-si="${si}">
         <span class="set-index">${si + 1}</span>
@@ -621,6 +662,7 @@ function renderWorkout() {
           <button class="icon-btn small danger" data-action="remove-exercise" data-ei="${ei}">${Icon.trash}</button>
         </div>
         ${last ? `<p class="muted small">Letztes Mal: ${lastBest ? `${lastBest.weight}${unit} × ${lastBest.reps}` : '—'}</p>` : ''}
+        ${contextNote}
         ${overload ? `<p class="overload-tip">💪 ${overload.threshold}+ Wdh bei ${overload.from}${unit} in Folge – neues Ziel ${overload.to}${unit}</p>` : ''}
         <div class="set-header-row">
           <span class="set-index"></span><span>${unit}</span><span></span><span>Wdh</span><span></span><span></span>
@@ -642,7 +684,10 @@ function renderWorkout() {
       </header>
       <main class="view">
         ${entries || '<p class="empty">Füge eine Übung hinzu, um loszulegen.</p>'}
-        <button class="btn btn-secondary full" data-action="add-exercise-to-workout">${Icon.plus} Übung hinzufügen</button>
+        <div class="row gap workout-actions">
+          <button class="btn btn-secondary" data-action="add-exercise-to-workout">${Icon.plus} Übung</button>
+          ${w.entries.length > 1 ? `<button class="btn btn-secondary" data-action="reorder-workout">${Icon.grip} Reihenfolge</button>` : ''}
+        </div>
         <button class="btn btn-primary full" data-action="finish-workout">Training beenden</button>
       </main>
       <div id="rest-slot"></div>
@@ -748,6 +793,7 @@ function syncRestBar() {
     if (bar && !bar.classList.contains('leaving')) {
       bar.classList.add('leaving');
       setTimeout(() => bar.remove(), 240);
+      Sound.restOver();
       toast('Pause vorbei 🔔');
     }
     return;
@@ -787,6 +833,7 @@ function bindWorkoutEvents() {
     if (totalSets === 0 && !confirm('Keine Sätze abgeschlossen. Training trotzdem speichern?')) return;
     w.finishedAt = new Date().toISOString();
     Store.finishActiveWorkout(w);
+    Sound.finish();
     go(() => {
       state.workoutOpen = false;
       state.tab = 'history';
@@ -796,6 +843,7 @@ function bindWorkoutEvents() {
     toast('Training gespeichert 💪');
   });
   qs('[data-action="add-exercise-to-workout"]').addEventListener('click', openAddExerciseToWorkoutSheet);
+  qs('[data-action="reorder-workout"]')?.addEventListener('click', openReorderSheet);
 
   qsa('[data-action="add-set"]').forEach((btn) => btn.addEventListener('click', () => {
     const w = getActive(); const ei = +btn.dataset.ei;
@@ -830,7 +878,12 @@ function bindWorkoutEvents() {
     row?.classList.toggle('done', set.done);
     qsa(`.set-input[data-ei="${ei}"][data-si="${si}"]`).forEach((el) => el.classList.remove('suggested'));
     updatePrBadges(w.entries[ei], ei);
-    if (set.done) { startRest(); if (prIndex === si) toast('Neuer Rekord 🏆'); }
+    if (set.done) {
+      startRest();
+      if (prIndex === si) { Sound.record(); toast('Neuer Rekord 🏆'); } else Sound.setDone();
+    } else {
+      Sound.setUndone();
+    }
   }));
   qsa('[data-action="remove-exercise"]').forEach((btn) => btn.addEventListener('click', () => {
     const w = getActive(); const ei = +btn.dataset.ei;
@@ -854,6 +907,57 @@ function bindWorkoutEvents() {
     }
     Store.setActive(w);
   }));
+}
+
+// Reihenfolge im laufenden Training ändern – z.B. wenn die Maschine für die
+// nächste Übung belegt ist. Bewusst in einem eigenen Sheet mit kurzen Zeilen
+// statt per Ziehen an den hohen Übungskarten: die enthalten Eingabefelder und
+// stehen in einer scrollenden Liste, da wird eine Ziehgeste schnell zur
+// Zitterpartie. Zusätzlich hebt ein Tipp auf den Pfeil eine Übung direkt nach
+// ganz oben – der häufigste Fall mit einem Griff.
+function openReorderSheet() {
+  const order = Store.getActive().entries.map((e, i) => i);
+
+  const rowsHtml = () => order.map((entryIndex, position) => {
+    const entry = Store.getActive().entries[entryIndex];
+    const doneSets = entry.sets.filter((s) => s.done).length;
+    return `<div class="list-item reorder-item">
+      <span class="drag-handle" data-drag-handle aria-hidden="true">${Icon.grip}</span>
+      <div class="list-item-main">
+        <strong>${escapeHtml(entry.exerciseName)}</strong>
+        <span class="muted">${doneSets} von ${entry.sets.length} Sätzen</span>
+      </div>
+      ${position === 0 ? '<span class="pill pill-chosen">dran</span>'
+        : `<button class="icon-btn small" data-action="to-top" data-pos="${position}" aria-label="Nach ganz oben">${Icon.toTop}</button>`}
+    </div>`;
+  }).join('');
+
+  function renderSheet() {
+    openSheet('Reihenfolge', `<div class="card list" id="reorder-list">${rowsHtml()}</div>
+      <p class="muted small" style="margin-top:10px">Zum Verschieben den Griff gedrückt halten und ziehen.</p>`, {
+      footer: '<button class="btn btn-primary full" data-action="apply-order">Übernehmen</button>',
+      onMount: () => {
+        enableDragReorder(qs('#reorder-list'), (from, to) => {
+          order.splice(to, 0, ...order.splice(from, 1));
+          renderSheet();
+        });
+        qsa('[data-action="to-top"]').forEach((btn) => btn.addEventListener('click', () => {
+          const pos = +btn.dataset.pos;
+          order.unshift(...order.splice(pos, 1));
+          renderSheet();
+        }));
+        qs('[data-action="apply-order"]').addEventListener('click', () => {
+          const w = Store.getActive();
+          w.entries = order.map((i) => w.entries[i]);
+          Store.setActive(w);
+          closeSheet();
+          render();
+        });
+      },
+    });
+  }
+
+  renderSheet();
 }
 
 // Auswahl-Sheet für Übungen, geteilt von Training und Plan-Editor: Suche,
@@ -1528,6 +1632,18 @@ function renderSettings() {
         </div>` : ''}
     </section>
     <section class="card">
+      <div class="toggle-row">
+        <div>
+          <strong>Töne</strong>
+          <p class="muted small">Kurze Rückmeldung beim Abhaken, bei Rekorden und am Ende der Pause. Stummschalter des iPhones hat Vorrang.</p>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggle-sound" ${settings.sound ? 'checked' : ''} />
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+    </section>
+    <section class="card">
       <div class="section-title">Pause zwischen Sätzen</div>
       <div class="chip-row">
         ${REST_OPTIONS.map((s) => `
@@ -1726,6 +1842,11 @@ function bindSettingsEvents() {
     Store.saveSettings({ ...Store.getSettings(), restSeconds: +btn.dataset.seconds });
     qsa('[data-action="set-rest"]').forEach((b) => b.classList.toggle('active', b === btn));
   }));
+  qs('#toggle-sound')?.addEventListener('change', (e) => {
+    Store.saveSettings({ ...Store.getSettings(), sound: e.target.checked });
+    setSoundEnabled(e.target.checked);
+    if (e.target.checked) Sound.setDone(); // einmal vorhören
+  });
   qs('#toggle-motivation')?.addEventListener('change', (e) => {
     Store.saveSettings({ ...Store.getSettings(), motivation: e.target.checked });
     render(); // blendet das Wochenziel direkt ein oder aus
@@ -2028,6 +2149,7 @@ sheetRoot.addEventListener('click', (e) => {
 window.addEventListener('beforeunload', () => stopTicking());
 
 applyAccent();
+setSoundEnabled(Store.getSettings().sound);
 calibrateSafeArea();
 window.addEventListener('resize', calibrateSafeArea);
 window.addEventListener('orientationchange', () => setTimeout(calibrateSafeArea, 150));

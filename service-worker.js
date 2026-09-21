@@ -11,6 +11,8 @@ const ASSETS = [
   './js/exercise-catalog.js',
   './js/plan-import.js',
   './js/motivation.js',
+  './js/fatigue.js',
+  './js/sound.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',

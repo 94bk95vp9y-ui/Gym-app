@@ -7,6 +7,7 @@
 // eine Übung, die seit Wochen steht, wird beim Namen genannt.
 
 import { estimate1RM } from './utils.js';
+import { fatigueOf, muscleGroupLookup } from './fatigue.js';
 
 const DAY = 86400000;
 const WEEK = 7 * DAY;
@@ -17,31 +18,42 @@ export function startOfWeek(date) {
   return d;
 }
 
-// Beste Leistung je Trainingseinheit für eine Übung, aufsteigend nach Datum.
-function sessionsFor(workouts, exerciseId) {
+// Beste Leistung je Trainingseinheit für eine Übung, aufsteigend nach Datum,
+// mitsamt der Vorbelastung (siehe fatigue.js).
+function sessionsFor(workouts, exerciseId, groupOf) {
   return workouts
     .map((w) => {
-      const sets = w.entries
-        .filter((e) => e.exerciseId === exerciseId)
-        .flatMap((e) => e.sets)
-        .filter((s) => s.done && s.weight > 0 && s.reps > 0);
-      if (!sets.length) return null;
+      const entryIndex = w.entries.findIndex(
+        (e) => e.exerciseId === exerciseId && e.sets.some((s) => s.done && s.weight > 0 && s.reps > 0),
+      );
+      if (entryIndex < 0) return null;
+      const sets = w.entries[entryIndex].sets.filter((s) => s.done && s.weight > 0 && s.reps > 0);
       const best = sets.reduce((a, s) => (estimate1RM(s.weight, s.reps) > estimate1RM(a.weight, a.reps) ? s : a));
       return {
         date: new Date(w.startedAt).getTime(),
         e1rm: estimate1RM(best.weight, best.reps),
         weight: best.weight,
         reps: best.reps,
+        bucket: fatigueOf(w, entryIndex, groupOf).bucket,
       };
     })
     .filter(Boolean)
     .sort((a, b) => a.date - b.date);
 }
 
+// Sucht eine Vorbelastung, die in beiden Zeiträumen vorkommt – bevorzugt die
+// der jüngsten Einheit. Gibt es keine, sind die Zeiträume schlicht nicht
+// vergleichbar; dann wird lieber gar nichts behauptet, als eine verschobene
+// Reihenfolge als Kraftverlust auszugeben.
+function sharedBucket(recent, older) {
+  const preferred = [recent[recent.length - 1].bucket, ...new Set(recent.map((s) => s.bucket))];
+  return preferred.find((b) => recent.some((s) => s.bucket === b) && older.some((s) => s.bucket === b)) || null;
+}
+
 // Vergleicht die letzten 4 Wochen mit den 4 Wochen davor. Ein gleitender
 // Vergleich statt "gegen die Bestleistung aller Zeiten": nach einer Pause
 // oder Deload-Woche ist man sonst für immer im Minus.
-function strengthTrend(workouts, exercises, now) {
+function strengthTrend(workouts, exercises, now, groupOf) {
   const cut4 = now - 4 * WEEK;
   const cut8 = now - 8 * WEEK;
   let up = 0;
@@ -50,10 +62,16 @@ function strengthTrend(workouts, exercises, now) {
   let best = null;
 
   exercises.forEach((ex) => {
-    const sessions = sessionsFor(workouts, ex.id);
-    const recent = sessions.filter((s) => s.date >= cut4);
-    const older = sessions.filter((s) => s.date >= cut8 && s.date < cut4);
+    const sessions = sessionsFor(workouts, ex.id, groupOf);
+    let recent = sessions.filter((s) => s.date >= cut4);
+    let older = sessions.filter((s) => s.date >= cut8 && s.date < cut4);
     if (!recent.length || !older.length) return;
+
+    // Nur bei vergleichbarer Vorbelastung urteilen, sonst gar nicht.
+    const bucket = sharedBucket(recent, older);
+    if (!bucket) return;
+    recent = recent.filter((s) => s.bucket === bucket);
+    older = older.filter((s) => s.bucket === bucket);
 
     const recentMax = Math.max(...recent.map((s) => s.e1rm));
     const olderMax = Math.max(...older.map((s) => s.e1rm));
@@ -75,13 +93,18 @@ function strengthTrend(workouts, exercises, now) {
 
 // Übungen, die zwar weiter trainiert werden, aber seit Wochen keinen neuen
 // Bestwert mehr gesehen haben – das sind die Kandidaten für mehr Gewicht.
-function stagnatingLifts(workouts, exercises, now, stepFor) {
+function stagnatingLifts(workouts, exercises, now, stepFor, groupOf) {
   const result = [];
   exercises.forEach((ex) => {
-    const sessions = sessionsFor(workouts, ex.id);
-    if (sessions.length < 3) return;
+    const all = sessionsFor(workouts, ex.id, groupOf);
+    if (all.length < 3) return;
+    // Nur mit Einheiten unter gleicher Vorbelastung vergleichen: ein alter
+    // Bestwert aus frischem Zustand darf keine Stagnation melden, wenn die
+    // Übung seither ans Ende des Trainings gerutscht ist.
+    const last = all[all.length - 1];
+    const sessions = all.filter((s) => s.bucket === last.bucket);
+    if (sessions.length < 3) return; // zu wenig Vergleichbares für den Vorwurf
     const bestSession = sessions.reduce((a, b) => (b.e1rm > a.e1rm ? b : a));
-    const last = sessions[sessions.length - 1];
     const weeks = Math.floor((now - bestSession.date) / WEEK);
     if (weeks < 3 || last.date < now - 3 * WEEK) return;
     const step = stepFor(ex);
@@ -157,8 +180,9 @@ export function buildMotivation({ workouts, exercises, goal = 3, unit = 'kg', st
     ? Math.floor((now - new Date(lastWorkout.startedAt).getTime()) / DAY)
     : null;
 
-  const trend = strengthTrend(finished, exercises, now);
-  const stagnating = stagnatingLifts(finished, exercises, now, stepFor);
+  const groupOf = muscleGroupLookup(exercises);
+  const trend = strengthTrend(finished, exercises, now, groupOf);
+  const stagnating = stagnatingLifts(finished, exercises, now, stepFor, groupOf);
   const streak = goalStreak(counts, goal, now);
   const last14 = finished.filter((w) => new Date(w.startedAt).getTime() >= now - 14 * DAY).length;
 

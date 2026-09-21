@@ -53,6 +53,7 @@ const DEFAULT_SETTINGS = {
   restSeconds: 90,
   motivation: true,
   weeklyGoal: 3,
+  sound: true,
 };
 
 export const REST_OPTIONS = [0, 60, 90, 120, 180];
