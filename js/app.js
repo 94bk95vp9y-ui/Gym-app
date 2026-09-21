@@ -2,7 +2,7 @@ import { Store, MUSCLE_GROUPS, ACCENT_COLORS, REST_OPTIONS, WEEKLY_GOALS, uid } 
 import { Icon } from './icons.js';
 import { buildPlanPrompt, parsePlanText, normalizeExerciseName } from './plan-import.js';
 import { buildMotivation } from './motivation.js';
-import { Sound, setSoundEnabled } from './sound.js';
+import { Sound, setSoundEnabled, setSoundVolume, setSoundStyle, SOUND_STYLES } from './sound.js';
 import { fatigueOf, muscleGroupLookup } from './fatigue.js';
 import {
   formatDate, formatDateTime, formatDuration, elapsedLabel,
@@ -22,6 +22,8 @@ const state = {
   workoutAddExerciseQuery: '',
   calendarYear: new Date().getFullYear(),
   calendarMonth: new Date().getMonth(),
+  // Zugeklappte Übungen im laufenden Training, nach Übungs-ID
+  collapsedExercises: new Set(),
 };
 
 let tickInterval = null;
@@ -588,6 +590,7 @@ function bindStartEvents() {
   qs('[data-action="start-blank"]')?.addEventListener('click', () => {
     if (Store.getActive()) return;
     Store.setActive({ id: uid(), routineId: null, routineName: null, startedAt: new Date().toISOString(), finishedAt: null, entries: [] });
+    Sound.start();
     state.workoutOpen = true;
     workoutEntering = true;
     render();
@@ -602,11 +605,13 @@ function bindStartEvents() {
       return { exerciseId: eid, exerciseName: ex ? ex.name : 'Unbekannt', sets: ex ? defaultSets(ex, undefined, count ?? 2) : [] };
     });
     Store.setActive({ id: uid(), routineId: routine.id, routineName: routine.name, startedAt: new Date().toISOString(), finishedAt: null, entries });
+    Sound.start();
     state.workoutOpen = true;
     workoutEntering = true;
     render();
   }));
   qs('[data-action="resume-workout"]')?.addEventListener('click', () => {
+    Sound.start();
     state.workoutOpen = true;
     workoutEntering = true;
     render();
@@ -655,20 +660,36 @@ function renderWorkout() {
         ${s.pr ? '<span class="pr-badge">PR</span>' : ''}
       </div>`).join('');
 
+    // Zugeklappt bleibt nur die Kopfzeile stehen – mit einer Kurzfassung,
+    // damit das Zuklappen nicht bedeutet, den Überblick zu verlieren.
+    const collapsed = state.collapsedExercises.has(entry.exerciseId);
+    const doneSets = entry.sets.filter((s) => s.done);
+    const top = bestSet(entry.sets);
+    const summary = `${doneSets.length}/${entry.sets.length} Sätze`
+      + (top ? ` · ${top.weight}${unit} × ${top.reps}` : '');
+
     return `
-      <section class="card exercise-block" data-ei="${ei}">
+      <section class="card exercise-block ${collapsed ? 'collapsed' : ''}" data-ei="${ei}">
         <div class="exercise-block-header">
-          <strong>${escapeHtml(entry.exerciseName)}</strong>
+          <button class="ex-toggle" data-action="toggle-exercise" data-id="${entry.exerciseId}">
+            <span class="ex-title">
+              <strong>${escapeHtml(entry.exerciseName)}</strong>
+              <span class="muted small ex-summary">${summary}</span>
+            </span>
+            <span class="ex-chevron">${Icon.chevron}</span>
+          </button>
           <button class="icon-btn small danger" data-action="remove-exercise" data-ei="${ei}">${Icon.trash}</button>
         </div>
-        ${last ? `<p class="muted small">Letztes Mal: ${lastBest ? `${lastBest.weight}${unit} × ${lastBest.reps}` : '—'}</p>` : ''}
-        ${contextNote}
-        ${overload ? `<p class="overload-tip">💪 ${overload.threshold}+ Wdh bei ${overload.from}${unit} in Folge – neues Ziel ${overload.to}${unit}</p>` : ''}
-        <div class="set-header-row">
-          <span class="set-index"></span><span>${unit}</span><span></span><span>Wdh</span><span></span><span></span>
-        </div>
-        ${sets || '<p class="empty small">Noch keine Sätze.</p>'}
-        <button class="btn btn-ghost small" data-action="add-set" data-ei="${ei}">${Icon.plus} Satz</button>
+        <div class="exercise-body"><div>
+          ${last ? `<p class="muted small">Letztes Mal: ${lastBest ? `${lastBest.weight}${unit} × ${lastBest.reps}` : '—'}</p>` : ''}
+          ${contextNote}
+          ${overload ? `<p class="overload-tip">💪 ${overload.threshold}+ Wdh bei ${overload.from}${unit} in Folge – neues Ziel ${overload.to}${unit}</p>` : ''}
+          <div class="set-header-row">
+            <span class="set-index"></span><span>${unit}</span><span></span><span>Wdh</span><span></span><span></span>
+          </div>
+          ${sets || '<p class="empty small">Noch keine Sätze.</p>'}
+          <button class="btn btn-ghost small" data-action="add-set" data-ei="${ei}">${Icon.plus} Satz</button>
+        </div></div>
       </section>`;
   }).join('');
 
@@ -717,6 +738,17 @@ function refreshPrFlags(workout, ei) {
   });
   if (bestIndex >= 0) entry.sets[bestIndex].pr = true;
   return bestIndex;
+}
+
+// Die Kurzfassung in der Kopfzeile mitziehen: das Abhaken rendert bewusst
+// nicht neu, sonst stünde dort beim Zuklappen ein veralteter Stand.
+function updateExerciseSummary(entry, ei) {
+  const el = qs(`.exercise-block[data-ei="${ei}"] .ex-summary`);
+  if (!el) return;
+  const unit = unitLabel(Store.getSettings().unit);
+  const top = bestSet(entry.sets);
+  el.textContent = `${entry.sets.filter((s) => s.done).length}/${entry.sets.length} Sätze`
+    + (top ? ` · ${top.weight}${unit} × ${top.reps}` : '');
 }
 
 function updatePrBadges(entry, ei) {
@@ -845,6 +877,16 @@ function bindWorkoutEvents() {
   qs('[data-action="add-exercise-to-workout"]').addEventListener('click', openAddExerciseToWorkoutSheet);
   qs('[data-action="reorder-workout"]')?.addEventListener('click', openReorderSheet);
 
+  qsa('[data-action="toggle-exercise"]').forEach((btn) => btn.addEventListener('click', () => {
+    const block = btn.closest('.exercise-block');
+    const id = btn.dataset.id;
+    const willOpen = block.classList.contains('collapsed');
+    if (willOpen) { state.collapsedExercises.delete(id); Sound.open(); }
+    else { state.collapsedExercises.add(id); Sound.close(); }
+    animateHeight(qs('.exercise-body', block), willOpen,
+      () => block.classList.toggle('collapsed', !willOpen));
+  }));
+
   qsa('[data-action="add-set"]').forEach((btn) => btn.addEventListener('click', () => {
     const w = getActive(); const ei = +btn.dataset.ei;
     const last = w.entries[ei].sets[w.entries[ei].sets.length - 1];
@@ -856,6 +898,7 @@ function bindWorkoutEvents() {
   }));
   qsa('[data-action="remove-set"]').forEach((btn) => btn.addEventListener('click', () => {
     const w = getActive(); const ei = +btn.dataset.ei, si = +btn.dataset.si;
+    Sound.remove();
     collapseAway(btn.closest('.set-row'), () => {
       w.entries[ei].sets.splice(si, 1);
       Store.setActive(w);
@@ -878,6 +921,7 @@ function bindWorkoutEvents() {
     row?.classList.toggle('done', set.done);
     qsa(`.set-input[data-ei="${ei}"][data-si="${si}"]`).forEach((el) => el.classList.remove('suggested'));
     updatePrBadges(w.entries[ei], ei);
+    updateExerciseSummary(w.entries[ei], ei);
     if (set.done) {
       startRest();
       if (prIndex === si) { Sound.record(); toast('Neuer Rekord 🏆'); } else Sound.setDone();
@@ -888,6 +932,7 @@ function bindWorkoutEvents() {
   qsa('[data-action="remove-exercise"]').forEach((btn) => btn.addEventListener('click', () => {
     const w = getActive(); const ei = +btn.dataset.ei;
     if (!confirm('Übung aus diesem Training entfernen?')) return;
+    Sound.remove();
     collapseAway(btn.closest('.exercise-block'), () => {
       w.entries.splice(ei, 1);
       Store.setActive(w);
@@ -1272,20 +1317,21 @@ function bindGroupToggles(container, openSet) {
     const group = btn.dataset.group;
     const willOpen = !section.classList.contains('open');
     if (willOpen) openSet.add(group); else openSet.delete(group);
+    if (willOpen) Sound.open(); else Sound.close();
     animateGroup(section, willOpen);
   }));
 }
 
 // Auf-/Zuklappen mit echter Höhen-Animation: die Zielhöhe wird gemessen,
 // animiert und danach wieder an das CSS zurückgegeben, damit sich der Inhalt
-// frei ändern kann (z.B. wenn ein Treffer dazukommt).
-function animateGroup(section, open) {
-  const body = qs('.ex-group-body', section);
+// frei ändern kann (z.B. wenn ein Treffer dazukommt). `applyState` setzt die
+// Klasse, die den Endzustand beschreibt.
+function animateHeight(body, willOpen, applyState) {
   if (!body) return;
   const inner = body.firstElementChild;
   const from = body.getBoundingClientRect().height;
-  const to = open ? inner.getBoundingClientRect().height : 0;
-  section.classList.toggle('open', open);
+  applyState();
+  const to = willOpen ? inner.getBoundingClientRect().height : 0;
 
   if (prefersReducedMotion()) { body.style.height = ''; return; }
 
@@ -1300,6 +1346,10 @@ function animateGroup(section, open) {
     body.removeEventListener('transitionend', done);
   };
   body.addEventListener('transitionend', done);
+}
+
+function animateGroup(section, open) {
+  animateHeight(qs('.ex-group-body', section), open, () => section.classList.toggle('open', open));
 }
 
 // ---- Bibliothek-Tab ----
@@ -1642,6 +1692,20 @@ function renderSettings() {
           <span class="toggle-track"></span>
         </label>
       </div>
+      ${settings.sound ? `
+        <div class="volume-row">
+          ${Icon.volumeLow}
+          <input type="range" id="sound-volume" class="slider" min="0" max="100" step="5"
+            value="${Math.round(settings.soundVolume * 100)}" aria-label="Lautstärke" />
+          ${Icon.volumeHigh}
+        </div>
+        <div class="section-title" style="margin-top:14px">Klangfarbe</div>
+        <div class="chip-row">
+          ${SOUND_STYLES.map((s) => `
+            <button class="chip ${settings.soundStyle === s.id ? 'active' : ''}" data-action="set-sound-style" data-style="${s.id}">${s.label}</button>
+          `).join('')}
+        </div>
+        <p class="muted small">Zum Anhören antippen. Der Stummschalter des iPhones hat Vorrang.</p>` : ''}
     </section>
     <section class="card">
       <div class="section-title">Pause zwischen Sätzen</div>
@@ -1846,7 +1910,23 @@ function bindSettingsEvents() {
     Store.saveSettings({ ...Store.getSettings(), sound: e.target.checked });
     setSoundEnabled(e.target.checked);
     if (e.target.checked) Sound.setDone(); // einmal vorhören
+    render(); // blendet Lautstärke und Klangfarbe ein bzw. aus
   });
+  qs('#sound-volume')?.addEventListener('input', (e) => {
+    setSoundVolume(+e.target.value / 100);
+  });
+  qs('#sound-volume')?.addEventListener('change', (e) => {
+    const value = +e.target.value / 100;
+    Store.saveSettings({ ...Store.getSettings(), soundVolume: value });
+    setSoundVolume(value);
+    Sound.setDone(); // neue Lautstärke sofort hörbar machen
+  });
+  qsa('[data-action="set-sound-style"]').forEach((btn) => btn.addEventListener('click', () => {
+    Store.saveSettings({ ...Store.getSettings(), soundStyle: btn.dataset.style });
+    setSoundStyle(btn.dataset.style);
+    qsa('[data-action="set-sound-style"]').forEach((b) => b.classList.toggle('active', b === btn));
+    Sound.setDone();
+  }));
   qs('#toggle-motivation')?.addEventListener('change', (e) => {
     Store.saveSettings({ ...Store.getSettings(), motivation: e.target.checked });
     render(); // blendet das Wochenziel direkt ein oder aus
@@ -2106,6 +2186,22 @@ function createSwipeSelector({
   return { onPointerDown, selectWithSlide };
 }
 
+// Ein leiser Klick auf jede Schaltfläche, wie bei nativen Apps – zentral
+// statt über die ganze Datei verstreut. Aktionen mit eigenem Klang stehen
+// hier ausgenommen, sonst lägen zwei Töne übereinander.
+const CUSTOM_SOUND_ACTIONS = new Set([
+  'toggle-set', 'finish-workout', 'start-blank', 'start-routine', 'resume-workout',
+  'remove-set', 'remove-exercise', 'toggle-group', 'toggle-exercise', 'set-sound-style',
+  'delete-workout', 'delete-exercise', 'delete-routine', 'discard-workout', 'wipe-data',
+]);
+
+document.addEventListener('pointerdown', (e) => {
+  const el = e.target.closest('button, label.btn, .chip, .swatch');
+  if (!el || el.disabled) return;
+  if (CUSTOM_SOUND_ACTIONS.has(el.dataset.action)) return;
+  Sound.tap();
+}, true);
+
 let activeSwipeSelector = null;
 window.addEventListener('pointermove', (e) => activeSwipeSelector?.onPointerMove(e));
 window.addEventListener('pointerup', () => activeSwipeSelector?.onPointerUp());
@@ -2150,6 +2246,8 @@ window.addEventListener('beforeunload', () => stopTicking());
 
 applyAccent();
 setSoundEnabled(Store.getSettings().sound);
+setSoundVolume(Store.getSettings().soundVolume);
+setSoundStyle(Store.getSettings().soundStyle);
 calibrateSafeArea();
 window.addEventListener('resize', calibrateSafeArea);
 window.addEventListener('orientationchange', () => setTimeout(calibrateSafeArea, 150));

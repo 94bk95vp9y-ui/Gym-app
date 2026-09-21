@@ -54,6 +54,8 @@ const DEFAULT_SETTINGS = {
   motivation: true,
   weeklyGoal: 3,
   sound: true,
+  soundVolume: 0.7,
+  soundStyle: 'click',
 };
 
 export const REST_OPTIONS = [0, 60, 90, 120, 180];

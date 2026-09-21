@@ -523,7 +523,37 @@ button, input, select, textarea {
 .workout-title span { font-variant-numeric: tabular-nums; }
 
 .exercise-block { display: flex; flex-direction: column; gap: 6px; }
-.exercise-block-header { display: flex; align-items: center; justify-content: space-between; }
+.exercise-block-header { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+
+/* Übung zuklappen: spart Platz, ohne den Überblick zu nehmen – die
+   Kurzfassung in der Kopfzeile bleibt sichtbar. */
+.ex-toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+  transition: opacity 0.15s;
+}
+.ex-toggle:active { opacity: 0.55; }
+.ex-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ex-title strong { font-size: 16px; }
+.ex-summary { display: none; }
+.exercise-block.collapsed .ex-summary { display: block; }
+.ex-chevron { display: flex; color: var(--text-secondary); flex-shrink: 0; }
+.ex-chevron svg { width: 18px; height: 18px; transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1); transform: rotate(90deg); }
+.exercise-block.collapsed .ex-chevron svg { transform: rotate(0deg); }
+.exercise-body { overflow: hidden; }
+.exercise-block.collapsed > .exercise-body {
+  height: 0;
+  visibility: hidden;
+  transition: visibility 0s linear 0.3s;
+}
 .overload-tip { color: var(--accent); font-size: 12px; font-weight: 600; margin: 0; }
 .fatigue-note { color: var(--text-secondary); font-size: 11.5px; font-style: italic; margin: 0; line-height: 1.35; }
 .workout-actions > .btn { flex: 1; }
@@ -716,6 +746,36 @@ button, input, select, textarea {
 .week-day.today { color: var(--text); font-weight: 700; }
 .week-day.today .week-dot { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
 .detail-stats { margin-bottom: 6px; }
+
+/* Lautstärkeregler */
+.volume-row { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+.volume-row svg { width: 18px; height: 18px; color: var(--text-secondary); flex-shrink: 0; }
+.slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-input);
+  outline: none;
+  margin: 0;
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm), 0 0 0 1px var(--border);
+  cursor: grab;
+}
+.slider::-moz-range-thumb {
+  width: 26px; height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm), 0 0 0 1px var(--border);
+}
 
 /* Auswahl-Chips (z.B. Pausenlänge) */
 .chip-row { display: flex; gap: 6px; }
