@@ -29,6 +29,27 @@ function applyAccent() {
   document.documentElement.style.setProperty('--accent', Store.getSettings().accent);
 }
 
+// iOS meldet in der installierten Web-App eine Safe Area unten (34px), auch
+// wenn die Seite dort gar nicht hinreicht, weil das System die Ansicht schon
+// verkürzt hat. Rechnet man den Wert dann trotzdem ein, steht die Leiste
+// doppelt zu hoch. Deshalb: Ist der Bildschirm messbar höher als die Seite,
+// hat das System den Platz bereits abgezogen – dann keinen eigenen Abstand
+// mehr addieren.
+function calibrateSafeArea() {
+  const reserved = Math.round(window.screen.height - window.innerHeight);
+  const portrait = window.innerWidth < window.innerHeight;
+  // Nur in der installierten App: im normalen Safari fehlt unten Platz wegen
+  // der Browserleiste, die Seite reicht dort aber sehr wohl bis zum
+  // Home-Indikator – da muss der Abstand erhalten bleiben.
+  const systemReservedBottom = navigator.standalone === true
+    && portrait && reserved > 8 && reserved < 140;
+  document.documentElement.style.setProperty(
+    '--safe-bottom',
+    systemReservedBottom ? '0px' : 'env(safe-area-inset-bottom, 0px)',
+  );
+  return { reserved, systemReservedBottom };
+}
+
 // Progressive Overload (opt-in in den Einstellungen): klassische
 // "Doppelprogression" – wer eine Übung in den letzten 2 abgeschlossenen
 // Einheiten jeweils bei GLEICHEM Gewicht und durchweg ≥10 Wiederholungen
@@ -1491,15 +1512,21 @@ function renderDiagnostics() {
   const rect = probe.getBoundingClientRect();
   probe.remove();
 
-  const missing = Math.round(window.screen.height - window.innerHeight);
+  const { reserved, systemReservedBottom } = calibrateSafeArea();
+  const barGap = qs('.tabbar')
+    ? Math.round(window.innerHeight - qs('.tabbar').getBoundingClientRect().bottom)
+    : 0;
+
   out.textContent = [
-    `Bildschirm     ${window.screen.width} × ${window.screen.height}`,
-    `Seite (innen)  ${window.innerWidth} × ${window.innerHeight}`,
-    `fehlt insgesamt ${missing} px`,
-    `safe-area oben  ${Math.round(rect.width)} px`,
-    `safe-area unten ${Math.round(rect.height)} px`,
+    `Bildschirm      ${window.screen.width} × ${window.screen.height}`,
+    `Seite (innen)   ${window.innerWidth} × ${window.innerHeight}`,
+    `vom System belegt ${reserved} px`,
+    `safe-area oben   ${Math.round(rect.width)} px`,
+    `safe-area unten  ${Math.round(rect.height)} px`,
+    `unten gerechnet  ${systemReservedBottom ? '0 (System hat schon)' : `${Math.round(rect.height)} px`}`,
+    `Leiste über Seitenrand ${barGap} px`,
+    `Leiste über Bildschirmrand ${barGap + reserved} px`,
     `als App installiert: ${navigator.standalone === true ? 'ja' : 'nein'}`,
-    `Pixeldichte ${window.devicePixelRatio}`,
   ].join('\n');
 }
 
@@ -1807,6 +1834,9 @@ sheetRoot.addEventListener('click', (e) => {
 window.addEventListener('beforeunload', () => stopTicking());
 
 applyAccent();
+calibrateSafeArea();
+window.addEventListener('resize', calibrateSafeArea);
+window.addEventListener('orientationchange', () => setTimeout(calibrateSafeArea, 150));
 render();
 
 if ('serviceWorker' in navigator) {

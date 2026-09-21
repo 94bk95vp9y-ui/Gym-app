@@ -8,10 +8,16 @@
 
   <!-- iOS Home-Screen / PWA -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <!-- Nicht "black-translucent": iOS macht die Web-Ansicht dann um die Höhe der
+       Statusleiste kürzer, hängt sie aber oben an – der fehlende Streifen
+       landet unten, wo die Navigationsleiste sitzt, und ist per CSS nicht
+       erreichbar. Mit "default" beginnt die Seite unter der Statusleiste und
+       reicht dafür bis zur echten Unterkante. -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Gym" />
-  <meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)" />
-  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
+  <!-- Färbt den Streifen der Statusleiste wie die Kopfzeile darunter. -->
+  <meta name="theme-color" content="#1c1c1e" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="manifest" href="manifest.webmanifest" />
