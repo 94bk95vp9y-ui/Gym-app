@@ -1,5 +1,6 @@
 import { Store, MUSCLE_GROUPS, ACCENT_COLORS, REST_OPTIONS, uid } from './storage.js';
 import { Icon } from './icons.js';
+import { buildPlanPrompt, parsePlanText, normalizeExerciseName } from './plan-import.js';
 import {
   formatDate, formatDateTime, formatDuration, elapsedLabel,
   estimate1RM, bestSet, escapeHtml, unitLabel, drawLineChart,
@@ -93,12 +94,12 @@ function getOverloadSuggestion(exercise, excludeWorkoutId) {
 // Übung, werden Gewicht/Wdh davon als "Vorschlag" vorbelegt (grau, bis bestätigt) –
 // sonst leer. Ist Progressive Overload aktiv und die Übung bereit für mehr
 // Gewicht, wird direkt das gesteigerte Gewicht als Vorschlag genommen.
-function defaultSets(exercise, excludeWorkoutId) {
+function defaultSets(exercise, excludeWorkoutId, count = 2) {
   const last = Store.lastEntryForExercise(exercise.id, excludeWorkoutId);
   const best = last ? bestSet(last.sets) : null;
   const overload = Store.getSettings().progressiveOverload ? getOverloadSuggestion(exercise, excludeWorkoutId) : null;
   const weight = overload ? overload.to : (best ? best.weight : 0);
-  return [0, 1].map(() => ({
+  return Array.from({ length: Math.max(1, count) }, () => ({
     weight,
     reps: best ? best.reps : 0,
     done: false,
@@ -528,7 +529,8 @@ function bindStartEvents() {
     if (!routine) return;
     const entries = routine.exerciseIds.map((eid) => {
       const ex = Store.getExercise(eid);
-      return { exerciseId: eid, exerciseName: ex ? ex.name : 'Unbekannt', sets: ex ? defaultSets(ex) : [] };
+      const count = routine.setCounts?.[eid];
+      return { exerciseId: eid, exerciseName: ex ? ex.name : 'Unbekannt', sets: ex ? defaultSets(ex, undefined, count ?? 2) : [] };
     });
     Store.setActive({ id: uid(), routineId: routine.id, routineName: routine.name, startedAt: new Date().toISOString(), finishedAt: null, entries });
     state.workoutOpen = true;
@@ -1354,14 +1356,20 @@ function enableDragReorder(container, onReorder) {
 }
 
 function openRoutineSheet(id) {
-  const routine = id ? Store.getRoutine(id) : { id: uid(), name: '', exerciseIds: [] };
-  const draft = { ...routine, exerciseIds: [...routine.exerciseIds] };
+  const routine = id ? Store.getRoutine(id) : { id: uid(), name: '', exerciseIds: [], setCounts: {} };
+  const draft = { ...routine, exerciseIds: [...routine.exerciseIds], setCounts: { ...(routine.setCounts || {}) } };
 
   const renderChosen = () => draft.exerciseIds.map((eid, i) => {
     const ex = Store.getExercise(eid);
+    const sets = draft.setCounts?.[eid] ?? 2;
     return `<div class="list-item reorder-item">
       <span class="drag-handle" data-drag-handle aria-hidden="true">${Icon.grip}</span>
       <div class="list-item-main"><strong>${ex ? escapeHtml(ex.name) : 'Unbekannt'}</strong></div>
+      <span class="set-stepper">
+        <button class="step-btn" data-action="set-count" data-id="${eid}" data-delta="-1" aria-label="Weniger Sätze">−</button>
+        <span class="step-value">${sets}×</span>
+        <button class="step-btn" data-action="set-count" data-id="${eid}" data-delta="1" aria-label="Mehr Sätze">+</button>
+      </span>
       <button class="icon-btn small danger" data-action="remove-from-routine" data-i="${i}">${Icon.close}</button>
     </div>`;
   }).join('') || '<p class="empty small">Noch keine Übungen gewählt.</p>';
@@ -1395,6 +1403,14 @@ function openRoutineSheet(id) {
       draft.name = qs('#f-rname').value;
       renderEditor();
     }));
+    qsa('[data-action="set-count"]').forEach((b) => b.addEventListener('click', () => {
+      const id = b.dataset.id;
+      draft.setCounts = draft.setCounts || {};
+      const next = Math.max(1, Math.min(12, (draft.setCounts[id] ?? 2) + +b.dataset.delta));
+      draft.setCounts[id] = next;
+      // Nur die Zahl austauschen – ein Neuaufbau des Sheets wäre hier zu viel.
+      b.parentElement.querySelector('.step-value').textContent = `${next}×`;
+    }));
     qs('[data-action="add-to-routine"]').addEventListener('click', () => {
       draft.name = qs('#f-rname').value;
       openExercisePicker();
@@ -1402,7 +1418,7 @@ function openRoutineSheet(id) {
     qs('[data-action="save-routine"]').addEventListener('click', () => {
       const name = qs('#f-rname').value.trim();
       if (!name) { qs('#f-rname').focus(); return; }
-      Store.saveRoutine({ id: draft.id, name, exerciseIds: draft.exerciseIds });
+      Store.saveRoutine({ id: draft.id, name, exerciseIds: draft.exerciseIds, setCounts: draft.setCounts || {} });
       closeSheet();
       render();
     });
@@ -1490,6 +1506,22 @@ function renderSettings() {
       </button>
     </section>
     <section class="card">
+      <div class="section-title">Pläne per KI anlegen</div>
+      <ol class="howto">
+        <li>Prompt kopieren und an eine KI schicken.</li>
+        <li>Plan beschreiben – per Sprachnachricht geht das am schnellsten.</li>
+        <li>Antwort der KI hier einfügen und einlesen.</li>
+      </ol>
+      <button class="btn btn-secondary full" data-action="copy-plan-prompt">${Icon.copy} Prompt kopieren</button>
+      <textarea id="plan-import-text" class="text-input import-area" rows="3"
+        placeholder="Antwort der KI hier einfügen…"></textarea>
+      <div class="row gap">
+        <button class="btn btn-primary" data-action="parse-plan-import">Pläne einlesen</button>
+        <label class="btn btn-secondary" for="plan-file">Datei wählen</label>
+        <input type="file" id="plan-file" accept=".txt,.md,.text,text/plain,text/markdown" hidden />
+      </div>
+    </section>
+    <section class="card">
       <div class="section-title">Anzeige-Diagnose</div>
       <pre class="diag" id="diag-out">…</pre>
       <p class="muted small">Zeigt, wie viel Platz das System unten reserviert. Nur zur Feinjustierung der Leiste – kann später wieder raus.</p>
@@ -1530,8 +1562,150 @@ function renderDiagnostics() {
   ].join('\n');
 }
 
+// ---- Pläne per KI importieren ----
+// Die KI bekommt die eigene Übungsliste mit, damit sie exakt passende Namen
+// verwendet. Beim Einlesen wird jede Zeile gegen die Bibliothek aufgelöst;
+// was fehlt, wird als neue Übung angelegt – aber erst nach einer Vorschau,
+// damit nichts unbemerkt in der Bibliothek landet.
+function resolveImportedPlans(parsed) {
+  const exercises = Store.getExercises();
+  const byName = new Map(exercises.map((e) => [normalizeExerciseName(e.name), e]));
+
+  const findExercise = (name) => {
+    const norm = normalizeExerciseName(name);
+    if (byName.has(norm)) return byName.get(norm);
+    const base = normalizeExerciseName(name.replace(/\([^)]*\)/g, ''));
+    if (base.length >= 4 && byName.has(base)) return byName.get(base);
+    if (base.length < 4) return null;
+    return exercises
+      .filter((e) => {
+        const n = normalizeExerciseName(e.name);
+        return n.includes(base) || base.includes(n);
+      })
+      .sort((a, b) => a.name.length - b.name.length)[0] || null;
+  };
+
+  const created = new Map();
+  const plans = parsed.plans.map((plan) => {
+    const items = plan.items.map((item) => {
+      const match = findExercise(item.name);
+      if (match) return { exercise: match, sets: item.sets, isNew: false };
+
+      const key = normalizeExerciseName(item.name);
+      if (!created.has(key)) {
+        created.set(key, {
+          id: uid(),
+          name: item.name,
+          muscleGroup: MUSCLE_GROUPS.includes(item.muscleGroup) ? item.muscleGroup : 'Sonstiges',
+          notes: '',
+        });
+      }
+      return { exercise: created.get(key), sets: item.sets, isNew: true };
+    });
+    const existing = Store.getRoutines().find(
+      (r) => r.name.trim().toLowerCase() === plan.name.trim().toLowerCase(),
+    );
+    return { name: plan.name, items, replaces: existing || null };
+  });
+
+  return { plans, newExercises: [...created.values()], warnings: parsed.warnings };
+}
+
+function applyImportedPlans(resolved) {
+  resolved.newExercises.forEach((ex) => Store.saveExercise(ex));
+  resolved.plans.forEach((plan) => {
+    const setCounts = {};
+    plan.items.forEach((item) => { setCounts[item.exercise.id] = item.sets; });
+    Store.saveRoutine({
+      id: plan.replaces ? plan.replaces.id : uid(),
+      name: plan.name,
+      exerciseIds: plan.items.map((i) => i.exercise.id),
+      setCounts,
+    });
+  });
+}
+
+function openImportPreview(text) {
+  const parsed = parsePlanText(text);
+  if (!parsed.plans.length) {
+    openSheet('Nichts gefunden', `
+      <p class="muted">In dem Text steckt kein Plan im erwarteten Format. Erwartet wird:</p>
+      <pre class="diag">PLAN: Push
+- Bankdrücken (Langhantel) | 3
+- Seitheben (Kurzhantel) | 4</pre>
+      ${parsed.warnings.map((w) => `<p class="muted small">${escapeHtml(w)}</p>`).join('')}
+      <p class="muted small">Tipp: Den Prompt oben kopieren – damit antwortet die KI im richtigen Format.</p>`);
+    return;
+  }
+
+  const resolved = resolveImportedPlans(parsed);
+  const body = resolved.plans.map((plan) => `
+    <div class="import-plan">
+      <strong>${escapeHtml(plan.name)}</strong>
+      ${plan.replaces ? '<span class="pill">ersetzt vorhandenen</span>' : ''}
+      <div class="detail-sets">
+        ${plan.items.map((i) => `<span class="set-chip ${i.isNew ? 'pr' : ''}">${escapeHtml(i.exercise.name)} · ${i.sets}×${i.isNew ? ' neu' : ''}</span>`).join('')}
+      </div>
+    </div>`).join('');
+
+  const planCount = resolved.plans.length;
+  const newCount = resolved.newExercises.length;
+  openSheet('Import prüfen', `
+    ${body}
+    ${newCount ? `<p class="muted small">${newCount === 1
+      ? 'Eine Übung ist noch nicht in der Bibliothek und wird angelegt.'
+      : `${newCount} Übungen sind noch nicht in der Bibliothek und werden angelegt.`}</p>` : ''}
+    ${resolved.warnings.map((w) => `<p class="muted small">⚠️ ${escapeHtml(w)}</p>`).join('')}
+  `, {
+    footer: `<button class="btn btn-primary full" data-action="confirm-import">
+      ${planCount === 1 ? 'Plan übernehmen' : `${planCount} Pläne übernehmen`}</button>`,
+    onMount: () => {
+      qs('[data-action="confirm-import"]').addEventListener('click', () => {
+        applyImportedPlans(resolved);
+        closeSheet();
+        const area = qs('#plan-import-text');
+        if (area) area.value = '';
+        state.tab = 'library';
+        state.librarySubTab = 'routines';
+        go(render);
+        toast(planCount === 1 ? 'Plan importiert' : `${planCount} Pläne importiert`);
+      });
+    },
+  });
+}
+
+function bindPlanImportEvents() {
+  qs('[data-action="copy-plan-prompt"]')?.addEventListener('click', async (e) => {
+    const prompt = buildPlanPrompt(Store.getExercises(), MUSCLE_GROUPS);
+    try {
+      await navigator.clipboard.writeText(prompt);
+      toast('Prompt kopiert');
+    } catch {
+      // Ohne Zwischenablage-Rechte: Text zum manuellen Kopieren anbieten.
+      const area = qs('#plan-import-text');
+      if (area) { area.value = prompt; area.focus(); area.select(); }
+      toast('Bitte von Hand kopieren');
+    }
+    e.currentTarget.blur();
+  });
+
+  qs('[data-action="parse-plan-import"]')?.addEventListener('click', () => {
+    const text = qs('#plan-import-text')?.value.trim();
+    if (!text) { qs('#plan-import-text')?.focus(); return; }
+    openImportPreview(text);
+  });
+
+  qs('#plan-file')?.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    openImportPreview(await file.text());
+    e.target.value = '';
+  });
+}
+
 function bindSettingsEvents() {
   renderDiagnostics();
+  bindPlanImportEvents();
   qsa('[data-action="set-unit"]').forEach((btn) => btn.addEventListener('click', () => {
     Store.saveSettings({ ...Store.getSettings(), unit: btn.dataset.unit });
     render();
