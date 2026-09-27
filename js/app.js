@@ -601,7 +601,7 @@ function renderSupplementCard() {
 
   if (!active.length) {
     return `
-      <section class="card supp-card supp-invite">
+      <section class="card supp-card supp-invite" data-variant="invite">
         <button class="supp-row-btn" data-action="open-supplements">
           <span class="supp-emoji">💊</span>
           <span class="supp-row-text"><strong>Supplements tracken</strong>
@@ -620,7 +620,7 @@ function renderSupplementCard() {
 
   if (status.complete) {
     return `
-      <section class="card supp-card supp-complete">
+      <section class="card supp-card supp-complete" data-variant="complete">
         <button class="supp-row-btn" data-action="open-supplements">
           <span class="supp-emoji done">${Icon.check}</span>
           <span class="supp-row-text"><strong>Supplements genommen</strong>
@@ -640,20 +640,24 @@ function renderSupplementCard() {
 
     // Eine erledigte Tageszeit auf eine Zeile eindampfen – der Blick soll auf
     // dem liegen, was noch offen ist. Antippen klappt sie wieder auf.
+    // Jede Tageszeit ist genau EIN Element mit data-state: so lässt sich beim
+    // Wechsel gezielt nur dieser Abschnitt überblenden.
     if (!open.length) {
       return `
-        <button class="supp-slot-done" data-action="supp-expand-slot">
-          ${slot.icon} ${slot.label} <span class="supp-ok">${Icon.check} ${items.length}/${items.length}</span>
-        </button>
-        <div class="supp-slot collapsed-slot" hidden>${suppItemsHtml(items, taken, today)}</div>`;
+        <div class="supp-slot slot-done" data-slot="${slot.id}" data-state="done">
+          <button class="supp-slot-done" data-action="supp-expand-slot">
+            ${slot.icon} ${slot.label} <span class="supp-ok">${Icon.check} ${items.length}/${items.length}</span>
+          </button>
+          <div class="supp-slot-items" hidden>${suppItemsHtml(items, taken, today)}</div>
+        </div>`;
     }
     return `
-      <div class="supp-slot ${later ? 'later' : ''}">
+      <div class="supp-slot ${later ? 'later' : ''}" data-slot="${slot.id}" data-state="open">
         <div class="supp-slot-head">
           <span>${slot.icon} ${slot.label}${later ? ' · später' : ''}</span>
-          ${open.length > 1 ? `<button class="supp-all" data-action="supp-slot-all" data-slot="${slot.id}" data-day="${today}">Alle ${Icon.check}</button>` : ''}
+          ${items.length > 1 ? `<button class="supp-all" data-action="supp-slot-all" data-slot="${slot.id}" data-day="${today}" ${open.length > 1 ? '' : 'hidden'}>Alle ${Icon.check}</button>` : ''}
         </div>
-        ${suppItemsHtml(items, taken, today)}
+        <div class="supp-slot-items">${suppItemsHtml(items, taken, today)}</div>
       </div>`;
   }).join('');
 
@@ -665,7 +669,7 @@ function renderSupplementCard() {
     : '';
 
   return `
-    <section class="card supp-card">
+    <section class="card supp-card" data-variant="list">
       <div class="supp-head">
         <strong>💊 Supplements</strong>
         <span class="supp-progress">${status.done}/${status.expected}</span>
@@ -677,6 +681,49 @@ function renderSupplementCard() {
     </section>`;
 }
 
+function elementFrom(html) {
+  const holder = document.createElement('div');
+  holder.innerHTML = html.trim();
+  return holder.firstElementChild;
+}
+
+// Ein Element weich in ein anderes übergehen lassen: erst blendet der alte
+// Inhalt aus, dann wird getauscht und die Höhe (samt Hinter-/Rahmenfarbe)
+// gleitet auf die neue Form, während der neue Inhalt einblendet. Ohne das
+// springt die Höhe beim Tausch schlagartig – genau das wirkte wie "verschwindet
+// auf einmal".
+function morphReplace(oldEl, newEl) {
+  if (prefersReducedMotion() || !oldEl.isConnected) {
+    oldEl.replaceWith(newEl);
+    return Promise.resolve();
+  }
+  const easing = 'cubic-bezier(0.32, 0.72, 0, 1)';
+  const fadeOut = [...oldEl.children].map((child) => child.animate(
+    [{ opacity: 1 }, { opacity: 0 }], { duration: 130, easing: 'ease-in', fill: 'forwards' },
+  ).finished.catch(() => {}));
+
+  return Promise.all(fadeOut).then(() => {
+    if (!oldEl.isConnected) return undefined;
+    const from = oldEl.getBoundingClientRect().height;
+    const oldStyle = getComputedStyle(oldEl);
+    const fromColors = { backgroundColor: oldStyle.backgroundColor, borderColor: oldStyle.borderColor };
+    oldEl.replaceWith(newEl);
+    const to = newEl.getBoundingClientRect().height;
+    const newStyle = getComputedStyle(newEl);
+
+    newEl.style.overflow = 'hidden';
+    const grow = newEl.animate([
+      { height: `${from}px`, ...fromColors },
+      { height: `${to}px`, backgroundColor: newStyle.backgroundColor, borderColor: newStyle.borderColor },
+    ], { duration: 360, easing });
+    [...newEl.children].forEach((child, i) => child.animate(
+      [{ opacity: 0, transform: 'translateY(5px)' }, { opacity: 1, transform: 'none' }],
+      { duration: 280, delay: 90 + i * 30, easing: 'ease-out', fill: 'backwards' },
+    ));
+    return grow.finished.catch(() => {}).then(() => { newEl.style.overflow = ''; });
+  });
+}
+
 function suppItemsHtml(items, taken, day) {
   return items.map((s) => `
     <button class="supp-item ${taken[s.id] ? 'on' : ''}" data-action="supp-toggle" data-id="${s.id}" data-day="${day}">
@@ -685,17 +732,18 @@ function suppItemsHtml(items, taken, day) {
     </button>`).join('');
 }
 
-// Abhaken: erst die Rückmeldung am Haken (sofort, mit Ton), dann – kurz
-// danach – die Karte neu aufbauen, falls eine Tageszeit oder der ganze Tag
-// damit erledigt ist. So sieht man den Haken, bevor sich das Layout ändert.
-function toggleSupplements(ids, day, container, rerender) {
+// Abhaken: der Haken reagiert sofort (Klasse + Ton), ohne dass irgendetwas
+// neu gebaut wird – ein Neuaufbau ersetzt den gerade federnden Haken durch
+// ein frisches, statisches Element, und genau das hat geruckelt. Erst kurz
+// danach wird abgeglichen, ob sich die Struktur geändert hat.
+function toggleSupplements(ids, day, container, afterToggle) {
   const log = Store.getSupplementLog();
   const taken = log[day] || {};
   const willTake = ids.some((id) => !taken[id]);
   const before = dayStatus(Store.getSupplements(), log, day).complete;
 
   Store.setSupplementsTaken(day, ids, willTake);
-  ids.forEach((id) => qsa(`[data-action="supp-toggle"][data-id="${id}"]`, container)
+  ids.forEach((id) => qsa(`[data-action="supp-toggle"][data-id="${id}"][data-day="${day}"]`, container)
     .forEach((el) => el.classList.toggle('on', willTake)));
 
   const after = dayStatus(Store.getSupplements(), Store.getSupplementLog(), day).complete;
@@ -703,40 +751,107 @@ function toggleSupplements(ids, day, container, rerender) {
   else if (willTake) Sound.setDone();
   else Sound.setUndone();
 
-  setTimeout(rerender, after && !before ? 520 : 260);
+  afterToggle?.();
+  // Wird der Tag damit komplett, etwas länger warten: der letzte Haken soll
+  // sichtbar sitzen, bevor die Karte in ihre Kurzform übergeht.
+  scheduleSupplementRefresh(after && !before ? 480 : 300);
 }
 
+// Mehrere schnelle Haken hintereinander ergeben nur EINEN Abgleich, und
+// solange ein Übergang läuft, wartet der nächste – sonst würden zwei
+// Überblendungen am selben Element zerren.
+let suppRefreshTimer = null;
+let suppMorphing = null;
+function scheduleSupplementRefresh(delay) {
+  clearTimeout(suppRefreshTimer);
+  suppRefreshTimer = setTimeout(async () => {
+    if (suppMorphing) await suppMorphing;
+    suppMorphing = refreshSupplementCard().finally(() => { suppMorphing = null; });
+  }, delay);
+}
+
+// Karte mit dem aktuellen Stand abgleichen – so wenig wie möglich anfassen:
+// Zahlen und Haken direkt nachziehen, nur geänderte Abschnitte überblenden.
 function refreshSupplementCard() {
   const card = qs('.supp-card');
-  if (!card) return;
-  const holder = document.createElement('div');
-  holder.innerHTML = renderSupplementCard().trim();
-  const next = holder.firstElementChild;
-  if (!next) { card.remove(); return; }
-  card.replaceWith(next);
-  bindSupplementCard();
-  if (next.classList.contains('supp-complete')) dropIn(next);
+  if (!card) return Promise.resolve();
+  const next = elementFrom(renderSupplementCard());
+  if (!next) {
+    return new Promise((resolve) => collapseAway(card, () => { card.remove(); resolve(); }));
+  }
+
+  // Anderer Grundzustand (z.B. Liste -> "alles genommen"): ganze Karte überblenden.
+  if (card.dataset.variant !== next.dataset.variant) {
+    const done = morphReplace(card, next);
+    bindSupplementCard();
+    return done;
+  }
+  if (next.dataset.variant !== 'list') {
+    card.replaceWith(next);
+    bindSupplementCard();
+    return Promise.resolve();
+  }
+
+  const oldSlots = qsa('.supp-slot', card).map((s) => s.dataset.slot).join();
+  const newSlots = qsa('.supp-slot', next).map((s) => s.dataset.slot).join();
+  if (oldSlots !== newSlots) {
+    const done = morphReplace(card, next);
+    bindSupplementCard();
+    return done;
+  }
+
+  const morphs = qsa('.supp-slot', next).map((newSlot) => {
+    const oldSlot = qs(`.supp-slot[data-slot="${newSlot.dataset.slot}"]`, card);
+    if (oldSlot.dataset.state !== newSlot.dataset.state) return morphReplace(oldSlot, newSlot);
+    // gleicher Zustand: nur Haken und "Alle"-Knopf nachziehen
+    qsa('[data-action="supp-toggle"]', newSlot).forEach((item) => {
+      qs(`[data-action="supp-toggle"][data-id="${item.dataset.id}"]`, oldSlot)
+        ?.classList.toggle('on', item.classList.contains('on'));
+    });
+    const allNew = qs('[data-action="supp-slot-all"]', newSlot);
+    const allOld = qs('[data-action="supp-slot-all"]', oldSlot);
+    if (allNew && allOld) allOld.hidden = allNew.hidden;
+    return Promise.resolve();
+  });
+
+  // Kopfzeile und Nachtrage-Hinweis
+  qs('.supp-progress', card).textContent = qs('.supp-progress', next).textContent;
+  const newBadge = qs('.supp-head .streak-badge', next);
+  const oldBadge = qs('.supp-head .streak-badge', card);
+  if (newBadge && oldBadge) oldBadge.textContent = newBadge.textContent;
+  else if (newBadge) { qs('.supp-progress', card).after(newBadge); dropIn(newBadge); }
+  else oldBadge?.remove();
+  const newFill = qs('.supp-backfill', next);
+  const oldFill = qs('.supp-backfill', card);
+  if (!newFill && oldFill) collapseAway(oldFill, () => oldFill.remove());
+  else if (newFill && oldFill) oldFill.innerHTML = newFill.innerHTML;
+
+  return Promise.all(morphs);
 }
 
+// Klicks per Delegation an der Karte: Teile der Karte werden beim Abgleich
+// ausgetauscht, einzelne Listener an Kindern gingen dabei verloren oder
+// kämen doppelt.
 function bindSupplementCard() {
   const card = qs('.supp-card');
-  if (!card) return;
-  qsa('[data-action="open-supplements"]', card).forEach((btn) => btn.addEventListener('click', () =>
-    openSupplementSheet(btn.dataset.day)));
-  qsa('[data-action="supp-toggle"]', card).forEach((btn) => btn.addEventListener('click', () =>
-    toggleSupplements([btn.dataset.id], btn.dataset.day, card, refreshSupplementCard)));
-  qsa('[data-action="supp-slot-all"]', card).forEach((btn) => btn.addEventListener('click', () => {
-    const ids = Store.getActiveSupplements().filter((s) => s.slot === btn.dataset.slot).map((s) => s.id);
-    const taken = Store.getSupplementLog()[btn.dataset.day] || {};
-    const open = ids.filter((id) => !taken[id]);
-    toggleSupplements(open.length ? open : ids, btn.dataset.day, card, refreshSupplementCard);
-  }));
-  qsa('[data-action="supp-expand-slot"]', card).forEach((btn) => btn.addEventListener('click', () => {
-    const slot = btn.nextElementSibling;
-    btn.remove();
-    slot.hidden = false;
-    dropIn(slot);
-  }));
+  if (!card || card.dataset.bound) return;
+  card.dataset.bound = '1';
+  card.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-action]');
+    if (!el || !card.contains(el)) return;
+    const action = el.dataset.action;
+    if (action === 'open-supplements') openSupplementSheet(el.dataset.day);
+    else if (action === 'supp-toggle') toggleSupplements([el.dataset.id], el.dataset.day, card);
+    else if (action === 'supp-slot-all') {
+      const ids = Store.getActiveSupplements().filter((s) => s.slot === el.dataset.slot).map((s) => s.id);
+      const taken = Store.getSupplementLog()[el.dataset.day] || {};
+      const open = ids.filter((id) => !taken[id]);
+      toggleSupplements(open.length ? open : ids, el.dataset.day, card);
+    } else if (action === 'supp-expand-slot') {
+      const items = el.nextElementSibling;
+      animateHeight(items.parentElement, true, () => { el.remove(); items.hidden = false; });
+    }
+  });
 }
 
 // ---- Supplements: Übersicht, Nachtragen, Verwaltung, Erinnerung ----
@@ -753,6 +868,14 @@ function openSupplementSheet(focusDay) {
   let view = dateOfKey(selected);
   view = { year: view.getFullYear(), month: view.getMonth() };
 
+  function dayClass(st, key) {
+    if (key > today) return 'future';
+    if (st.complete) return 'full';
+    if (st.expected && st.done) return 'partial';
+    if (st.expected && key < today) return 'missed';
+    return 'none';
+  }
+
   function calendarHtml(supplements, log) {
     const first = new Date(view.year, view.month, 1);
     const offset = (first.getDay() + 6) % 7;
@@ -762,11 +885,7 @@ function openSupplementSheet(focusDay) {
     for (let d = 1; d <= days; d += 1) {
       const key = `${view.year}-${String(view.month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const st = dayStatus(supplements, log, key);
-      let cls = 'none';
-      if (key > today) cls = 'future';
-      else if (st.complete) cls = 'full';
-      else if (st.expected && st.done) cls = 'partial';
-      else if (st.expected && key < today) cls = 'missed';
+      const cls = dayClass(st, key);
       const pickable = key <= today && st.expected;
       cells += `<button class="cal-cell supp-day ${cls} ${key === selected ? 'selected' : ''} ${key === today ? 'today' : ''}"
         ${pickable ? `data-action="supp-pick-day" data-day="${key}"` : 'disabled'}>${d}</button>`;
@@ -804,7 +923,7 @@ function openSupplementSheet(focusDay) {
         <div class="supp-head">
           <strong>${dayLabel(selected)}</strong>
           <span class="supp-progress">${st.done}/${st.expected}</span>
-          ${!st.complete ? `<button class="supp-all" data-action="supp-day-all">Alle ${Icon.check}</button>` : ''}
+          <button class="supp-all" data-action="supp-day-all" ${st.complete ? 'hidden' : ''}>Alle ${Icon.check}</button>
         </div>
         ${groups}
       </div>`;
@@ -876,14 +995,39 @@ function openSupplementSheet(focusDay) {
     bind();
   }
 
+  // Nach einem Haken im Sheet nur nachziehen, was sich geändert hat – ein
+  // Neuaufbau würde den federnden Haken ersetzen und ruckeln.
+  function patch() {
+    const root = qs('.sheet-body', sheetRoot);
+    if (!root) return;
+    const supplements = Store.getSupplements();
+    const log = Store.getSupplementLog();
+    const st = dayStatus(supplements, log, selected);
+    const progress = qs('.supp-day-card .supp-progress', root);
+    if (progress) progress.textContent = `${st.done}/${st.expected}`;
+    const all = qs('[data-action="supp-day-all"]', root);
+    if (all) all.hidden = st.complete;
+    const cell = qs(`.supp-day[data-day="${selected}"]`, root);
+    if (cell) {
+      cell.classList.remove('full', 'partial', 'missed', 'none');
+      cell.classList.add(dayClass(st, selected));
+    }
+    const values = qsa('.detail-stats .stat-value', root);
+    if (values.length >= 2) {
+      values[0].textContent = streak(supplements, log, today);
+      const quote = adherence(supplements, log, today, 30);
+      values[1].textContent = quote ? `${quote.percent}%` : '–';
+    }
+  }
+
   function bind() {
     const root = qs('.sheet-body', sheetRoot);
     qsa('[data-action="supp-toggle"]', root).forEach((btn) => btn.addEventListener('click', () =>
-      toggleSupplements([btn.dataset.id], btn.dataset.day, root, () => { paint(); refreshSupplementCard(); })));
+      toggleSupplements([btn.dataset.id], btn.dataset.day, root, patch)));
     qs('[data-action="supp-day-all"]', root)?.addEventListener('click', () => {
       const taken = Store.getSupplementLog()[selected] || {};
       const open = activeOn(Store.getSupplements(), selected).filter((s) => !taken[s.id]).map((s) => s.id);
-      toggleSupplements(open, selected, root, () => { paint(); refreshSupplementCard(); });
+      if (open.length) toggleSupplements(open, selected, root, patch);
     });
     qsa('[data-action="supp-pick-day"]', root).forEach((btn) => btn.addEventListener('click', () => {
       selected = btn.dataset.day;
@@ -959,7 +1103,7 @@ function openSupplementEditor(id, back) {
         Store.saveSupplement({ id: uid(), name: btn.dataset.name, dose: '', slot: btn.dataset.slot, since: dayKey() });
         Sound.setDone();
         btn.outerHTML = `<span class="chip preset done item-in">${Icon.check} ${escapeHtml(btn.dataset.name)}</span>`;
-        refreshSupplementCard();
+        scheduleSupplementRefresh(0);
       }));
       qs('[data-action="supp-save"]').addEventListener('click', () => {
         const name = qs('#supp-name').value.trim();
@@ -970,14 +1114,14 @@ function openSupplementEditor(id, back) {
           return;
         }
         Store.saveSupplement({ ...draft, name, dose: qs('#supp-dose').value.trim() });
-        refreshSupplementCard();
+        scheduleSupplementRefresh(0);
         back();
       });
       qs('[data-action="supp-remove"]')?.addEventListener('click', () => {
         if (!confirm(`„${draft.name}" entfernen? Bisherige Einnahmen bleiben im Verlauf.`)) return;
         Sound.remove();
         Store.removeSupplement(draft.id, dayKey());
-        refreshSupplementCard();
+        scheduleSupplementRefresh(0);
         back();
       });
     },
@@ -1738,6 +1882,7 @@ function animateHeight(body, willOpen, applyState) {
 
   if (prefersReducedMotion()) { body.style.height = ''; return; }
 
+  body.style.overflow = 'hidden';
   body.style.height = `${from}px`;
   void body.offsetHeight;
   body.style.transition = 'height 0.3s cubic-bezier(0.32, 0.72, 0, 1)';
@@ -1746,6 +1891,7 @@ function animateHeight(body, willOpen, applyState) {
     if (e.target !== body || e.propertyName !== 'height') return;
     body.style.transition = '';
     body.style.height = '';
+    body.style.overflow = '';
     body.removeEventListener('transitionend', done);
   };
   body.addEventListener('transitionend', done);
