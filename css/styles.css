@@ -277,7 +277,11 @@ button, input, select, textarea {
 }
 .list-item.selectable { cursor: pointer; transition: background 0.15s, transform 0.15s; }
 .list-item.selectable:active { background: color-mix(in srgb, var(--text) 6%, transparent); transform: scale(0.985); }
-.list-item .list-item-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.list-item .list-item-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+/* Lange Übungsnamen ("Schrägbankdrücken") dürfen umbrechen statt in die
+   Knöpfe daneben zu laufen. */
+.list-item-main strong { overflow-wrap: anywhere; -webkit-hyphens: auto; hyphens: auto; }
+.routine-preview { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .list-item svg { width: 18px; height: 18px; color: var(--text-secondary); flex-shrink: 0; }
 .list-item.danger strong { color: var(--danger); }
 
@@ -323,7 +327,10 @@ button, input, select, textarea {
 .ex-group.open > .ex-group-body { height: auto; visibility: visible; transition-delay: 0s; }
 .ex-group-body > .card { margin-top: 6px; }
 
-.search-input { margin-bottom: 0; }
+/* Auf dem grauen Seitenhintergrund braucht das Suchfeld eine eigene Fläche,
+   sonst ist es im hellen Modus unsichtbar. */
+.search-input { margin-bottom: 0; background: var(--bg-elevated); box-shadow: inset 0 0 0 1px var(--border); }
+.sheet .search-input { background: var(--bg-input); box-shadow: none; }
 .search-input::-webkit-search-cancel-button { -webkit-appearance: none; }
 
 .muted { color: var(--text-secondary); font-size: 13px; }
@@ -489,6 +496,17 @@ button, input, select, textarea {
 }
 .pill-chosen { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
 .pill-live { background: var(--accent); color: var(--accent-contrast); }
+.pill-done { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+.list-item-main strong .pill { vertical-align: 2px; margin-left: 6px; }
+.plan-next { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.active-progress {
+  height: 4px;
+  margin: 10px 0 2px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.active-progress > span { display: block; height: 100%; background: var(--accent); transform-origin: left center; }
 .pill-live::before {
   content: "";
   width: 6px; height: 6px;
@@ -517,10 +535,26 @@ button, input, select, textarea {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
 }
-.workout-topbar { justify-content: space-between; }
-.workout-title { display: flex; flex-direction: column; align-items: center; text-align: center; }
-.workout-title strong { font-size: 16px; }
+.workout-topbar { justify-content: space-between; gap: 8px; }
+/* Minimieren schiebt das Training nach unten weg – der Pfeil zeigt dorthin. */
+.minimize-btn svg { transform: rotate(90deg); }
+.workout-title { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.workout-title strong { font-size: 16px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workout-title span { font-variant-numeric: tabular-nums; }
+/* Fortschritt des ganzen Trainings als feine Linie unter der Kopfzeile */
+.workout-progress {
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 2px;
+  pointer-events: none;
+}
+.workout-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transform-origin: left center;
+  transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+}
 
 .exercise-block { display: flex; flex-direction: column; gap: 6px; }
 .exercise-block-header { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
@@ -542,13 +576,43 @@ button, input, select, textarea {
 }
 .ex-toggle:active { opacity: 0.55; }
 .ex-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.ex-title strong { font-size: 16px; }
+.ex-title strong { font-size: 16px; display: flex; align-items: center; }
+/* Alle Sätze erledigt: grüner Haken vor dem Namen, Rahmen leicht grün */
+.ex-done-mark {
+  display: none;
+  width: 18px; height: 18px;
+  margin-right: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--success);
+  color: #fff;
+  align-items: center;
+  justify-content: center;
+}
+.ex-done-mark svg { width: 11px; height: 11px; }
+.exercise-block.complete .ex-done-mark { display: inline-flex; animation: mark-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+@keyframes mark-pop { from { transform: scale(0); } to { transform: scale(1); } }
+.exercise-block { transition: border-color 0.3s; }
+.exercise-block.complete { border-color: color-mix(in srgb, var(--success) 38%, var(--border)); }
 .ex-summary { display: none; }
 .exercise-block.collapsed .ex-summary { display: block; }
 .ex-chevron { display: flex; color: var(--text-secondary); flex-shrink: 0; }
 .ex-chevron svg { width: 18px; height: 18px; transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1); transform: rotate(90deg); }
 .exercise-block.collapsed .ex-chevron svg { transform: rotate(0deg); }
 .exercise-body { overflow: hidden; }
+.exercise-body > div { display: flex; flex-direction: column; gap: 4px; padding-top: 6px; }
+.exercise-body > div > p { margin: 0; }
+.exercise-body [data-action="add-set"] { align-self: flex-start; margin-top: 2px; }
+.last-time { line-height: 1.35; }
+.ex-note {
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  white-space: pre-line;
+}
 .exercise-block.collapsed > .exercise-body {
   height: 0;
   visibility: hidden;
@@ -564,18 +628,43 @@ button, input, select, textarea {
   gap: 6px;
   font-size: 11px;
   color: var(--text-secondary);
-  padding: 0 2px;
+  text-align: center;
+  margin-top: 2px;
 }
+.set-header-row .set-index { font-size: 11px; }
 .set-row {
   display: grid;
   grid-template-columns: 26px 1fr 14px 1fr 34px 30px;
   align-items: center;
   gap: 6px;
-  padding: 4px 0;
+  padding: 2px 0;
   position: relative;
-  transition: opacity 0.25s ease;
 }
-.set-row.done { opacity: 0.6; }
+/* Erledigt: nur die Zahlen treten zurück – Haken und Rekord bleiben kräftig. */
+.set-row .set-input, .set-row .set-index, .set-row .set-x { transition: opacity 0.25s ease; }
+.set-row.done .set-input, .set-row.done .set-index, .set-row.done .set-x { opacity: 0.55; }
+.set-row.shake { animation: shake 0.36s ease; }
+@keyframes shake {
+  0%, 100% { transform: none; }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(3px); }
+}
+/* Satz entfernen: bewusst zurückhaltend, damit er nicht wie das "×" zwischen
+   Gewicht und Wiederholungen aussieht. */
+.set-remove {
+  justify-self: center;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.15s, color 0.15s;
+}
+.set-remove svg { width: 14px; height: 14px; }
+.set-remove:active { transform: scale(0.85); background: var(--danger-bg); color: var(--danger); }
 .set-index { font-size: 13px; color: var(--text-secondary); text-align: center; }
 .set-x { text-align: center; color: var(--text-secondary); }
 .set-input {
@@ -658,11 +747,12 @@ button, input, select, textarea {
 .rest-btn:active { transform: scale(0.9); }
 .rest-btn.primary { background: var(--accent); color: var(--accent-contrast); }
 
-/* Rekord-Markierung an einer Satzzeile */
+/* Rekord-Markierung an einer Satzzeile – sitzt wie ein Hinweis-Punkt oben am
+   Haken, damit sie weder Zahlen noch Spaltenköpfe verdeckt. */
 .pr-badge {
   position: absolute;
   top: -3px;
-  left: 14px;
+  right: 26px;
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.4px;
@@ -672,6 +762,7 @@ button, input, select, textarea {
   color: var(--accent-contrast);
   pointer-events: none;
 }
+.pr-badge.static { position: static; font-size: 10.5px; padding: 3px 8px; }
 .set-chip.pr { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-weight: 600; }
 
 /* Standortbestimmung: das Urteil trägt die Farbe der ganzen Karte */
@@ -949,6 +1040,19 @@ button, input, select, textarea {
 
 /* Fortschritt / Chart */
 .chart { width: 100%; height: 180px; display: block; }
+.progress-delta { margin: 8px 0 0; font-weight: 600; }
+.select-wrap { position: relative; }
+.select-wrap .text-input { margin-bottom: 0; padding-right: 40px; font-weight: 600; }
+.select-chevron {
+  position: absolute;
+  right: 14px; top: 50%;
+  transform: translateY(-50%) rotate(90deg);
+  display: flex;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+.select-chevron svg { width: 16px; height: 16px; }
+.pr-count { font-size: 12.5px; font-weight: 700; color: var(--accent); white-space: nowrap; }
 .stat-row { display: flex; justify-content: space-around; text-align: center; }
 .stat-row > div { display: flex; flex-direction: column; gap: 2px; }
 .stat-value { font-size: 20px; font-weight: 700; }
@@ -967,11 +1071,14 @@ button, input, select, textarea {
   justify-content: center;
   margin: 0 auto;
   width: 32px;
+  height: 32px; /* fest statt nur aspect-ratio: leere Zellen wurden sonst höher */
   font-size: 13px;
   border-radius: 50%;
   color: var(--text);
 }
-.cal-cell.empty { visibility: hidden; }
+.cal-cell.empty { visibility: hidden; padding: 0; } /* nicht vom Leerzustand-Stil .empty erben */
+button.cal-cell { border: none; padding: 0; font: inherit; cursor: pointer; transition: transform 0.15s; }
+button.cal-cell:active { transform: scale(0.88); }
 .cal-cell.has-workout { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); font-weight: 700; }
 .cal-cell.today { box-shadow: inset 0 0 0 1.5px var(--text-secondary); }
 .cal-cell.today.has-workout { box-shadow: inset 0 0 0 1.5px var(--accent); }
@@ -1064,6 +1171,50 @@ select.text-input { appearance: none; -webkit-appearance: none; }
 }
 .sheet-footer { padding: 4px 16px 16px; display: flex; flex-direction: column; gap: 8px; }
 
+/* Einstellungen: Abschnitte mit zusammengehörigen Zeilen */
+.settings-card { padding: 0; }
+.setting { padding: 14px; }
+.setting + .setting { border-top: 1px solid var(--border); }
+.setting-head { margin-bottom: 10px; }
+.setting-head strong { font-size: 15.5px; }
+.setting > p.muted.small { margin: 8px 0 0; }
+.setting-sub { margin-top: 14px; }
+.setting-sub .setting-head { margin-bottom: 8px; }
+.setting-sub p.muted.small { margin: 8px 0 0; }
+
+/* Zusammenfassung nach dem Training */
+.finish-hero { text-align: center; padding: 4px 0 14px; }
+.finish-hero h3 { margin: 12px 0 2px; font-size: 23px; font-weight: 800; letter-spacing: -0.3px; }
+.finish-hero p { margin: 0; }
+.finish-badge {
+  width: 76px; height: 76px;
+  margin: 0 auto;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 38px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-input));
+}
+.finish-badge.gold { background: color-mix(in srgb, #ffc800 26%, var(--bg-input)); }
+.finish-badge.pop { animation: badge-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both; }
+@keyframes badge-pop {
+  from { transform: scale(0.3) rotate(-18deg); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.finish-lines { padding: 4px 14px; }
+.finish-lines p { margin: 0; padding: 10px 0; font-size: 14px; font-weight: 600; }
+.finish-lines p + p { border-top: 1px solid var(--border); }
+.sheet-body > .card + .finish-supps, .sheet-body > .finish-lines + .finish-supps { margin-top: 12px; }
+.finish-supps {
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-elevated));
+  color: var(--text);
+}
+.ex-history { padding: 4px 14px; margin: 10px 0 14px; }
+.ex-history-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 9px 0; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.ex-history-row + .ex-history-row { border-top: 1px solid var(--border); }
+.ex-history-row > span:last-child { text-align: right; }
+
 /* Plan-Import */
 .howto { margin: 0 0 12px; padding-left: 20px; color: var(--text-secondary); font-size: 13px; }
 .howto li { margin-bottom: 3px; }
@@ -1137,5 +1288,22 @@ select.text-input { appearance: none; -webkit-appearance: none; }
   box-shadow: var(--shadow-md);
 }
 .toast.show { opacity: 1; transform: translateY(0); }
+.toast.has-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 6px 6px 18px;
+  pointer-events: auto;
+}
+.toast-action {
+  border: none;
+  border-radius: 999px;
+  padding: 7px 13px;
+  background: color-mix(in srgb, var(--bg) 16%, transparent);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 700;
+}
+.toast-action:active { transform: scale(0.94); }
 
 ::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }

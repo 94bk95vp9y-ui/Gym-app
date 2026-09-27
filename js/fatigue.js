@@ -21,16 +21,20 @@ export function bucketOf(priorSets) {
   return 'late';
 }
 
-export function fatigueOf(workout, entryIndex, muscleGroupOf) {
+// planned: im laufenden Training zählen auch die noch offenen Sätze der
+// Übungen davor – die kommen ja noch, bevor diese Übung dran ist. Ohne das
+// wirkt zu Beginn jedes Training "frisch", und der Vergleich mit dem letzten
+// Mal meldet eine Abweichung, die es gar nicht gibt.
+export function fatigueOf(workout, entryIndex, muscleGroupOf, { planned = false } = {}) {
   const entry = workout.entries[entryIndex];
   const group = muscleGroupOf(entry.exerciseId);
   let priorSets = 0;
   for (let i = 0; i < entryIndex; i += 1) {
     const other = workout.entries[i];
     if (muscleGroupOf(other.exerciseId) !== group) continue;
-    priorSets += other.sets.filter((s) => s.done).length;
+    priorSets += planned ? other.sets.length : other.sets.filter((s) => s.done).length;
   }
-  return { priorSets, bucket: bucketOf(priorSets), position: entryIndex + 1 };
+  return { priorSets, bucket: bucketOf(priorSets), position: entryIndex + 1, group };
 }
 
 export function muscleGroupLookup(exercises) {

@@ -1,4 +1,6 @@
-import { Store, MUSCLE_GROUPS, ACCENT_COLORS, REST_OPTIONS, WEEKLY_GOALS, uid } from './storage.js';
+import {
+  Store, MUSCLE_GROUPS, ACCENT_COLORS, REST_OPTIONS, WEEKLY_GOALS, uid, validateBackup,
+} from './storage.js';
 import { Icon } from './icons.js';
 import { buildPlanPrompt, parsePlanText, normalizeExerciseName } from './plan-import.js';
 import { buildMotivation } from './motivation.js';
@@ -10,7 +12,8 @@ import {
 } from './supplements.js';
 import {
   formatDate, formatDateTime, formatDuration, elapsedLabel,
-  estimate1RM, bestSet, escapeHtml, unitLabel, drawLineChart,
+  estimate1RM, bestSet, setScore, escapeHtml, unitLabel, drawLineChart,
+  formatNumber, parseNumber, formatWeight, formatSet, formatSetList, plural, relativeDay,
 } from './utils.js';
 
 const root = document.getElementById('app-root');
@@ -124,21 +127,31 @@ function getOverloadSuggestion(exercise, excludeWorkoutId) {
   return { from: analyzed[0].weight, to: Math.round((analyzed[0].weight + step) * 10) / 10, threshold: OVERLOAD_REP_THRESHOLD };
 }
 
-// Neue Übung im Training: startet mit 2 Sätzen. Gibt es ein letztes Mal für diese
-// Übung, werden Gewicht/Wdh davon als "Vorschlag" vorbelegt (grau, bis bestätigt) –
-// sonst leer. Ist Progressive Overload aktiv und die Übung bereit für mehr
-// Gewicht, wird direkt das gesteigerte Gewicht als Vorschlag genommen.
-function defaultSets(exercise, excludeWorkoutId, count = 2) {
+// Neue Übung im Training: Satzzahl und Werte kommen vom letzten Mal – Satz
+// für Satz, so wie er damals lief (grau als Vorschlag, bis bestätigt). Gibt
+// es kein letztes Mal, starten zwei leere Sätze. Ist Progressive Overload
+// aktiv und die Übung bereit für mehr Gewicht, steht direkt das gesteigerte
+// Gewicht im Vorschlag.
+function defaultSets(exercise, excludeWorkoutId, count) {
   const last = Store.lastEntryForExercise(exercise.id, excludeWorkoutId);
-  const best = last ? bestSet(last.sets) : null;
+  const lastDone = last ? last.sets.filter((s) => s.done && s.reps > 0) : [];
   const overload = Store.getSettings().progressiveOverload ? getOverloadSuggestion(exercise, excludeWorkoutId) : null;
-  const weight = overload ? overload.to : (best ? best.weight : 0);
-  return Array.from({ length: Math.max(1, count) }, () => ({
-    weight,
-    reps: best ? best.reps : 0,
-    done: false,
-    suggested: !!best,
-  }));
+  const total = Math.max(1, count ?? Math.min(8, lastDone.length || 2));
+  return Array.from({ length: total }, (_, i) => {
+    const src = lastDone[Math.min(i, lastDone.length - 1)];
+    if (!src) return { weight: 0, reps: 0, done: false, suggested: false };
+    return { weight: overload ? overload.to : src.weight, reps: src.reps, done: false, suggested: true };
+  });
+}
+
+// Aktuelle Übungsnamen: im Training und im Verlauf steht der Name, der beim
+// Speichern galt. Wurde eine Übung später umbenannt, soll überall der neue
+// Name erscheinen.
+function exerciseNames() {
+  return new Map(Store.getExercises().map((e) => [e.id, e.name]));
+}
+function entryName(entry, names) {
+  return names.get(entry.exerciseId) || entry.exerciseName || 'Unbekannt';
 }
 
 const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -254,16 +267,31 @@ function go(fn) {
   }
 }
 
-function toast(msg) {
+// Kurze Rückmeldung am unteren Rand. Mit `action` bekommt sie einen Knopf
+// (z.B. "Rückgängig") und bleibt etwas länger stehen; es gibt immer nur eine
+// solche Aktions-Meldung – eine neue ersetzt die alte.
+function toast(msg, { action, onAction } = {}) {
   const t = document.createElement('div');
   t.className = 'toast';
-  t.textContent = msg;
-  toastRoot.appendChild(t);
-  requestAnimationFrame(() => t.classList.add('show'));
-  setTimeout(() => {
+  t.append(document.createTextNode(msg));
+  const hide = () => {
+    if (!t.isConnected || t.classList.contains('hiding')) return;
+    t.classList.add('hiding');
     t.classList.remove('show');
     setTimeout(() => t.remove(), 250);
-  }, 2200);
+  };
+  if (action) {
+    qsa('.toast.has-action', toastRoot).forEach((old) => old.remove());
+    const btn = document.createElement('button');
+    btn.className = 'toast-action';
+    btn.textContent = action;
+    btn.addEventListener('click', () => { hide(); onAction(); });
+    t.append(btn);
+    t.classList.add('has-action');
+  }
+  toastRoot.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('show'));
+  setTimeout(hide, action ? 4500 : 2200);
 }
 
 // Wird ein Sheet über Backdrop/X geschlossen, darf das etwas anderes bedeuten
@@ -379,8 +407,11 @@ function screenPosition() {
 }
 let lastScreenPosition = null;
 
+let renderedDay = null;
+
 function render() {
   stopTicking();
+  renderedDay = dayKey();
   const key = `${state.tab}:${state.workoutOpen}:${state.historySubTab}:${state.librarySubTab}`;
   const prevView = qs('.view');
   const scrollTop = key === lastRenderKey && prevView ? prevView.scrollTop : 0;
@@ -394,6 +425,7 @@ function render() {
     const newView = qs('.view');
     if (newView) newView.scrollTop = scrollTop;
     syncRestBar(); // eine laufende Pause überlebt auch ein Neuladen
+    requestWakeLock();
     startTicking(() => {
       const el = qs('#workout-timer');
       const active = Store.getActive();
@@ -403,6 +435,7 @@ function render() {
     return;
   }
   state.workoutOpen = false;
+  releaseWakeLock(); // außerhalb des Trainings darf sich das iPhone wieder sperren
 
   root.innerHTML = `
     <header class="topbar">
@@ -472,32 +505,59 @@ function renderTab() {
 }
 
 // ---- Start-Tab ----
+// Welcher Plan ist als Nächstes dran? Betrachtet werden nur Pläne, die in den
+// letzten 30 Tagen trainiert wurden (die aktuelle Rotation) – ein seit Monaten
+// ruhender Plan soll sich nicht ewig vordrängeln. Dran ist der, dessen letzte
+// Einheit am längsten her ist.
+function planRotation(routines, workouts) {
+  const lastDone = new Map();
+  workouts.forEach((w) => {
+    if (w.finishedAt && w.routineId && !lastDone.has(w.routineId)) lastDone.set(w.routineId, w.startedAt);
+  });
+  const cutoff = new Date(Date.now() - 30 * 86400000).toISOString();
+  const rotation = routines.filter((r) => lastDone.has(r.id) && lastDone.get(r.id) >= cutoff);
+  const next = rotation.length >= 2
+    ? rotation.reduce((a, b) => (lastDone.get(b.id) < lastDone.get(a.id) ? b : a)).id
+    : null;
+  return { lastDone, next };
+}
+
 function renderStart() {
   const active = Store.getActive();
   const routines = Store.getRoutines();
 
-  const activeCard = active ? `
+  let activeCard = '';
+  if (active) {
+    const progress = workoutProgress(active);
+    activeCard = `
     <section class="card active-card">
       <div class="active-card-top">
         <span class="pill pill-live">Läuft</span>
         <span id="active-elapsed" class="elapsed">${elapsedLabel(active.startedAt)}</span>
       </div>
       <h3>${escapeHtml(active.routineName || 'Freies Training')}</h3>
-      <p class="muted">${active.entries.length} Übung(en)</p>
+      <p class="muted">${plural(active.entries.length, 'Übung', 'Übungen')} · ${progress.done} von ${plural(progress.total, 'Satz', 'Sätzen')} erledigt</p>
+      <div class="active-progress"><span style="transform:scaleX(${progress.ratio})"></span></div>
       <div class="row gap">
         <button class="btn btn-primary" data-action="resume-workout">Weiter ${Icon.chevron}</button>
         <button class="btn btn-ghost danger" data-action="discard-workout">Verwerfen</button>
       </div>
-    </section>` : '';
+    </section>`;
+  }
 
-  const routineCards = routines.length ? routines.map((r) => `
-    <div class="list-item">
+  const { lastDone, next } = planRotation(routines, Store.getWorkouts());
+  const routineCards = routines.length ? routines.map((r) => {
+    const when = lastDone.has(r.id) ? `zuletzt ${relativeDay(lastDone.get(r.id))}` : 'noch nie trainiert';
+    const isNext = r.id === next;
+    return `
+    <div class="list-item ${isNext ? 'plan-next' : ''}">
       <div class="list-item-main">
-        <strong>${escapeHtml(r.name)}</strong>
-        <span class="muted">${r.exerciseIds.length} Übung(en)</span>
+        <strong>${escapeHtml(r.name)}${isNext ? ' <span class="pill pill-chosen">Als Nächstes</span>' : ''}</strong>
+        <span class="muted">${plural(r.exerciseIds.length, 'Übung', 'Übungen')} · ${when}</span>
       </div>
-      <button class="btn btn-small btn-primary" data-action="start-routine" data-id="${r.id}" ${active ? 'disabled' : ''}>Start</button>
-    </div>`).join('') : `<p class="empty">Noch keine Pläne. Leg welche in der Bibliothek an.</p>`;
+      <button class="btn btn-small ${!next || isNext ? 'btn-primary' : 'btn-secondary'}" data-action="start-routine" data-id="${r.id}" ${active ? 'disabled' : ''}>Start</button>
+    </div>`;
+  }).join('') : `<p class="empty">Noch keine Pläne. Leg welche in der Bibliothek an – oder lass sie dir in den Einstellungen per KI erstellen.</p>`;
 
   return `
     ${activeCard}
@@ -1162,73 +1222,100 @@ function bindStartEvents() {
   qs('[data-action="discard-workout"]')?.addEventListener('click', () => {
     if (confirm('Aktuelles Training wirklich verwerfen? Alle Sätze gehen verloren.')) {
       Store.clearActive();
+      state.collapsedExercises.clear();
       render();
     }
   });
 }
 
 // ---- Workout-Ansicht (Vollbild) ----
+// Wenn eine Übung heute unter deutlich anderer Vorbelastung läuft als beim
+// letzten Mal, ist der Vergleich mit "letztes Mal" irreführend – dann sagen,
+// warum, und in welche Richtung.
+function fatigueNoteHtml(lastSession, workout, ei, groupOf) {
+  if (!lastSession) return '';
+  const then = fatigueOf(lastSession.workout, lastSession.entryIndex, groupOf);
+  const now = fatigueOf(workout, ei, groupOf, { planned: true });
+  if (then.bucket === now.bucket) return '';
+  const group = ['Ganzkörper', 'Cardio', 'Sonstiges'].includes(now.group) ? 'ähnliche' : now.group;
+  const count = (n) => (n === 0 ? `keine Sätze ${group}` : `${plural(n, 'Satz', 'Sätze')} ${group}`);
+  const tail = now.priorSets > then.priorSets
+    ? 'etwas weniger als damals ist hier normal.'
+    : 'du gehst frischer rein als damals.';
+  return `<p class="fatigue-note">Diesmal ${count(now.priorSets)} davor, letztes Mal ${then.priorSets || 'keine'} – ${tail}</p>`;
+}
+
+function exerciseSummaryText(entry, unit) {
+  const top = bestSet(entry.sets);
+  return `${entry.sets.filter((s) => s.done).length}/${entry.sets.length} Sätze${top ? ` · ${formatSet(top, unit)}` : ''}`;
+}
+
+function isEntryComplete(entry) {
+  return entry.sets.length > 0 && entry.sets.every((s) => s.done);
+}
+
+function workoutProgress(workout) {
+  const total = workout.entries.reduce((n, e) => n + e.sets.length, 0);
+  const done = workout.entries.reduce((n, e) => n + e.sets.filter((s) => s.done).length, 0);
+  return { done, total, ratio: total ? done / total : 0 };
+}
+
+function setRowHtml(s, ei, si) {
+  const weight = s.weight > 0 ? formatNumber(s.weight) : '';
+  const reps = s.reps > 0 ? String(s.reps) : '';
+  return `
+      <div class="set-row ${s.done ? 'done' : ''}" data-ei="${ei}" data-si="${si}">
+        <span class="set-index">${si + 1}</span>
+        <input type="text" inputmode="decimal" autocomplete="off" class="set-input ${s.suggested ? 'suggested' : ''}" placeholder="—"
+          value="${weight}" data-field="weight" data-ei="${ei}" data-si="${si}" aria-label="Gewicht Satz ${si + 1}" />
+        <span class="set-x">×</span>
+        <input type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" class="set-input small ${s.suggested ? 'suggested' : ''}" placeholder="—"
+          value="${reps}" data-field="reps" data-ei="${ei}" data-si="${si}" aria-label="Wiederholungen Satz ${si + 1}" />
+        <button class="check-btn ${s.done ? 'on' : ''}" data-action="toggle-set" data-ei="${ei}" data-si="${si}" aria-label="Satz ${si + 1} abhaken">${Icon.check}</button>
+        <button class="set-remove" data-action="remove-set" data-ei="${ei}" data-si="${si}" aria-label="Satz ${si + 1} entfernen">${Icon.minus}</button>
+        ${s.pr ? '<span class="pr-badge">PR</span>' : ''}
+      </div>`;
+}
+
 function renderWorkout() {
   const w = Store.getActive();
   const unit = unitLabel(Store.getSettings().unit);
   const overloadOn = Store.getSettings().progressiveOverload;
-  const groupOf = muscleGroupLookup(Store.getExercises());
+  const exercises = Store.getExercises();
+  const groupOf = muscleGroupLookup(exercises);
+  const names = exerciseNames();
+  const notes = new Map(exercises.map((e) => [e.id, e.notes]));
+
   const entries = w.entries.map((entry, ei) => {
     const lastSession = lastSessionFor(entry.exerciseId, w.id);
-    const last = lastSession ? lastSession.entry : null;
-    const lastBest = last ? bestSet(last.sets) : null;
     const overload = overloadOn ? getOverloadSuggestion(Store.getExercise(entry.exerciseId), w.id) : null;
-
-    // Wenn die Übung damals unter deutlich anderer Vorbelastung lief, ist der
-    // Vergleich mit "letztes Mal" irreführend – dann lieber dazusagen, warum.
-    let contextNote = '';
-    if (lastSession) {
-      const then = fatigueOf(lastSession.workout, lastSession.entryIndex, groupOf);
-      const nowCtx = fatigueOf(w, ei, groupOf);
-      if (then.bucket !== nowCtx.bucket) {
-        contextNote = `<p class="fatigue-note">Damals ${then.position}. Übung, heute ${nowCtx.position}. – `
-          + `${nowCtx.priorSets > then.priorSets ? 'mehr' : 'weniger'} Vorbelastung, Zahlen nur bedingt vergleichbar.</p>`;
-      }
-    }
-    const sets = entry.sets.map((s, si) => `
-      <div class="set-row ${s.done ? 'done' : ''}" data-ei="${ei}" data-si="${si}">
-        <span class="set-index">${si + 1}</span>
-        <input type="number" inputmode="decimal" class="set-input ${s.suggested ? 'suggested' : ''}" placeholder="—"
-          value="${s.suggested ? s.weight : (s.weight || '')}" data-field="weight" data-ei="${ei}" data-si="${si}" />
-        <span class="set-x">×</span>
-        <input type="number" inputmode="numeric" class="set-input small ${s.suggested ? 'suggested' : ''}" placeholder="—"
-          value="${s.suggested ? s.reps : (s.reps || '')}" data-field="reps" data-ei="${ei}" data-si="${si}" />
-        <button class="check-btn ${s.done ? 'on' : ''}" data-action="toggle-set" data-ei="${ei}" data-si="${si}">${Icon.check}</button>
-        <button class="icon-btn small" data-action="remove-set" data-ei="${ei}" data-si="${si}">${Icon.close}</button>
-        ${s.pr ? '<span class="pr-badge">PR</span>' : ''}
-      </div>`).join('');
+    const note = notes.get(entry.exerciseId);
+    const sets = entry.sets.map((s, si) => setRowHtml(s, ei, si)).join('');
 
     // Zugeklappt bleibt nur die Kopfzeile stehen – mit einer Kurzfassung,
     // damit das Zuklappen nicht bedeutet, den Überblick zu verlieren.
     const collapsed = state.collapsedExercises.has(entry.exerciseId);
-    const doneSets = entry.sets.filter((s) => s.done);
-    const top = bestSet(entry.sets);
-    const summary = `${doneSets.length}/${entry.sets.length} Sätze`
-      + (top ? ` · ${top.weight}${unit} × ${top.reps}` : '');
+    const complete = isEntryComplete(entry);
 
     return `
-      <section class="card exercise-block ${collapsed ? 'collapsed' : ''}" data-ei="${ei}">
+      <section class="card exercise-block ${collapsed ? 'collapsed' : ''} ${complete ? 'complete' : ''}" data-ei="${ei}">
         <div class="exercise-block-header">
-          <button class="ex-toggle" data-action="toggle-exercise" data-id="${entry.exerciseId}">
+          <button class="ex-toggle" data-action="toggle-exercise" data-id="${entry.exerciseId}" aria-expanded="${!collapsed}">
             <span class="ex-title">
-              <strong>${escapeHtml(entry.exerciseName)}</strong>
-              <span class="muted small ex-summary">${summary}</span>
+              <strong><span class="ex-done-mark" aria-hidden="true">${Icon.check}</span>${escapeHtml(entryName(entry, names))}</strong>
+              <span class="muted small ex-summary">${exerciseSummaryText(entry, unit)}</span>
             </span>
             <span class="ex-chevron">${Icon.chevron}</span>
           </button>
-          <button class="icon-btn small danger" data-action="remove-exercise" data-ei="${ei}">${Icon.trash}</button>
+          <button class="icon-btn small danger" data-action="remove-exercise" data-ei="${ei}" aria-label="Übung entfernen">${Icon.trash}</button>
         </div>
         <div class="exercise-body"><div>
-          ${last ? `<p class="muted small">Letztes Mal: ${lastBest ? `${lastBest.weight}${unit} × ${lastBest.reps}` : '—'}</p>` : ''}
-          ${contextNote}
-          ${overload ? `<p class="overload-tip">💪 ${overload.threshold}+ Wdh bei ${overload.from}${unit} in Folge – neues Ziel ${overload.to}${unit}</p>` : ''}
+          ${note ? `<p class="ex-note">${escapeHtml(note)}</p>` : ''}
+          ${lastSession ? `<p class="muted small last-time">Letztes Mal · ${relativeDay(lastSession.workout.startedAt)}: ${formatSetList(lastSession.entry.sets, unit) || '—'}</p>` : ''}
+          ${fatigueNoteHtml(lastSession, w, ei, groupOf)}
+          ${overload ? `<p class="overload-tip">💪 ${overload.threshold}+ Wdh bei ${formatWeight(overload.from, unit)} in Folge – neues Ziel ${formatWeight(overload.to, unit)}</p>` : ''}
           <div class="set-header-row">
-            <span class="set-index"></span><span>${unit}</span><span></span><span>Wdh</span><span></span><span></span>
+            <span class="set-index">Satz</span><span>${unit}</span><span></span><span>Wdh</span><span></span><span></span>
           </div>
           ${sets || '<p class="empty small">Noch keine Sätze.</p>'}
           <button class="btn btn-ghost small" data-action="add-set" data-ei="${ei}">${Icon.plus} Satz</button>
@@ -1236,15 +1323,18 @@ function renderWorkout() {
       </section>`;
   }).join('');
 
+  const progress = workoutProgress(w);
   return `
     <div class="workout-screen ${workoutEntering ? 'entering' : ''}">
       <header class="topbar workout-topbar">
-        <button class="icon-btn" data-action="minimize-workout">${Icon.chevron}</button>
+        <button class="icon-btn minimize-btn" data-action="minimize-workout" aria-label="Training minimieren">${Icon.chevron}</button>
         <div class="workout-title">
           <strong>${escapeHtml(w.routineName || 'Freies Training')}</strong>
-          <span id="workout-timer" class="muted small">${elapsedLabel(w.startedAt)}</span>
+          <span class="muted small"><span id="workout-timer">${elapsedLabel(w.startedAt)}</span>
+            · <span id="workout-sets">${progress.done}/${progress.total}</span> Sätze</span>
         </div>
-        <button class="icon-btn danger" data-action="discard-workout">${Icon.trash}</button>
+        <button class="icon-btn danger" data-action="discard-workout" aria-label="Training verwerfen">${Icon.trash}</button>
+        <span class="workout-progress" aria-hidden="true"><span id="workout-progress-fill" style="transform:scaleX(${progress.ratio})"></span></span>
       </header>
       <main class="view">
         ${entries || '<p class="empty">Füge eine Übung hinzu, um loszulegen.</p>'}
@@ -1258,40 +1348,63 @@ function renderWorkout() {
     </div>`;
 }
 
+// Kopfzeile des Trainings (Satzzähler + Fortschrittsbalken) und den
+// Erledigt-Zustand der Übung nachziehen, ohne neu zu rendern.
+function updateWorkoutProgress(workout, ei) {
+  const progress = workoutProgress(workout);
+  const count = qs('#workout-sets');
+  if (count) count.textContent = `${progress.done}/${progress.total}`;
+  const fill = qs('#workout-progress-fill');
+  if (fill) fill.style.transform = `scaleX(${progress.ratio})`;
+  if (ei === undefined) return;
+  const block = qs(`.exercise-block[data-ei="${ei}"]`);
+  if (block) block.classList.toggle('complete', isEntryComplete(workout.entries[ei]));
+}
+
 // Rekord-Markierung für eine Übung neu bestimmen: ausgezeichnet wird der
 // beste abgeschlossene Satz dieser Einheit – aber nur, wenn er auch alles
 // übertrifft, was für die Übung bereits im Verlauf steht. Es wird immer die
 // ganze Übung neu bewertet, damit eine Markierung mitwandert (oder verfällt),
 // sobald ein stärkerer Satz dazukommt oder der bisher beste entfernt wird.
+// Ohne Verlauf gibt es nichts zu schlagen – dann auch keinen Rekord, sonst
+// wäre beim allerersten Training jede Übung einer.
+// Sätze mit Zusatzgewicht zählen über das geschätzte 1RM, reine
+// Körpergewichtssätze über die Wiederholungen (siehe setScore).
 function refreshPrFlags(workout, ei) {
   const entry = workout.entries[ei];
-  const historyBest = Store.getWorkouts()
+  const best = { load: 0, reps: 0 };
+  let hasHistory = false;
+  Store.getWorkouts()
     .filter((w) => w.finishedAt && w.id !== workout.id)
-    .flatMap((w) => w.entries.filter((e) => e.exerciseId === entry.exerciseId))
-    .flatMap((e) => e.sets.filter((s) => s.done))
-    .reduce((best, s) => Math.max(best, estimate1RM(s.weight, s.reps)), 0);
+    .forEach((w) => w.entries.forEach((e) => {
+      if (e.exerciseId !== entry.exerciseId) return;
+      e.sets.forEach((s) => {
+        const score = setScore(s);
+        if (!score) return;
+        hasHistory = true;
+        best[score.kind] = Math.max(best[score.kind], score.value);
+      });
+    }));
 
-  let bestIndex = -1;
-  let bestValue = historyBest;
+  const winner = { load: -1, reps: -1 };
   entry.sets.forEach((set, i) => {
     set.pr = false;
-    if (!set.done) return;
-    const value = estimate1RM(set.weight, set.reps);
-    if (value > bestValue) { bestValue = value; bestIndex = i; }
+    const score = hasHistory ? setScore(set) : null;
+    if (!score || score.value <= best[score.kind]) return;
+    best[score.kind] = score.value;
+    winner[score.kind] = i;
   });
-  if (bestIndex >= 0) entry.sets[bestIndex].pr = true;
-  return bestIndex;
+  // Pro Übung genau eine Markierung – Zusatzgewicht hat Vorrang.
+  const index = winner.load >= 0 ? winner.load : winner.reps;
+  if (index >= 0) entry.sets[index].pr = true;
+  return index;
 }
 
 // Die Kurzfassung in der Kopfzeile mitziehen: das Abhaken rendert bewusst
 // nicht neu, sonst stünde dort beim Zuklappen ein veralteter Stand.
 function updateExerciseSummary(entry, ei) {
   const el = qs(`.exercise-block[data-ei="${ei}"] .ex-summary`);
-  if (!el) return;
-  const unit = unitLabel(Store.getSettings().unit);
-  const top = bestSet(entry.sets);
-  el.textContent = `${entry.sets.filter((s) => s.done).length}/${entry.sets.length} Sätze`
-    + (top ? ` · ${top.weight}${unit} × ${top.reps}` : '');
+  if (el) el.textContent = exerciseSummaryText(entry, unitLabel(Store.getSettings().unit));
 }
 
 function updatePrBadges(entry, ei) {
@@ -1306,6 +1419,35 @@ function updatePrBadges(entry, ei) {
     badge.textContent = 'PR';
     row.append(badge); // absolut positioniert – verschiebt das Spaltenraster nicht
   });
+}
+
+// ---- Bildschirm anlassen ----
+// Während des Trainings bleibt das Display an – sonst sperrt sich das iPhone
+// zwischen zwei Sätzen, und jedes Abhaken beginnt mit Face ID. iOS gibt die
+// Sperre frei, sobald die App in den Hintergrund geht; beim Zurückkehren
+// wird sie neu angefordert (siehe visibilitychange).
+let wakeLock = null;
+let wakeLockPending = false;
+
+async function requestWakeLock() {
+  if (!Store.getSettings().keepAwake || !('wakeLock' in navigator)) return;
+  if (document.visibilityState !== 'visible' || wakeLockPending || (wakeLock && !wakeLock.released)) return;
+  wakeLockPending = true;
+  try {
+    const lock = await navigator.wakeLock.request('screen');
+    // Training inzwischen verlassen? Dann gleich wieder freigeben.
+    if (state.workoutOpen) wakeLock = lock;
+    else lock.release().catch(() => {});
+  } catch {
+    wakeLock = null; // z.B. Energiesparmodus – dann eben ohne
+  } finally {
+    wakeLockPending = false;
+  }
+}
+
+function releaseWakeLock() {
+  if (wakeLock && !wakeLock.released) wakeLock.release().catch(() => {});
+  wakeLock = null;
 }
 
 // ---- Satzpause ----
@@ -1394,11 +1536,14 @@ function bindWorkoutEvents() {
   const getActive = () => Store.getActive();
 
   qs('[data-action="minimize-workout"]').addEventListener('click', () => {
+    releaseWakeLock();
     go(() => { state.workoutOpen = false; state.tab = 'start'; render(); });
   });
   qs('[data-action="discard-workout"]').addEventListener('click', () => {
     if (confirm('Training wirklich verwerfen? Alle Sätze gehen verloren.')) {
       Store.clearActive();
+      releaseWakeLock();
+      state.collapsedExercises.clear();
       go(() => { state.workoutOpen = false; render(); });
     }
   });
@@ -1408,18 +1553,18 @@ function bindWorkoutEvents() {
     if (totalSets === 0 && !confirm('Keine Sätze abgeschlossen. Training trotzdem speichern?')) return;
     w.finishedAt = new Date().toISOString();
     Store.finishActiveWorkout(w);
+    releaseWakeLock();
     Sound.finish();
+    state.collapsedExercises.clear();
     go(() => {
       state.workoutOpen = false;
       state.tab = 'history';
       state.historySubTab = 'log';
       render();
     });
-    // Nach dem Training ist ein guter Moment, an offene Supplements zu denken.
-    const openSupps = Store.getSettings().supplements
-      && Store.getActiveSupplements().length
-      && !dayStatus(Store.getSupplements(), Store.getSupplementLog(), dayKey()).complete;
-    toast(openSupps ? 'Gespeichert 💪 Supplements noch offen' : 'Training gespeichert 💪');
+    // Erst die Belohnung, dann der Verlauf: die Zusammenfassung legt sich
+    // über den frisch aktualisierten Verlauf.
+    setTimeout(() => openFinishSummary(w.id), totalSets ? 380 : 0);
   });
   qs('[data-action="add-exercise-to-workout"]').addEventListener('click', openAddExerciseToWorkoutSheet);
   qs('[data-action="reorder-workout"]')?.addEventListener('click', openReorderSheet);
@@ -1430,6 +1575,7 @@ function bindWorkoutEvents() {
     const willOpen = block.classList.contains('collapsed');
     if (willOpen) { state.collapsedExercises.delete(id); Sound.open(); }
     else { state.collapsedExercises.add(id); Sound.close(); }
+    btn.setAttribute('aria-expanded', String(willOpen));
     animateHeight(qs('.exercise-body', block), willOpen,
       () => block.classList.toggle('collapsed', !willOpen));
   }));
@@ -1443,18 +1589,51 @@ function bindWorkoutEvents() {
     render(); // sofort – ein einzelner Satz ist zu klein/häufig für einen Seitenübergang
     dropIn(qs(`.set-row[data-ei="${ei}"][data-si="${si}"]`));
   }));
+
+  // Entfernen ohne Rückfrage, dafür mit "Rückgängig": ein versehentlicher
+  // Tipp kostet so nichts, ein gewollter aber auch keinen Extra-Dialog.
   qsa('[data-action="remove-set"]').forEach((btn) => btn.addEventListener('click', () => {
-    const w = getActive(); const ei = +btn.dataset.ei, si = +btn.dataset.si;
+    const ei = +btn.dataset.ei, si = +btn.dataset.si;
     Sound.remove();
     collapseAway(btn.closest('.set-row'), () => {
-      w.entries[ei].sets.splice(si, 1);
+      const w = getActive();
+      const entry = w?.entries[ei];
+      if (!entry) return;
+      const [removed] = entry.sets.splice(si, 1);
+      refreshPrFlags(w, ei);
       Store.setActive(w);
       render();
+      toast(`Satz ${si + 1} entfernt`, {
+        action: 'Rückgängig',
+        onAction: () => {
+          const current = Store.getActive();
+          const index = current?.entries.findIndex((e) => e.exerciseId === entry.exerciseId) ?? -1;
+          if (index < 0) return;
+          const sets = current.entries[index].sets;
+          sets.splice(Math.min(si, sets.length), 0, removed);
+          refreshPrFlags(current, index);
+          Store.setActive(current);
+          render();
+          dropIn(qs(`.set-row[data-ei="${index}"][data-si="${Math.min(si, sets.length - 1)}"]`));
+        },
+      });
     });
   }));
+
   qsa('[data-action="toggle-set"]').forEach((btn) => btn.addEventListener('click', () => {
     const w = getActive(); const ei = +btn.dataset.ei, si = +btn.dataset.si;
     const set = w.entries[ei].sets[si];
+    const row = btn.closest('.set-row');
+    // Ohne Wiederholungen gibt es nichts abzuhaken: statt eines leeren
+    // Satzes lieber direkt ins Feld springen.
+    if (!set.done && !(set.reps > 0)) {
+      const repsInput = qs('[data-field="reps"]', row);
+      row.classList.remove('shake');
+      void row.offsetWidth;
+      row.classList.add('shake');
+      repsInput?.focus();
+      return;
+    }
     set.done = !set.done;
     // Abhaken ohne eigene Eingabe übernimmt den grauen Vorschlagswert als echten Wert.
     if (set.done) set.suggested = false;
@@ -1463,12 +1642,12 @@ function bindWorkoutEvents() {
     // Bewusst KEIN render(): ein Neuaufbau würde den Knopf durch ein frisches,
     // unanimiertes Element ersetzen – die Feder-Animation am Haken liefe nie.
     // Lokal umschalten ist außerdem spürbar direkter.
-    const row = btn.closest('.set-row');
     btn.classList.toggle('on', set.done);
     row?.classList.toggle('done', set.done);
     qsa(`.set-input[data-ei="${ei}"][data-si="${si}"]`).forEach((el) => el.classList.remove('suggested'));
     updatePrBadges(w.entries[ei], ei);
     updateExerciseSummary(w.entries[ei], ei);
+    updateWorkoutProgress(w, ei);
     if (set.done) {
       startRest();
       if (prIndex === si) { Sound.record(); toast('Neuer Rekord 🏆'); } else Sound.setDone();
@@ -1476,26 +1655,54 @@ function bindWorkoutEvents() {
       Sound.setUndone();
     }
   }));
+
   qsa('[data-action="remove-exercise"]').forEach((btn) => btn.addEventListener('click', () => {
-    const w = getActive(); const ei = +btn.dataset.ei;
-    if (!confirm('Übung aus diesem Training entfernen?')) return;
+    const ei = +btn.dataset.ei;
     Sound.remove();
     collapseAway(btn.closest('.exercise-block'), () => {
-      w.entries.splice(ei, 1);
+      const w = getActive();
+      if (!w?.entries[ei]) return;
+      const [removed] = w.entries.splice(ei, 1);
       Store.setActive(w);
       render();
+      toast(`${entryName(removed, exerciseNames())} entfernt`, {
+        action: 'Rückgängig',
+        onAction: () => {
+          const current = Store.getActive();
+          if (!current) return;
+          const index = Math.min(ei, current.entries.length);
+          current.entries.splice(index, 0, removed);
+          Store.setActive(current);
+          render();
+          dropIn(qs(`.exercise-block[data-ei="${index}"]`));
+        },
+      });
+    });
+  }));
+
+  // Tippen ins Feld markiert den Inhalt: der neue Wert ersetzt den alten,
+  // statt ihn erst löschen zu müssen.
+  qsa('.set-input').forEach((input) => input.addEventListener('focus', () => {
+    requestAnimationFrame(() => {
+      try { input.setSelectionRange(0, input.value.length); } catch { /* nicht unterstützt */ }
     });
   }));
   qsa('[data-field="weight"], [data-field="reps"]').forEach((input) => input.addEventListener('input', () => {
     const w = getActive();
     const ei = +input.dataset.ei, si = +input.dataset.si;
-    const val = parseFloat(input.value.replace(',', '.')) || 0;
     const set = w.entries[ei].sets[si];
-    set[input.dataset.field] = val;
+    const value = parseNumber(input.value);
+    set[input.dataset.field] = input.dataset.field === 'reps' ? Math.floor(value) : value;
     if (set.suggested) {
       set.suggested = false;
       // sofort optisch bestätigen (grau -> normal), ohne die ganze Zeile neu zu rendern
       qsa(`.set-input[data-ei="${ei}"][data-si="${si}"]`).forEach((el) => el.classList.remove('suggested'));
+    }
+    // Ein nachträglich korrigierter Satz kann einen Rekord gewinnen oder verlieren.
+    if (set.done) {
+      refreshPrFlags(w, ei);
+      updatePrBadges(w.entries[ei], ei);
+      updateExerciseSummary(w.entries[ei], ei);
     }
     Store.setActive(w);
   }));
@@ -1510,19 +1717,27 @@ function bindWorkoutEvents() {
 function openReorderSheet() {
   const order = Store.getActive().entries.map((e, i) => i);
 
-  const rowsHtml = () => order.map((entryIndex, position) => {
-    const entry = Store.getActive().entries[entryIndex];
-    const doneSets = entry.sets.filter((s) => s.done).length;
-    return `<div class="list-item reorder-item">
-      <span class="drag-handle" data-drag-handle aria-hidden="true">${Icon.grip}</span>
-      <div class="list-item-main">
-        <strong>${escapeHtml(entry.exerciseName)}</strong>
-        <span class="muted">${doneSets} von ${entry.sets.length} Sätzen</span>
-      </div>
-      ${position === 0 ? '<span class="pill pill-chosen">dran</span>'
-        : `<button class="icon-btn small" data-action="to-top" data-pos="${position}" aria-label="Nach ganz oben">${Icon.toTop}</button>`}
-    </div>`;
-  }).join('');
+  const names = exerciseNames();
+  const rowsHtml = () => {
+    const entries = Store.getActive().entries;
+    // "dran" ist die erste Übung in der neuen Reihenfolge, die noch offen ist.
+    const current = order.find((i) => !isEntryComplete(entries[i]));
+    return order.map((entryIndex, position) => {
+      const entry = entries[entryIndex];
+      const doneSets = entry.sets.filter((s) => s.done).length;
+      let badge = `<button class="icon-btn small" data-action="to-top" data-pos="${position}" aria-label="Als Nächstes">${Icon.toTop}</button>`;
+      if (isEntryComplete(entry)) badge = '<span class="pill pill-done">fertig</span>';
+      else if (entryIndex === current) badge = '<span class="pill pill-chosen">dran</span>';
+      return `<div class="list-item reorder-item">
+        <span class="drag-handle" data-drag-handle aria-hidden="true">${Icon.grip}</span>
+        <div class="list-item-main">
+          <strong>${escapeHtml(entryName(entry, names))}</strong>
+          <span class="muted">${doneSets} von ${plural(entry.sets.length, 'Satz', 'Sätzen')}</span>
+        </div>
+        ${badge}
+      </div>`;
+    }).join('');
+  };
 
   function renderSheet() {
     openSheet('Reihenfolge', `<div class="card list" id="reorder-list">${rowsHtml()}</div>
@@ -1533,9 +1748,13 @@ function openReorderSheet() {
           order.splice(to, 0, ...order.splice(from, 1));
           renderSheet();
         });
+        // Nach vorn heißt: als Nächstes – also vor die erste noch offene
+        // Übung, nicht vor bereits erledigte.
         qsa('[data-action="to-top"]').forEach((btn) => btn.addEventListener('click', () => {
-          const pos = +btn.dataset.pos;
-          order.unshift(...order.splice(pos, 1));
+          const entries = Store.getActive().entries;
+          const [moved] = order.splice(+btn.dataset.pos, 1);
+          const firstOpen = order.findIndex((i) => !isEntryComplete(entries[i]));
+          order.splice(firstOpen < 0 ? order.length : firstOpen, 0, moved);
           renderSheet();
         }));
         qs('[data-action="apply-order"]').addEventListener('click', () => {
@@ -1637,12 +1856,13 @@ function renderCalendar() {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const today = new Date();
 
-  const workoutDays = new Set(
-    Store.getWorkouts().filter((w) => w.finishedAt).map((w) => {
-      const d = new Date(w.startedAt);
-      return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    }),
-  );
+  // Tag -> jüngstes Training an diesem Tag (die Liste ist neueste zuerst)
+  const workoutDays = new Map();
+  Store.getWorkouts().filter((w) => w.finishedAt).forEach((w) => {
+    const d = new Date(w.startedAt);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    if (!workoutDays.has(key)) workoutDays.set(key, w.id);
+  });
 
   const monthLabel = first.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
   const weekdayLabels = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
@@ -1650,9 +1870,12 @@ function renderCalendar() {
   let cells = '';
   for (let i = 0; i < startWeekday; i++) cells += '<span class="cal-cell empty"></span>';
   for (let d = 1; d <= daysInMonth; d++) {
-    const hasWorkout = workoutDays.has(`${year}-${month}-${d}`);
+    const workoutId = workoutDays.get(`${year}-${month}-${d}`);
     const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
-    cells += `<span class="cal-cell ${hasWorkout ? 'has-workout' : ''} ${isToday ? 'today' : ''}">${d}</span>`;
+    // Tage mit Training lassen sich antippen und öffnen das Training.
+    cells += workoutId
+      ? `<button class="cal-cell has-workout ${isToday ? 'today' : ''}" data-action="open-workout" data-id="${workoutId}">${d}</button>`
+      : `<span class="cal-cell ${isToday ? 'today' : ''}">${d}</span>`;
   }
 
   return `
@@ -1670,6 +1893,8 @@ function renderCalendar() {
 function bindCalendarEvents() {
   qs('[data-action="cal-prev"]')?.addEventListener('click', () => shiftCalendar(-1));
   qs('[data-action="cal-next"]')?.addEventListener('click', () => shiftCalendar(1));
+  qsa('.calendar [data-action="open-workout"]').forEach((btn) =>
+    btn.addEventListener('click', () => openWorkoutDetailSheet(btn.dataset.id)));
 }
 
 // Nur die Kalenderkarte austauschen statt der ganzen Seite – das hält die
@@ -1691,56 +1916,138 @@ function shiftCalendar(direction) {
   }
 }
 
+// Nach Monaten gegliedert – bei einem Jahr Training sonst eine endlose Liste
+// ohne Anhaltspunkt.
 function renderHistoryLog() {
   const workouts = Store.getWorkouts().filter((w) => w.finishedAt);
-  if (!workouts.length) return '<p class="empty">Noch keine abgeschlossenen Trainings.</p>';
-  return `<div class="card list">${workouts.map((w) => {
-    const sets = w.entries.reduce((n, e) => n + e.sets.filter((s) => s.done).length, 0);
-    const dur = w.finishedAt ? formatDuration(new Date(w.finishedAt) - new Date(w.startedAt)) : '';
-    return `<button class="list-item selectable" data-action="open-workout" data-id="${w.id}">
-      <div class="list-item-main">
-        <strong>${escapeHtml(w.routineName || 'Freies Training')}</strong>
-        <span class="muted">${formatDate(w.startedAt)} · ${dur} · ${sets} Sätze</span>
-      </div>
-      ${Icon.chevron}
-    </button>`;
-  }).join('')}</div>`;
+  if (!workouts.length) return '<p class="empty">Noch keine abgeschlossenen Trainings. Nach dem ersten Training steht es hier – samt Rekorden.</p>';
+  const months = [];
+  workouts.forEach((w) => {
+    const d = new Date(w.startedAt);
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    if (months[months.length - 1]?.key !== key) {
+      months.push({ key, label: d.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }), items: [] });
+    }
+    months[months.length - 1].items.push(w);
+  });
+  return months.map((m) => `
+    <section class="history-month">
+      <div class="section-title">${m.label} · ${m.items.length}</div>
+      <div class="card list">${m.items.map((w) => {
+        const sets = workoutDoneSets(w);
+        const prs = w.entries.reduce((n, e) => n + e.sets.filter((s) => s.pr).length, 0);
+        const dur = formatDuration(new Date(w.finishedAt) - new Date(w.startedAt));
+        return `<button class="list-item selectable" data-action="open-workout" data-id="${w.id}">
+          <div class="list-item-main">
+            <strong>${escapeHtml(w.routineName || 'Freies Training')}</strong>
+            <span class="muted">${formatDate(w.startedAt)} · ${dur} · ${plural(sets, 'Satz', 'Sätze')}</span>
+          </div>
+          ${prs ? `<span class="pr-count">🏆 ${prs}</span>` : ''}
+          ${Icon.chevron}
+        </button>`;
+      }).join('')}</div>
+    </section>`).join('');
+}
+
+// Verlauf einer Übung für Chart und Kennzahlen. Mit Zusatzgewicht zählt das
+// geschätzte 1RM des besten Satzes je Einheit; bei reinen Körpergewichts-
+// übungen (nie mit Gewicht trainiert) die meisten Wiederholungen.
+function progressSeries(exerciseId) {
+  const sessions = Store.getWorkouts()
+    .filter((w) => w.finishedAt)
+    .slice().reverse()
+    .map((w) => {
+      const sets = w.entries.filter((e) => e.exerciseId === exerciseId).flatMap((e) => e.sets);
+      const best = bestSet(sets);
+      return best ? { workout: w, sets, best } : null;
+    })
+    .filter(Boolean);
+  const loaded = sessions.some((s) => s.best.weight > 0);
+  const points = sessions
+    .filter((s) => (loaded ? s.best.weight > 0 : true))
+    .map((s) => ({
+      value: loaded ? estimate1RM(s.best.weight, s.best.reps) : s.best.reps,
+      label: formatDate(s.workout.startedAt),
+      date: s.workout.startedAt,
+      sets: s.sets,
+    }));
+  return { loaded, points, sessions };
 }
 
 function renderProgress() {
   const exercises = Store.getExercises();
-  const withHistory = exercises.filter((ex) => Store.getWorkouts().some((w) => w.entries.some((e) => e.exerciseId === ex.id && e.sets.some((s) => s.done))));
-  if (!withHistory.length) return '<p class="empty">Noch keine Trainingsdaten für den Fortschritt.</p>';
-  if (!state.progressExerciseId || !withHistory.some((e) => e.id === state.progressExerciseId)) {
-    state.progressExerciseId = withHistory[0].id;
+  // Übungen mit Verlauf, zuletzt trainierte zuerst ermittelt
+  const lastTrained = new Map();
+  Store.getWorkouts().filter((w) => w.finishedAt).forEach((w) => w.entries.forEach((e) => {
+    if (!lastTrained.has(e.exerciseId) && e.sets.some((s) => s.done && s.reps > 0)) lastTrained.set(e.exerciseId, w.startedAt);
+  }));
+  const withHistory = exercises.filter((ex) => lastTrained.has(ex.id));
+  if (!withHistory.length) return '<p class="empty">Noch keine Trainingsdaten. Nach ein paar Einheiten siehst du hier, wie sich jede Übung entwickelt.</p>';
+  if (!state.progressExerciseId || !lastTrained.has(state.progressExerciseId) || !withHistory.some((e) => e.id === state.progressExerciseId)) {
+    state.progressExerciseId = [...lastTrained.keys()].find((id) => withHistory.some((e) => e.id === id));
   }
   const unit = unitLabel(Store.getSettings().unit);
-  const points = Store.getWorkouts()
-    .filter((w) => w.finishedAt)
-    .slice().reverse()
-    .map((w) => {
-      const entry = w.entries.find((e) => e.exerciseId === state.progressExerciseId);
-      if (!entry) return null;
-      const best = bestSet(entry.sets);
-      if (!best) return null;
-      return { value: estimate1RM(best.weight, best.reps), label: formatDate(w.startedAt), weight: best.weight, reps: best.reps };
-    }).filter(Boolean);
+  const { loaded, points, sessions } = progressSeries(state.progressExerciseId);
 
-  const pr = points.length ? points.reduce((a, b) => (b.weight > a.weight ? b : a)) : null;
+  // Auswahl nach Muskelgruppen gegliedert – bei vielen Übungen sonst endlos
+  const options = MUSCLE_GROUPS.map((group) => {
+    const inGroup = withHistory.filter((ex) => groupOf(ex) === group).sort((a, b) => a.name.localeCompare(b.name, 'de'));
+    if (!inGroup.length) return '';
+    return `<optgroup label="${group}">${inGroup.map((ex) => `<option value="${ex.id}" ${ex.id === state.progressExerciseId ? 'selected' : ''}>${escapeHtml(ex.name)}</option>`).join('')}</optgroup>`;
+  }).join('');
+
+  const allSets = sessions.flatMap((s) => s.sets.filter((x) => x.done && x.reps > 0));
+  let stats = '';
+  let delta = '';
+  if (loaded) {
+    const heaviest = allSets.filter((x) => x.weight > 0).reduce((a, b) => (b.weight > a.weight || (b.weight === a.weight && b.reps > a.reps) ? b : a));
+    const best1RM = Math.max(...points.map((p) => p.value));
+    stats = `
+      <div><span class="stat-value">${formatNumber(heaviest.weight)} × ${heaviest.reps}</span><span class="muted small">schwerster Satz (${unit})</span></div>
+      <div><span class="stat-value">${formatNumber(Math.round(best1RM))}</span><span class="muted small">1RM geschätzt (${unit})</span></div>
+      <div><span class="stat-value">${sessions.length}</span><span class="muted small">Einheiten</span></div>`;
+    if (points.length >= 2) {
+      const diff = Math.round((points[points.length - 1].value - points[0].value) * 10) / 10;
+      delta = diff
+        ? `${diff > 0 ? '+' : '−'}${formatWeight(Math.abs(diff), unit)} geschätztes 1RM seit ${formatDate(points[0].date)}`
+        : `Geschätztes 1RM unverändert seit ${formatDate(points[0].date)}`;
+    }
+  } else {
+    const mostReps = Math.max(...allSets.map((x) => x.reps));
+    const lastSession = sessions[sessions.length - 1];
+    stats = `
+      <div><span class="stat-value">${mostReps}</span><span class="muted small">meiste Wdh</span></div>
+      <div><span class="stat-value">${lastSession.sets.filter((x) => x.done).reduce((n, x) => n + (x.reps || 0), 0)}</span><span class="muted small">Wdh zuletzt gesamt</span></div>
+      <div><span class="stat-value">${sessions.length}</span><span class="muted small">Einheiten</span></div>`;
+    if (points.length >= 2) {
+      const diff = points[points.length - 1].value - points[0].value;
+      delta = diff
+        ? `${diff > 0 ? '+' : '−'}${Math.abs(diff)} Wdh im besten Satz seit ${formatDate(points[0].date)}`
+        : `Bester Satz unverändert seit ${formatDate(points[0].date)}`;
+    }
+  }
+
+  const recent = sessions.slice(-5).reverse().map((s) => `
+    <div class="list-item">
+      <div class="list-item-main"><strong>${formatDate(s.workout.startedAt)}</strong><span class="muted">${formatSetList(s.sets, unit)}</span></div>
+      ${s.sets.some((x) => x.pr) ? '<span class="pr-count">🏆</span>' : ''}
+    </div>`).join('');
 
   return `
-    <select id="progress-select" class="text-input">
-      ${withHistory.map((ex) => `<option value="${ex.id}" ${ex.id === state.progressExerciseId ? 'selected' : ''}>${escapeHtml(ex.name)}</option>`).join('')}
-    </select>
-    <div class="card">
-      <div class="section-title">Geschätztes 1RM (Epley)</div>
-      ${points.length ? `<canvas id="progress-chart" class="chart"></canvas>` : '<p class="empty">Noch keine Sätze für diese Übung.</p>'}
+    <div class="select-wrap">
+      <select id="progress-select" class="text-input" aria-label="Übung wählen">${options}</select>
+      <span class="select-chevron">${Icon.chevron}</span>
     </div>
-    ${pr ? `<div class="card stat-row">
-      <div><span class="stat-value">${pr.weight}${unit}</span><span class="muted small">Bestes Gewicht</span></div>
-      <div><span class="stat-value">${pr.reps}</span><span class="muted small">bei Wdh (PR)</span></div>
-      <div><span class="stat-value">${points.length}</span><span class="muted small">Einheiten</span></div>
-    </div>` : ''}`;
+    <div class="card">
+      <div class="section-title">${loaded ? 'Geschätztes 1RM' : 'Beste Wiederholungen'}</div>
+      ${points.length ? '<canvas id="progress-chart" class="chart"></canvas>' : '<p class="empty">Noch keine Sätze für diese Übung.</p>'}
+      ${delta ? `<p class="muted small progress-delta">${delta}</p>` : ''}
+    </div>
+    <div class="card stat-row">${stats}</div>
+    <section>
+      <div class="section-title">Letzte Einheiten</div>
+      <div class="card list">${recent}</div>
+    </section>`;
 }
 
 function bindHistoryEvents() {
@@ -1748,23 +2055,13 @@ function bindHistoryEvents() {
     historySwipe.selectWithSlide(btn.dataset.sub);
   }));
   qs('#history-segmented')?.addEventListener('pointerdown', historySwipe.onPointerDown);
-  qsa('[data-action="open-workout"]').forEach((btn) => btn.addEventListener('click', () => openWorkoutDetailSheet(btn.dataset.id)));
+  qsa('.list-item[data-action="open-workout"]').forEach((btn) => btn.addEventListener('click', () => openWorkoutDetailSheet(btn.dataset.id)));
   bindCalendarEvents();
 
   if (state.historySubTab === 'progress') {
     qs('#progress-select')?.addEventListener('change', (e) => { state.progressExerciseId = e.target.value; render(); });
     const canvas = qs('#progress-chart');
-    if (canvas) {
-      const workouts = Store.getWorkouts().filter((w) => w.finishedAt).slice().reverse();
-      const points = workouts.map((w) => {
-        const entry = w.entries.find((e) => e.exerciseId === state.progressExerciseId);
-        if (!entry) return null;
-        const best = bestSet(entry.sets);
-        if (!best) return null;
-        return { value: estimate1RM(best.weight, best.reps), label: formatDate(w.startedAt) };
-      }).filter(Boolean);
-      animateChart(canvas, points);
-    }
+    if (canvas) animateChart(canvas, progressSeries(state.progressExerciseId).points);
   }
 }
 
@@ -1781,23 +2078,27 @@ function animateChart(canvas, points) {
   requestAnimationFrame(frame);
 }
 
+function workoutDoneSets(workout) {
+  return workout.entries.reduce((n, e) => n + e.sets.filter((s) => s.done).length, 0);
+}
+
 function openWorkoutDetailSheet(id) {
   const w = Store.getWorkouts().find((x) => x.id === id);
   if (!w) return;
   const unit = unitLabel(Store.getSettings().unit);
+  const names = exerciseNames();
   const body = w.entries.map((e) => `
     <div class="detail-exercise">
-      <strong>${escapeHtml(e.exerciseName)}</strong>
+      <strong>${escapeHtml(entryName(e, names))}</strong>
       <div class="detail-sets">
-        ${e.sets.filter((s) => s.done).map((s, i) => `<span class="set-chip ${s.pr ? 'pr' : ''}">${i + 1}. ${s.weight}${unit} × ${s.reps}${s.pr ? ' 🏆' : ''}</span>`).join('') || '<span class="muted small">Keine Sätze</span>'}
+        ${e.sets.filter((s) => s.done).map((s, i) => `<span class="set-chip ${s.pr ? 'pr' : ''}">${i + 1}. ${formatSet(s, unit)}${s.pr ? ' 🏆' : ''}</span>`).join('') || '<span class="muted small">Keine Sätze</span>'}
       </div>
     </div>`).join('');
-  const doneSets = w.entries.reduce((n, e) => n + e.sets.filter((s) => s.done).length, 0);
   openSheet(escapeHtml(w.routineName || 'Freies Training'), `
     <p class="muted">${formatDateTime(w.startedAt)}</p>
     <div class="card stat-row detail-stats">
       <div><span class="stat-value">${formatDuration(new Date(w.finishedAt) - new Date(w.startedAt))}</span><span class="muted small">Dauer</span></div>
-      <div><span class="stat-value">${doneSets}</span><span class="muted small">Sätze</span></div>
+      <div><span class="stat-value">${workoutDoneSets(w)}</span><span class="muted small">Sätze</span></div>
       <div><span class="stat-value">${formatVolume(workoutVolume(w))}</span><span class="muted small">Volumen (${unit})</span></div>
     </div>
     ${body}
@@ -1811,6 +2112,84 @@ function openWorkoutDetailSheet(id) {
           render();
         }
       });
+    },
+  });
+}
+
+// Nach dem Beenden: kurz innehalten, was heute geschafft wurde. Rekorde
+// stehen vorne, dazu der Vergleich mit dem letzten Mal desselben Plans und
+// der Stand beim Wochenziel – das ist der Moment, in dem sich das Training
+// lohnen soll.
+function openFinishSummary(id) {
+  const w = Store.getWorkouts().find((x) => x.id === id);
+  if (!w) return;
+  const doneSets = workoutDoneSets(w);
+  if (!doneSets) { toast('Training gespeichert'); return; }
+
+  const settings = Store.getSettings();
+  const unit = unitLabel(settings.unit);
+  const names = exerciseNames();
+  const volume = workoutVolume(w);
+  const planName = w.routineName || 'Freies Training';
+  const prs = w.entries.flatMap((e) => e.sets.filter((s) => s.pr).map((s) => ({ name: entryName(e, names), set: s })));
+
+  const lines = [];
+  const previous = w.routineId
+    ? Store.getWorkouts().find((x) => x.finishedAt && x.id !== w.id && x.routineId === w.routineId && x.startedAt < w.startedAt)
+    : null;
+  const prevVolume = previous ? workoutVolume(previous) : 0;
+  if (prevVolume > 0 && volume > 0) {
+    const pct = Math.round((volume / prevVolume - 1) * 100);
+    if (pct > 0) lines.push(`📈 ${pct} % mehr Volumen als beim letzten ${escapeHtml(planName)}`);
+    else if (pct < 0) lines.push(`📉 ${-pct} % weniger Volumen als beim letzten ${escapeHtml(planName)}`);
+    else lines.push(`➡️ Gleiches Volumen wie beim letzten ${escapeHtml(planName)}`);
+  }
+  if (settings.motivation) {
+    const now = new Date();
+    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+    const week = Store.getWorkouts().filter((x) => x.finishedAt && new Date(x.startedAt) >= monday).length;
+    if (week === settings.weeklyGoal) lines.push(`🎯 Wochenziel erreicht: ${week} von ${settings.weeklyGoal}`);
+    else if (week < settings.weeklyGoal) lines.push(`🗓️ ${week} von ${settings.weeklyGoal} Einheiten diese Woche`);
+    else lines.push(`🎯 ${week} Einheiten diese Woche – mehr als das Ziel`);
+  }
+
+  const headline = prs.length
+    ? (prs.length === 1 ? 'Neuer Rekord!' : `${prs.length} neue Rekorde!`)
+    : 'Stark gemacht!';
+  const openSupps = settings.supplements
+    && Store.getActiveSupplements().length
+    && !dayStatus(Store.getSupplements(), Store.getSupplementLog(), dayKey()).complete;
+
+  openSheet('Training gespeichert', `
+    <div class="finish-hero">
+      <div class="finish-badge ${prs.length ? 'gold' : ''}">${prs.length ? '🏆' : '💪'}</div>
+      <h3>${headline}</h3>
+      <p class="muted">${escapeHtml(planName)} · ${formatDuration(new Date(w.finishedAt) - new Date(w.startedAt))}</p>
+    </div>
+    <div class="card stat-row detail-stats">
+      <div><span class="stat-value">${doneSets}</span><span class="muted small">Sätze</span></div>
+      <div><span class="stat-value">${formatVolume(volume)}</span><span class="muted small">Volumen (${unit})</span></div>
+      <div><span class="stat-value">${prs.length}</span><span class="muted small">${prs.length === 1 ? 'Rekord' : 'Rekorde'}</span></div>
+    </div>
+    ${lines.length ? `<div class="card finish-lines">${lines.map((l) => `<p>${l}</p>`).join('')}</div>` : ''}
+    ${prs.length ? `
+      <div class="section-title" style="margin-top:14px">Neue Rekorde</div>
+      <div class="card list">${prs.map((p) => `
+        <div class="list-item">
+          <div class="list-item-main"><strong>${escapeHtml(p.name)}</strong><span class="muted">${formatSet(p.set, unit)}</span></div>
+          <span class="pr-badge static">PR</span>
+        </div>`).join('')}</div>` : ''}
+    ${openSupps ? `<button class="list-item selectable finish-supps" data-action="finish-open-supps">
+        <div class="list-item-main"><strong>💊 Supplements noch offen</strong><span class="muted">Jetzt abhaken, solange du dran denkst</span></div>
+        ${Icon.chevron}
+      </button>` : ''}
+  `, {
+    footer: '<button class="btn btn-primary full" data-action="close-sheet">Fertig</button>',
+    onMount: () => {
+      qs('[data-action="finish-open-supps"]')?.addEventListener('click', () => openSupplementSheet());
+      if (!prefersReducedMotion()) {
+        qs('.finish-badge')?.classList.add('pop');
+      }
     },
   });
 }
@@ -1912,11 +2291,30 @@ function renderLibrary() {
     ${state.librarySubTab === 'exercises' ? renderExerciseList() : renderRoutineList()}`;
 }
 
-const exerciseRowHtml = (ex) => `
+// Letzte Leistung je Übung (bester Satz der jüngsten Einheit) – in einem
+// Durchgang über den Verlauf, der neueste Treffer gewinnt.
+function lastPerformanceMap() {
+  const map = new Map();
+  Store.getWorkouts().forEach((w) => {
+    if (!w.finishedAt) return;
+    w.entries.forEach((e) => {
+      if (map.has(e.exerciseId)) return;
+      const best = bestSet(e.sets);
+      if (best) map.set(e.exerciseId, { best, date: w.startedAt });
+    });
+  });
+  return map;
+}
+
+function exerciseRowHtml(ex, last, unit) {
+  const info = last.get(ex.id);
+  return `
   <button class="list-item selectable" data-action="edit-exercise" data-id="${ex.id}">
-    <div class="list-item-main"><strong>${escapeHtml(ex.name)}</strong></div>
+    <div class="list-item-main"><strong>${escapeHtml(ex.name)}</strong>
+      ${info ? `<span class="muted">${formatSet(info.best, unit)} · ${relativeDay(info.date)}</span>` : ''}</div>
     ${Icon.chevron}
   </button>`;
+}
 
 function renderExerciseList() {
   if (!Store.getExercises().length) return '<p class="empty">Noch keine Übungen. Tippe oben rechts auf +.</p>';
@@ -1927,21 +2325,29 @@ function renderExerciseList() {
 }
 
 function renderExerciseGroups() {
+  const last = lastPerformanceMap();
+  const unit = unitLabel(Store.getSettings().unit);
   return groupedExercisesHtml(Store.getExercises(), {
     query: groupState.library.query,
     open: groupState.library.open,
-    rowHtml: exerciseRowHtml,
+    rowHtml: (ex) => exerciseRowHtml(ex, last, unit),
   });
 }
 
 function renderRoutineList() {
   const routines = Store.getRoutines();
-  if (!routines.length) return '<p class="empty">Noch keine Pläne. Tippe oben rechts auf +.</p>';
-  return `<div class="card list">${routines.map((r) => `
+  if (!routines.length) return '<p class="empty">Noch keine Pläne. Tippe oben rechts auf + – oder lass dir in den Einstellungen per KI welche erstellen.</p>';
+  const names = exerciseNames();
+  return `<div class="card list">${routines.map((r) => {
+    const preview = r.exerciseIds.map((id) => names.get(id)).filter(Boolean).join(', ');
+    return `
     <button class="list-item selectable" data-action="edit-routine" data-id="${r.id}">
-      <div class="list-item-main"><strong>${escapeHtml(r.name)}</strong><span class="muted">${r.exerciseIds.length} Übung(en)</span></div>
+      <div class="list-item-main"><strong>${escapeHtml(r.name)}</strong>
+        <span class="muted">${plural(r.exerciseIds.length, 'Übung', 'Übungen')}</span>
+        ${preview ? `<span class="muted small routine-preview">${escapeHtml(preview)}</span>` : ''}</div>
       ${Icon.chevron}
-    </button>`).join('')}</div>`;
+    </button>`;
+  }).join('')}</div>`;
 }
 
 function bindLibraryEvents() {
@@ -1969,32 +2375,36 @@ function bindLibraryEvents() {
   }
 }
 
-// Beste je geschaffte Leistung einer Übung, damit man beim Nachschlagen
-// nicht erst in den Verlauf wechseln muss.
+// Beste je geschaffte Leistung einer Übung und die letzten Einheiten, damit
+// man beim Nachschlagen nicht erst in den Verlauf wechseln muss.
 function exerciseBestHtml(exerciseId) {
   const unit = unitLabel(Store.getSettings().unit);
-  let best = null;
-  let bestDate = null;
-  let sessions = 0;
+  const sessions = [];
   Store.getWorkouts().filter((w) => w.finishedAt).forEach((w) => {
-    const entries = w.entries.filter((e) => e.exerciseId === exerciseId);
-    if (!entries.length) return;
-    const top = bestSet(entries.flatMap((e) => e.sets));
-    if (!top) return;
-    sessions += 1;
-    if (!best || estimate1RM(top.weight, top.reps) > estimate1RM(best.weight, best.reps)) {
-      best = top;
-      bestDate = w.startedAt;
-    }
+    const sets = w.entries.filter((e) => e.exerciseId === exerciseId).flatMap((e) => e.sets);
+    const top = bestSet(sets);
+    if (top) sessions.push({ date: w.startedAt, sets, top });
   });
-  if (!best) return '';
+  if (!sessions.length) return '';
+  const loaded = sessions.some((x) => x.top.weight > 0);
+  const best = sessions
+    .filter((x) => (loaded ? x.top.weight > 0 : true))
+    .reduce((a, b) => {
+      const va = loaded ? estimate1RM(a.top.weight, a.top.reps) : a.top.reps;
+      const vb = loaded ? estimate1RM(b.top.weight, b.top.reps) : b.top.reps;
+      return vb > va ? b : a;
+    });
   return `
     <div class="card stat-row detail-stats">
-      <div><span class="stat-value">${best.weight}${unit}</span><span class="muted small">Bestes Gewicht</span></div>
-      <div><span class="stat-value">${best.reps}</span><span class="muted small">bei Wdh</span></div>
-      <div><span class="stat-value">${sessions}</span><span class="muted small">Einheiten</span></div>
+      ${loaded ? `
+        <div><span class="stat-value">${formatWeight(best.top.weight, unit)}</span><span class="muted small">Bestleistung (× ${best.top.reps})</span></div>
+        <div><span class="stat-value">${formatWeight(Math.round(estimate1RM(best.top.weight, best.top.reps)), unit)}</span><span class="muted small">1RM geschätzt</span></div>`
+      : `<div><span class="stat-value">${best.top.reps}</span><span class="muted small">meiste Wdh</span></div>`}
+      <div><span class="stat-value">${sessions.length}</span><span class="muted small">Einheiten</span></div>
     </div>
-    <p class="muted small">Bestleistung am ${formatDate(bestDate)}</p>`;
+    <p class="muted small">Bestleistung am ${formatDate(best.date)} · zuletzt ${relativeDay(sessions[0].date)}</p>
+    <div class="card ex-history">${sessions.slice(0, 4).map((x) => `
+      <div class="ex-history-row"><span class="muted">${formatDate(x.date)}</span><span>${formatSetList(x.sets, unit)}</span></div>`).join('')}</div>`;
 }
 
 function openExerciseSheet(id) {
@@ -2190,134 +2600,140 @@ function openRoutineSheet(id) {
 }
 
 // ---- Einstellungen-Tab ----
+// Gegliedert wie die iOS-Einstellungen: Abschnitte mit Überschrift, darin
+// zusammengehörige Zeilen in einer Karte.
+function toggleRow(id, title, text, checked) {
+  return `
+    <div class="setting toggle-row">
+      <div>
+        <strong>${title}</strong>
+        <p class="muted small">${text}</p>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="${id}" ${checked ? 'checked' : ''} />
+        <span class="toggle-track"></span>
+      </label>
+    </div>`;
+}
+
 function renderSettings() {
   const settings = Store.getSettings();
+  const lastBackup = settings.lastBackupAt ? `Zuletzt gesichert ${relativeDay(settings.lastBackupAt)}` : 'Noch nie gesichert';
   return `
-    <section class="card">
-      <div class="section-title">Einheit</div>
-      <div class="segmented">
-        <button class="${settings.unit === 'kg' ? 'active' : ''}" data-action="set-unit" data-unit="kg">kg</button>
-        <button class="${settings.unit === 'lb' ? 'active' : ''}" data-action="set-unit" data-unit="lb">lb</button>
-        <span class="segmented-thumb" aria-hidden="true"></span>
-      </div>
-      <p class="muted small">Ändert nur die Anzeige-Einheit für neue Einträge, bestehende Werte werden nicht umgerechnet.</p>
-    </section>
-    <section class="card">
-      <div class="section-title">Akzentfarbe</div>
-      <div class="swatch-row">
-        ${ACCENT_COLORS.map((c) => `
-          <button class="swatch ${settings.accent === c.value ? 'active' : ''}" data-action="set-accent" data-color="${c.value}"
-            style="background:${c.value}" aria-label="${c.label}">${settings.accent === c.value ? Icon.check : ''}</button>
-        `).join('')}
-      </div>
-    </section>
-    <section class="card">
-      <div class="toggle-row">
-        <div>
-          <strong>Supplements</strong>
-          <p class="muted small">Tägliches Abhaken auf der Startseite, mit Serie und Kalender-Erinnerung.</p>
+    <section>
+      <div class="section-title">Training</div>
+      <div class="card settings-card">
+        <div class="setting">
+          <div class="setting-head"><strong>Einheit</strong></div>
+          <div class="segmented">
+            <button class="${settings.unit === 'kg' ? 'active' : ''}" data-action="set-unit" data-unit="kg">kg</button>
+            <button class="${settings.unit === 'lb' ? 'active' : ''}" data-action="set-unit" data-unit="lb">lb</button>
+            <span class="segmented-thumb" aria-hidden="true"></span>
+          </div>
+          <p class="muted small">Ändert nur die Anzeige-Einheit für neue Einträge, bestehende Werte werden nicht umgerechnet.</p>
         </div>
-        <label class="toggle">
-          <input type="checkbox" id="toggle-supplements" ${settings.supplements ? 'checked' : ''} />
-          <span class="toggle-track"></span>
+        <div class="setting">
+          <div class="setting-head"><strong>Pause zwischen Sätzen</strong></div>
+          <div class="chip-row">
+            ${REST_OPTIONS.map((sec) => `
+              <button class="chip ${settings.restSeconds === sec ? 'active' : ''}" data-action="set-rest" data-seconds="${sec}">
+                ${sec === 0 ? 'Aus' : `${sec}s`}
+              </button>`).join('')}
+          </div>
+          <p class="muted small">Startet automatisch, sobald du einen Satz abhakst.</p>
+        </div>
+        ${toggleRow('toggle-overload', 'Progressive Overload', 'Schlägt vor, das Gewicht zu erhöhen, sobald du eine Übung in den letzten 2 Einheiten bei gleichem Gewicht mit durchweg 10+ Wiederholungen geschafft hast.', settings.progressiveOverload)}
+        ${toggleRow('toggle-awake', 'Bildschirm anlassen', 'Während des Trainings sperrt sich das iPhone nicht – kein Entsperren zwischen zwei Sätzen.', settings.keepAwake)}
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">Startseite</div>
+      <div class="card settings-card">
+        <div class="setting">
+          ${toggleRow('toggle-motivation', 'Standortbestimmung', 'Ein ehrliches Urteil zu Konstanz und Kraftentwicklung – samt dem nächsten konkreten Schritt.', settings.motivation).replace('class="setting toggle-row"', 'class="toggle-row"')}
+          ${settings.motivation ? `
+            <div class="setting-sub">
+              <div class="setting-head"><span class="muted small">Wochenziel</span></div>
+              <div class="chip-row">
+                ${WEEKLY_GOALS.map((g) => `
+                  <button class="chip ${settings.weeklyGoal === g ? 'active' : ''}" data-action="set-goal" data-goal="${g}">${g}×</button>
+                `).join('')}
+              </div>
+            </div>` : ''}
+        </div>
+        ${toggleRow('toggle-supplements', 'Supplements', 'Tägliches Abhaken auf der Startseite, mit Serie und Kalender-Erinnerung.', settings.supplements)}
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">Darstellung & Töne</div>
+      <div class="card settings-card">
+        <div class="setting">
+          <div class="setting-head"><strong>Akzentfarbe</strong></div>
+          <div class="swatch-row">
+            ${ACCENT_COLORS.map((c) => `
+              <button class="swatch ${settings.accent === c.value ? 'active' : ''}" data-action="set-accent" data-color="${c.value}"
+                style="background:${c.value}" aria-label="${c.label}">${settings.accent === c.value ? Icon.check : ''}</button>
+            `).join('')}
+          </div>
+        </div>
+        <div class="setting">
+          ${toggleRow('toggle-sound', 'Töne', 'Kurze Rückmeldung beim Abhaken, bei Rekorden und am Ende der Pause.', settings.sound).replace('class="setting toggle-row"', 'class="toggle-row"')}
+          ${settings.sound ? `
+            <div class="volume-row">
+              ${Icon.volumeLow}
+              <input type="range" id="sound-volume" class="slider" min="0" max="100" step="5"
+                value="${Math.round(settings.soundVolume * 100)}" aria-label="Lautstärke" />
+              ${Icon.volumeHigh}
+            </div>
+            <div class="setting-sub">
+              <div class="setting-head"><span class="muted small">Klangfarbe</span></div>
+              <div class="chip-row">
+                ${SOUND_STYLES.map((st) => `
+                  <button class="chip ${settings.soundStyle === st.id ? 'active' : ''}" data-action="set-sound-style" data-style="${st.id}">${st.label}</button>
+                `).join('')}
+              </div>
+              <p class="muted small">Zum Anhören antippen. Der Stummschalter des iPhones hat Vorrang.</p>
+            </div>` : ''}
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">Pläne per KI anlegen</div>
+      <div class="card">
+        <ol class="howto">
+          <li>Prompt kopieren und an eine KI schicken.</li>
+          <li>Plan beschreiben – per Sprachnachricht geht das am schnellsten.</li>
+          <li>Antwort der KI hier einfügen und einlesen.</li>
+        </ol>
+        <button class="btn btn-secondary full" data-action="copy-plan-prompt">${Icon.copy} Prompt kopieren</button>
+        <textarea id="plan-import-text" class="text-input import-area" rows="3"
+          placeholder="Antwort der KI hier einfügen…"></textarea>
+        <button class="btn btn-primary full" data-action="parse-plan-import">Pläne einlesen</button>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">Daten</div>
+      <div class="card list">
+        <button class="list-item selectable" data-action="export-data">
+          <div class="list-item-main"><strong>Sicherung erstellen</strong><span class="muted">${lastBackup}</span></div>
+          ${Icon.share}
+        </button>
+        <label class="list-item selectable" for="import-file">
+          <div class="list-item-main"><strong>Sicherung wiederherstellen</strong><span class="muted">Überschreibt alle Daten auf diesem Gerät</span></div>
+          ${Icon.upload}
         </label>
+        <input type="file" id="import-file" accept=".json,application/json" hidden />
       </div>
-    </section>
-    <section class="card">
-      <div class="toggle-row">
-        <div>
-          <strong>Standortbestimmung</strong>
-          <p class="muted small">Zeigt auf der Startseite ein ehrliches Urteil zu Konstanz und Kraftentwicklung – samt dem nächsten konkreten Schritt.</p>
-        </div>
-        <label class="toggle">
-          <input type="checkbox" id="toggle-motivation" ${settings.motivation ? 'checked' : ''} />
-          <span class="toggle-track"></span>
-        </label>
-      </div>
-      ${settings.motivation ? `
-        <div class="section-title" style="margin-top:14px">Wochenziel</div>
-        <div class="chip-row">
-          ${WEEKLY_GOALS.map((g) => `
-            <button class="chip ${settings.weeklyGoal === g ? 'active' : ''}" data-action="set-goal" data-goal="${g}">${g}×</button>
-          `).join('')}
-        </div>` : ''}
-    </section>
-    <section class="card">
-      <div class="toggle-row">
-        <div>
-          <strong>Töne</strong>
-          <p class="muted small">Kurze Rückmeldung beim Abhaken, bei Rekorden und am Ende der Pause. Stummschalter des iPhones hat Vorrang.</p>
-        </div>
-        <label class="toggle">
-          <input type="checkbox" id="toggle-sound" ${settings.sound ? 'checked' : ''} />
-          <span class="toggle-track"></span>
-        </label>
-      </div>
-      ${settings.sound ? `
-        <div class="volume-row">
-          ${Icon.volumeLow}
-          <input type="range" id="sound-volume" class="slider" min="0" max="100" step="5"
-            value="${Math.round(settings.soundVolume * 100)}" aria-label="Lautstärke" />
-          ${Icon.volumeHigh}
-        </div>
-        <div class="section-title" style="margin-top:14px">Klangfarbe</div>
-        <div class="chip-row">
-          ${SOUND_STYLES.map((s) => `
-            <button class="chip ${settings.soundStyle === s.id ? 'active' : ''}" data-action="set-sound-style" data-style="${s.id}">${s.label}</button>
-          `).join('')}
-        </div>
-        <p class="muted small">Zum Anhören antippen. Der Stummschalter des iPhones hat Vorrang.</p>` : ''}
-    </section>
-    <section class="card">
-      <div class="section-title">Pause zwischen Sätzen</div>
-      <div class="chip-row">
-        ${REST_OPTIONS.map((s) => `
-          <button class="chip ${settings.restSeconds === s ? 'active' : ''}" data-action="set-rest" data-seconds="${s}">
-            ${s === 0 ? 'Aus' : `${s}s`}
-          </button>`).join('')}
-      </div>
-      <p class="muted small">Startet automatisch, sobald du einen Satz abhakst.</p>
-    </section>
-    <section class="card">
-      <div class="toggle-row">
-        <div>
-          <strong>Progressive Overload</strong>
-          <p class="muted small">Schlägt vor, das Gewicht zu erhöhen, sobald du eine Übung in den letzten 2 Einheiten bei gleichem Gewicht mit durchweg 10+ Wiederholungen geschafft hast.</p>
-        </div>
-        <label class="toggle">
-          <input type="checkbox" id="toggle-overload" ${settings.progressiveOverload ? 'checked' : ''} />
-          <span class="toggle-track"></span>
-        </label>
-      </div>
-    </section>
-    <section class="card list">
-      <button class="list-item selectable" data-action="export-data">
-        <div class="list-item-main"><strong>Daten exportieren</strong><span class="muted">Backup als JSON-Datei speichern</span></div>
-        ${Icon.download}
-      </button>
-      <label class="list-item selectable" for="import-file">
-        <div class="list-item-main"><strong>Daten importieren</strong><span class="muted">Backup wiederherstellen (überschreibt alles)</span></div>
-        ${Icon.upload}
-      </label>
-      <input type="file" id="import-file" accept="application/json" hidden />
     </section>
     <section class="card list">
       <button class="list-item selectable danger" data-action="wipe-data">
         <div class="list-item-main"><strong>Alle Daten löschen</strong><span class="muted">Setzt die App zurück</span></div>
         ${Icon.trash}
       </button>
-    </section>
-    <section class="card">
-      <div class="section-title">Pläne per KI anlegen</div>
-      <ol class="howto">
-        <li>Prompt kopieren und an eine KI schicken.</li>
-        <li>Plan beschreiben – per Sprachnachricht geht das am schnellsten.</li>
-        <li>Antwort der KI hier einfügen und einlesen.</li>
-      </ol>
-      <button class="btn btn-secondary full" data-action="copy-plan-prompt">${Icon.copy} Prompt kopieren</button>
-      <textarea id="plan-import-text" class="text-input import-area" rows="3"
-        placeholder="Antwort der KI hier einfügen…"></textarea>
-      <button class="btn btn-primary full" data-action="parse-plan-import">Pläne einlesen</button>
     </section>
     <p class="empty small">Alle Daten bleiben ausschließlich lokal auf diesem Gerät gespeichert.</p>`;
 }
@@ -2457,6 +2873,46 @@ function bindPlanImportEvents() {
 
 }
 
+// Sicherung über das Teilen-Menü: in der installierten App führt ein
+// normaler Download ins Leere (oder öffnet die Datei ohne Weg zurück). Über
+// "Teilen" lässt sie sich in Dateien, iCloud Drive oder per AirDrop ablegen.
+async function exportBackup() {
+  const json = JSON.stringify(Store.exportAll(), null, 2);
+  const name = `gym-sicherung-${dayKey()}.json`;
+  const markDone = () => {
+    Store.saveSettings({ ...Store.getSettings(), lastBackupAt: new Date().toISOString() });
+    if (state.tab === 'settings') render();
+  };
+  const file = typeof File === 'function' ? new File([json], name, { type: 'application/json' }) : null;
+  if (file && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: 'Gym-Sicherung' });
+      markDone();
+      toast('Sicherung erstellt');
+    } catch (err) {
+      if (err?.name !== 'AbortError') toast('Teilen nicht möglich');
+    }
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  markDone();
+}
+
+// Einstellungen, die außerhalb des Renderns wirken (Farbe, Töne), nach einem
+// Import oder Zurücksetzen neu anwenden.
+function applySettings() {
+  const settings = Store.getSettings();
+  applyAccent();
+  setSoundEnabled(settings.sound);
+  setSoundVolume(settings.soundVolume);
+  setSoundStyle(settings.soundStyle);
+}
+
 function bindSettingsEvents() {
   bindPlanImportEvents();
   qsa('[data-action="set-unit"]').forEach((btn) => btn.addEventListener('click', () => {
@@ -2502,38 +2958,40 @@ function bindSettingsEvents() {
   qs('#toggle-overload')?.addEventListener('change', (e) => {
     Store.saveSettings({ ...Store.getSettings(), progressiveOverload: e.target.checked });
   });
+  qs('#toggle-awake')?.addEventListener('change', (e) => {
+    Store.saveSettings({ ...Store.getSettings(), keepAwake: e.target.checked });
+  });
   qsa('[data-action="set-accent"]').forEach((btn) => btn.addEventListener('click', () => {
     Store.saveSettings({ ...Store.getSettings(), accent: btn.dataset.color });
     applyAccent();
     render();
   }));
-  qs('[data-action="export-data"]')?.addEventListener('click', () => {
-    const data = Store.exportAll();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `gym-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  });
+  qs('[data-action="export-data"]')?.addEventListener('click', exportBackup);
   qs('#import-file')?.addEventListener('change', async (e) => {
     const file = e.target.files[0];
-    if (!file) return;
-    if (!confirm('Import überschreibt alle aktuellen Daten. Fortfahren?')) { e.target.value = ''; return; }
-    try {
-      const data = JSON.parse(await file.text());
-      Store.importAll(data);
-      toast('Daten importiert');
-      go(render);
-    } catch {
-      alert('Datei konnte nicht gelesen werden.');
-    }
     e.target.value = '';
+    if (!file) return;
+    let data;
+    try {
+      data = JSON.parse(await file.text());
+    } catch {
+      alert('Die Datei konnte nicht gelesen werden – ist es eine Gym-Sicherung (.json)?');
+      return;
+    }
+    const problem = validateBackup(data);
+    if (problem) { alert(problem); return; }
+    const count = Array.isArray(data.workouts) ? data.workouts.length : 0;
+    const when = data.exportedAt ? ` vom ${formatDateTime(data.exportedAt)}` : '';
+    if (!confirm(`Sicherung${when} mit ${plural(count, 'Training', 'Trainings')} wiederherstellen? Alle aktuellen Daten werden ersetzt.`)) return;
+    Store.importAll(data);
+    applySettings();
+    toast('Sicherung wiederhergestellt');
+    go(render);
   });
   qs('[data-action="wipe-data"]')?.addEventListener('click', () => {
     if (confirm('Wirklich ALLE Daten unwiderruflich löschen?')) {
       Store.wipeAll();
+      applySettings();
       go(render);
       toast('Zurückgesetzt');
     }
@@ -2809,10 +3267,17 @@ sheetRoot.addEventListener('click', (e) => {
 
 window.addEventListener('beforeunload', () => stopTicking());
 
-applyAccent();
-setSoundEnabled(Store.getSettings().sound);
-setSoundVolume(Store.getSettings().soundVolume);
-setSoundStyle(Store.getSettings().soundStyle);
+// Die App bleibt auf dem iPhone oft tagelang im Speicher. Kommt sie zurück in
+// den Vordergrund, muss zumindest der Tag stimmen – sonst stünden auf der
+// Startseite noch die abgehakten Supplements von gestern. Außerdem gibt iOS
+// die Bildschirmsperre im Hintergrund frei; im Training wird sie erneuert.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (state.workoutOpen) requestWakeLock();
+  if (dayKey() !== renderedDay && !sheetRoot.classList.contains('open')) render();
+});
+
+applySettings();
 calibrateSafeArea();
 window.addEventListener('resize', calibrateSafeArea);
 window.addEventListener('orientationchange', () => setTimeout(calibrateSafeArea, 150));

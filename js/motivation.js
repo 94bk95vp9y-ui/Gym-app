@@ -6,7 +6,7 @@
 // Nächstes zu tun ist. Der unangenehme Fall wird dabei nicht weichgespült:
 // eine Übung, die seit Wochen steht, wird beim Namen genannt.
 
-import { estimate1RM } from './utils.js';
+import { estimate1RM, bestSet } from './utils.js';
 import { fatigueOf, muscleGroupLookup } from './fatigue.js';
 
 const DAY = 86400000;
@@ -19,26 +19,31 @@ export function startOfWeek(date) {
 }
 
 // Beste Leistung je Trainingseinheit für eine Übung, aufsteigend nach Datum,
-// mitsamt der Vorbelastung (siehe fatigue.js).
+// mitsamt der Vorbelastung (siehe fatigue.js). score ist das geschätzte 1RM,
+// bei reinen Körpergewichtsübungen die meisten Wiederholungen. Beides wird
+// nie gemischt: wurde eine Übung je mit Zusatzgewicht gemacht, zählen nur
+// diese Einheiten.
 function sessionsFor(workouts, exerciseId, groupOf) {
-  return workouts
+  const sessions = workouts
     .map((w) => {
       const entryIndex = w.entries.findIndex(
-        (e) => e.exerciseId === exerciseId && e.sets.some((s) => s.done && s.weight > 0 && s.reps > 0),
+        (e) => e.exerciseId === exerciseId && e.sets.some((s) => s.done && s.reps > 0),
       );
       if (entryIndex < 0) return null;
-      const sets = w.entries[entryIndex].sets.filter((s) => s.done && s.weight > 0 && s.reps > 0);
-      const best = sets.reduce((a, s) => (estimate1RM(s.weight, s.reps) > estimate1RM(a.weight, a.reps) ? s : a));
+      const best = bestSet(w.entries[entryIndex].sets);
+      const loaded = best.weight > 0;
       return {
         date: new Date(w.startedAt).getTime(),
-        e1rm: estimate1RM(best.weight, best.reps),
+        loaded,
+        score: loaded ? estimate1RM(best.weight, best.reps) : best.reps,
         weight: best.weight,
         reps: best.reps,
         bucket: fatigueOf(w, entryIndex, groupOf).bucket,
       };
     })
-    .filter(Boolean)
-    .sort((a, b) => a.date - b.date);
+    .filter(Boolean);
+  const anyLoaded = sessions.some((s) => s.loaded);
+  return sessions.filter((s) => s.loaded === anyLoaded).sort((a, b) => a.date - b.date);
 }
 
 // Sucht eine Vorbelastung, die in beiden Zeiträumen vorkommt – bevorzugt die
@@ -73,14 +78,16 @@ function strengthTrend(workouts, exercises, now, groupOf) {
     recent = recent.filter((s) => s.bucket === bucket);
     older = older.filter((s) => s.bucket === bucket);
 
-    const recentMax = Math.max(...recent.map((s) => s.e1rm));
-    const olderMax = Math.max(...older.map((s) => s.e1rm));
+    const recentMax = Math.max(...recent.map((s) => s.score));
+    const olderMax = Math.max(...older.map((s) => s.score));
     const delta = recentMax - olderMax;
     const tolerance = olderMax * 0.01;
 
     if (delta > tolerance) {
       up += 1;
-      if (!best || delta > best.delta) best = { name: ex.name, delta: Math.round(delta * 10) / 10 };
+      // Hervorgehoben wird nur ein Gewichtszuwachs – "2 Wdh stärker" wäre
+      // als Satz über Kilogramm schlicht falsch.
+      if (recent[0].loaded && (!best || delta > best.delta)) best = { name: ex.name, delta: Math.round(delta * 10) / 10 };
     } else if (delta < -tolerance) {
       down += 1;
     } else {
@@ -97,14 +104,14 @@ function stagnatingLifts(workouts, exercises, now, stepFor, groupOf) {
   const result = [];
   exercises.forEach((ex) => {
     const all = sessionsFor(workouts, ex.id, groupOf);
-    if (all.length < 3) return;
+    if (all.length < 3 || !all[0].loaded) return; // Gewichtsvorschlag nur mit Zusatzgewicht
     // Nur mit Einheiten unter gleicher Vorbelastung vergleichen: ein alter
     // Bestwert aus frischem Zustand darf keine Stagnation melden, wenn die
     // Übung seither ans Ende des Trainings gerutscht ist.
     const last = all[all.length - 1];
     const sessions = all.filter((s) => s.bucket === last.bucket);
     if (sessions.length < 3) return; // zu wenig Vergleichbares für den Vorwurf
-    const bestSession = sessions.reduce((a, b) => (b.e1rm > a.e1rm ? b : a));
+    const bestSession = sessions.reduce((a, b) => (b.score > a.score ? b : a));
     const weeks = Math.floor((now - bestSession.date) / WEEK);
     if (weeks < 3 || last.date < now - 3 * WEEK) return;
     const step = stepFor(ex);

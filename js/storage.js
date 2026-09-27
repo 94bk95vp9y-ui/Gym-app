@@ -15,17 +15,35 @@ const KEYS = {
   supplementLog: 'gym.supplementLog',
 };
 
+// Geparste Werte werden zwischengespeichert: ein Neuaufbau der Ansicht liest
+// dieselben Schlüssel zigmal, und bei einem Jahr Trainingsdaten kostet jedes
+// JSON.parse spürbar Zeit. Maßgeblich bleibt der Rohtext im Speicher – hat er
+// sich geändert (auch von außen), wird neu gelesen.
+const cache = new Map();
+
 function read(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
+    if (!raw) return fallback;
+    const hit = cache.get(key);
+    if (hit && hit.raw === raw) return hit.value;
+    const value = JSON.parse(raw);
+    cache.set(key, { raw, value });
+    return value;
   } catch {
     return fallback;
   }
 }
 
 function write(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
+  const raw = JSON.stringify(value);
+  localStorage.setItem(key, raw);
+  cache.set(key, { raw, value });
+}
+
+function remove(key) {
+  localStorage.removeItem(key);
+  cache.delete(key);
 }
 
 export function uid() {
@@ -58,6 +76,7 @@ const DEFAULT_SETTINGS = {
   sound: true,
   soundVolume: 0.7,
   soundStyle: 'click',
+  keepAwake: true,
   supplements: true,
   // Zuletzt gewählte Erinnerungszeit je Tageszeit (HHMM), nur fürs Formular
   supplementReminders: {},
@@ -98,6 +117,27 @@ function mergeCatalog() {
 
 seedIfEmpty();
 mergeCatalog();
+
+let sortedWorkouts = { source: null, sorted: [] };
+
+// Prüft, ob eine Datei wirklich eine Sicherung dieser App ist, bevor sie
+// alles überschreibt. Gibt eine Fehlermeldung zurück oder null.
+export function validateBackup(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return 'Die Datei enthält keine Gym-Sicherung.';
+  const known = ['exercises', 'routines', 'workouts', 'settings', 'supplements', 'supplementLog'];
+  if (!known.some((k) => k in data)) return 'Die Datei enthält keine Gym-Sicherung.';
+  const lists = ['exercises', 'routines', 'workouts', 'supplements'];
+  const broken = lists.find((k) => k in data && !Array.isArray(data[k]));
+  if (broken) return 'Die Sicherung ist beschädigt.';
+  if ((data.exercises || []).some((e) => !e || !e.id || typeof e.name !== 'string')) return 'Die Übungen in der Sicherung sind beschädigt.';
+  if ((data.routines || []).some((r) => !r || !r.id || !Array.isArray(r.exerciseIds))) return 'Die Pläne in der Sicherung sind beschädigt.';
+  if ((data.workouts || []).some((w) => !w || typeof w.startedAt !== 'string' || !Array.isArray(w.entries)
+    || w.entries.some((e) => !e || !Array.isArray(e.sets)))) {
+    return 'Die Trainings in der Sicherung sind beschädigt.';
+  }
+  if ('settings' in data && (typeof data.settings !== 'object' || Array.isArray(data.settings))) return 'Die Einstellungen in der Sicherung sind beschädigt.';
+  return null;
+}
 
 export const Store = {
   // Übungen
@@ -143,8 +183,17 @@ export const Store = {
   },
 
   // Workouts (Verlauf)
+  // Neueste zuerst. Sortiert wird eine Kopie, damit der Zwischenspeicher
+  // unangetastet bleibt; bei unveränderten Daten wird gar nicht neu sortiert.
   getWorkouts() {
-    return read(KEYS.workouts, []).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+    const list = read(KEYS.workouts, []);
+    // Jeder Schreib- oder Neulesevorgang legt einen neuen Cache-Eintrag an –
+    // dessen Identität zeigt zuverlässig, ob sich etwas geändert hat.
+    const entry = cache.get(KEYS.workouts) || null;
+    if (!entry || sortedWorkouts.source !== entry) {
+      sortedWorkouts = { source: entry, sorted: [...list].sort((a, b) => b.startedAt.localeCompare(a.startedAt)) };
+    }
+    return sortedWorkouts.sorted;
   },
   deleteWorkout(id) {
     write(KEYS.workouts, read(KEYS.workouts, []).filter((w) => w.id !== id));
@@ -172,8 +221,8 @@ export const Store = {
     write(KEYS.active, workout);
   },
   clearActive() {
-    localStorage.removeItem(KEYS.active);
-    localStorage.removeItem(KEYS.rest);
+    remove(KEYS.active);
+    remove(KEYS.rest);
   },
 
   // Supplements. Entfernen ist bewusst nur ein Markieren: die Historie muss
@@ -228,7 +277,7 @@ export const Store = {
   },
   setRest(rest) {
     if (rest) write(KEYS.rest, rest);
-    else localStorage.removeItem(KEYS.rest);
+    else remove(KEYS.rest);
   },
 
   // Einstellungen
@@ -263,7 +312,7 @@ export const Store = {
     write(KEYS.catalogVersion, CATALOG_VERSION);
   },
   wipeAll() {
-    Object.values(KEYS).forEach((k) => localStorage.removeItem(k));
+    Object.values(KEYS).forEach(remove);
     seedIfEmpty();
   },
 };
