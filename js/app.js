@@ -5,6 +5,10 @@ import { buildMotivation } from './motivation.js';
 import { Sound, setSoundEnabled, setSoundVolume, setSoundStyle, SOUND_STYLES } from './sound.js';
 import { fatigueOf, muscleGroupLookup } from './fatigue.js';
 import {
+  SLOTS, SUPPLEMENT_PRESETS, REMINDER_TIMES, dayKey, shiftDay, dateOfKey, currentSlot,
+  activeOn, dayStatus, streak, adherence, reminderFile,
+} from './supplements.js';
+import {
   formatDate, formatDateTime, formatDuration, elapsedLabel,
   estimate1RM, bestSet, escapeHtml, unitLabel, drawLineChart,
 } from './utils.js';
@@ -497,6 +501,7 @@ function renderStart() {
 
   return `
     ${activeCard}
+    ${renderSupplementCard()}
     ${Store.getSettings().motivation ? renderMotivationCard() : renderWeekCard()}
     <section>
       <div class="section-title">Plan starten</div>
@@ -586,7 +591,401 @@ function formatVolume(value) {
   return Math.round(value).toLocaleString('de-DE');
 }
 
+// ---- Supplements: tägliches Abhaken auf der Startseite ----
+// Die Karte steht ganz oben, solange heute noch etwas offen ist – das ist der
+// Moment, in dem sie gebraucht wird. Ist alles genommen, schrumpft sie auf
+// eine Zeile, damit sie nicht im Weg steht.
+function renderSupplementCard() {
+  if (!Store.getSettings().supplements) return '';
+  const active = Store.getActiveSupplements();
+
+  if (!active.length) {
+    return `
+      <section class="card supp-card supp-invite">
+        <button class="supp-row-btn" data-action="open-supplements">
+          <span class="supp-emoji">💊</span>
+          <span class="supp-row-text"><strong>Supplements tracken</strong>
+            <span class="muted small">Täglich abhaken – mit Erinnerung, damit nichts mehr vergessen wird</span></span>
+          ${Icon.chevron}
+        </button>
+      </section>`;
+  }
+
+  const supplements = Store.getSupplements();
+  const log = Store.getSupplementLog();
+  const today = dayKey();
+  const taken = log[today] || {};
+  const status = dayStatus(supplements, log, today);
+  const series = streak(supplements, log, today);
+
+  if (status.complete) {
+    return `
+      <section class="card supp-card supp-complete">
+        <button class="supp-row-btn" data-action="open-supplements">
+          <span class="supp-emoji done">${Icon.check}</span>
+          <span class="supp-row-text"><strong>Supplements genommen</strong>
+            <span class="muted small">${status.expected} von ${status.expected} für heute</span></span>
+          ${series ? `<span class="streak-badge">🔥 ${series}</span>` : ''}
+          ${Icon.chevron}
+        </button>
+      </section>`;
+  }
+
+  const nowIndex = SLOTS.findIndex((s) => s.id === currentSlot());
+  const slots = SLOTS.map((slot, index) => {
+    const items = active.filter((s) => s.slot === slot.id);
+    if (!items.length) return '';
+    const open = items.filter((s) => !taken[s.id]);
+    const later = index > nowIndex;
+
+    // Eine erledigte Tageszeit auf eine Zeile eindampfen – der Blick soll auf
+    // dem liegen, was noch offen ist. Antippen klappt sie wieder auf.
+    if (!open.length) {
+      return `
+        <button class="supp-slot-done" data-action="supp-expand-slot">
+          ${slot.icon} ${slot.label} <span class="supp-ok">${Icon.check} ${items.length}/${items.length}</span>
+        </button>
+        <div class="supp-slot collapsed-slot" hidden>${suppItemsHtml(items, taken, today)}</div>`;
+    }
+    return `
+      <div class="supp-slot ${later ? 'later' : ''}">
+        <div class="supp-slot-head">
+          <span>${slot.icon} ${slot.label}${later ? ' · später' : ''}</span>
+          ${open.length > 1 ? `<button class="supp-all" data-action="supp-slot-all" data-slot="${slot.id}" data-day="${today}">Alle ${Icon.check}</button>` : ''}
+        </div>
+        ${suppItemsHtml(items, taken, today)}
+      </div>`;
+  }).join('');
+
+  const yesterday = shiftDay(today, -1);
+  const yStatus = dayStatus(supplements, log, yesterday);
+  const backfill = yStatus.expected && !yStatus.complete
+    ? `<button class="supp-backfill" data-action="open-supplements" data-day="${yesterday}">
+        Gestern ${yStatus.done} von ${yStatus.expected} – vergessen einzutragen?</button>`
+    : '';
+
+  return `
+    <section class="card supp-card">
+      <div class="supp-head">
+        <strong>💊 Supplements</strong>
+        <span class="supp-progress">${status.done}/${status.expected}</span>
+        ${series ? `<span class="streak-badge" title="Tage in Folge">🔥 ${series}</span>` : ''}
+        <button class="icon-btn small" data-action="open-supplements" aria-label="Supplements verwalten">${Icon.chevron}</button>
+      </div>
+      ${slots}
+      ${backfill}
+    </section>`;
+}
+
+function suppItemsHtml(items, taken, day) {
+  return items.map((s) => `
+    <button class="supp-item ${taken[s.id] ? 'on' : ''}" data-action="supp-toggle" data-id="${s.id}" data-day="${day}">
+      <span class="supp-check">${Icon.check}</span>
+      <span class="supp-name">${escapeHtml(s.name)}${s.dose ? `<span class="supp-dose"> · ${escapeHtml(s.dose)}</span>` : ''}</span>
+    </button>`).join('');
+}
+
+// Abhaken: erst die Rückmeldung am Haken (sofort, mit Ton), dann – kurz
+// danach – die Karte neu aufbauen, falls eine Tageszeit oder der ganze Tag
+// damit erledigt ist. So sieht man den Haken, bevor sich das Layout ändert.
+function toggleSupplements(ids, day, container, rerender) {
+  const log = Store.getSupplementLog();
+  const taken = log[day] || {};
+  const willTake = ids.some((id) => !taken[id]);
+  const before = dayStatus(Store.getSupplements(), log, day).complete;
+
+  Store.setSupplementsTaken(day, ids, willTake);
+  ids.forEach((id) => qsa(`[data-action="supp-toggle"][data-id="${id}"]`, container)
+    .forEach((el) => el.classList.toggle('on', willTake)));
+
+  const after = dayStatus(Store.getSupplements(), Store.getSupplementLog(), day).complete;
+  if (after && !before) Sound.record();
+  else if (willTake) Sound.setDone();
+  else Sound.setUndone();
+
+  setTimeout(rerender, after && !before ? 520 : 260);
+}
+
+function refreshSupplementCard() {
+  const card = qs('.supp-card');
+  if (!card) return;
+  const holder = document.createElement('div');
+  holder.innerHTML = renderSupplementCard().trim();
+  const next = holder.firstElementChild;
+  if (!next) { card.remove(); return; }
+  card.replaceWith(next);
+  bindSupplementCard();
+  if (next.classList.contains('supp-complete')) dropIn(next);
+}
+
+function bindSupplementCard() {
+  const card = qs('.supp-card');
+  if (!card) return;
+  qsa('[data-action="open-supplements"]', card).forEach((btn) => btn.addEventListener('click', () =>
+    openSupplementSheet(btn.dataset.day)));
+  qsa('[data-action="supp-toggle"]', card).forEach((btn) => btn.addEventListener('click', () =>
+    toggleSupplements([btn.dataset.id], btn.dataset.day, card, refreshSupplementCard)));
+  qsa('[data-action="supp-slot-all"]', card).forEach((btn) => btn.addEventListener('click', () => {
+    const ids = Store.getActiveSupplements().filter((s) => s.slot === btn.dataset.slot).map((s) => s.id);
+    const taken = Store.getSupplementLog()[btn.dataset.day] || {};
+    const open = ids.filter((id) => !taken[id]);
+    toggleSupplements(open.length ? open : ids, btn.dataset.day, card, refreshSupplementCard);
+  }));
+  qsa('[data-action="supp-expand-slot"]', card).forEach((btn) => btn.addEventListener('click', () => {
+    const slot = btn.nextElementSibling;
+    btn.remove();
+    slot.hidden = false;
+    dropIn(slot);
+  }));
+}
+
+// ---- Supplements: Übersicht, Nachtragen, Verwaltung, Erinnerung ----
+function dayLabel(key) {
+  const today = dayKey();
+  if (key === today) return 'Heute';
+  if (key === shiftDay(today, -1)) return 'Gestern';
+  return dateOfKey(key).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+function openSupplementSheet(focusDay) {
+  const today = dayKey();
+  let selected = focusDay && focusDay <= today ? focusDay : today;
+  let view = dateOfKey(selected);
+  view = { year: view.getFullYear(), month: view.getMonth() };
+
+  function calendarHtml(supplements, log) {
+    const first = new Date(view.year, view.month, 1);
+    const offset = (first.getDay() + 6) % 7;
+    const days = new Date(view.year, view.month + 1, 0).getDate();
+    let cells = '';
+    for (let i = 0; i < offset; i += 1) cells += '<span class="cal-cell empty"></span>';
+    for (let d = 1; d <= days; d += 1) {
+      const key = `${view.year}-${String(view.month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const st = dayStatus(supplements, log, key);
+      let cls = 'none';
+      if (key > today) cls = 'future';
+      else if (st.complete) cls = 'full';
+      else if (st.expected && st.done) cls = 'partial';
+      else if (st.expected && key < today) cls = 'missed';
+      const pickable = key <= today && st.expected;
+      cells += `<button class="cal-cell supp-day ${cls} ${key === selected ? 'selected' : ''} ${key === today ? 'today' : ''}"
+        ${pickable ? `data-action="supp-pick-day" data-day="${key}"` : 'disabled'}>${d}</button>`;
+    }
+    const label = first.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+    const canForward = new Date(view.year, view.month + 1, 1) <= dateOfKey(today);
+    return `
+      <div class="card calendar">
+        <div class="calendar-header">
+          <button class="icon-btn small" data-action="supp-cal" data-delta="-1" aria-label="Vorheriger Monat">${Icon.chevron}</button>
+          <strong>${label}</strong>
+          <button class="icon-btn small" data-action="supp-cal" data-delta="1" aria-label="Nächster Monat" ${canForward ? '' : 'disabled'}>${Icon.chevron}</button>
+        </div>
+        <div class="calendar-weekdays">${['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map((w) => `<span>${w}</span>`).join('')}</div>
+        <div class="calendar-grid">${cells}</div>
+        <div class="supp-legend">
+          <span><i class="lg full"></i>alles</span><span><i class="lg partial"></i>teilweise</span><span><i class="lg missed"></i>vergessen</span>
+        </div>
+      </div>`;
+  }
+
+  function checklistHtml(supplements, log) {
+    const items = activeOn(supplements, selected);
+    const taken = log[selected] || {};
+    const st = dayStatus(supplements, log, selected);
+    if (!items.length) return '';
+    const groups = SLOTS.map((slot) => {
+      const inSlot = items.filter((s) => s.slot === slot.id);
+      if (!inSlot.length) return '';
+      return `<div class="supp-slot"><div class="supp-slot-head"><span>${slot.icon} ${slot.label}</span></div>
+        ${suppItemsHtml(inSlot, taken, selected)}</div>`;
+    }).join('');
+    return `
+      <div class="card supp-day-card">
+        <div class="supp-head">
+          <strong>${dayLabel(selected)}</strong>
+          <span class="supp-progress">${st.done}/${st.expected}</span>
+          ${!st.complete ? `<button class="supp-all" data-action="supp-day-all">Alle ${Icon.check}</button>` : ''}
+        </div>
+        ${groups}
+      </div>`;
+  }
+
+  function reminderHtml(active) {
+    const settings = Store.getSettings();
+    const slots = SLOTS.filter((slot) => active.some((s) => s.slot === slot.id));
+    if (!slots.length) return '';
+    return `
+      <div class="section-title" style="margin-top:6px">Tägliche Erinnerung</div>
+      <div class="card">
+        <p class="muted small" style="margin:0 0 10px">Web-Apps dürfen auf dem iPhone keine eigenen Erinnerungen planen – der Kalender schon.
+          Einmal hinzufügen, dann meldet sich dein iPhone jeden Tag zur gewählten Zeit.</p>
+        ${slots.map((slot) => {
+          const time = settings.supplementReminders?.[slot.id] || slot.reminder;
+          return `
+            <div class="supp-reminder">
+              <span class="supp-reminder-label">${slot.icon} ${slot.label}</span>
+              <select class="text-input supp-time" data-slot="${slot.id}">
+                ${REMINDER_TIMES.map((t) => `<option value="${t}" ${t === time ? 'selected' : ''}>${t.slice(0, 2)}:${t.slice(2)}</option>`).join('')}
+              </select>
+              <a class="btn btn-secondary small" data-reminder-link="${slot.id}" href="${reminderFile(time)}" target="_blank" rel="noopener">${Icon.calendar} Hinzufügen</a>
+            </div>`;
+        }).join('')}
+        <p class="muted small supp-tip">Tipp: Stell die Dosen dorthin, wo du jeden Tag ohnehin vorbeikommst – neben die Kaffeemaschine oder die Zahnbürste. Das hilft mehr als jede Erinnerung.</p>
+      </div>`;
+  }
+
+  function body() {
+    const supplements = Store.getSupplements();
+    const active = Store.getActiveSupplements();
+    const log = Store.getSupplementLog();
+    const series = streak(supplements, log, today);
+    const quote = adherence(supplements, log, today, 30);
+
+    const list = active.length
+      ? `<div class="card list">${SLOTS.flatMap((slot) => active.filter((s) => s.slot === slot.id).map((s) => `
+          <button class="list-item selectable" data-action="supp-edit" data-id="${s.id}">
+            <div class="list-item-main"><strong>${escapeHtml(s.name)}</strong>
+              <span class="muted">${slot.icon} ${slot.label}${s.dose ? ` · ${escapeHtml(s.dose)}` : ''}</span></div>
+            ${Icon.chevron}
+          </button>`)).join('')}</div>`
+      : '<p class="empty small">Noch keine Supplements. Leg los – die gängigsten sind mit einem Tipp drin.</p>';
+
+    return `
+      ${active.length ? `
+        <div class="card stat-row detail-stats">
+          <div><span class="stat-value">${series}</span><span class="muted small">Tage in Folge</span></div>
+          <div><span class="stat-value">${quote ? `${quote.percent}%` : '–'}</span><span class="muted small">${quote ? `letzte ${quote.days} Tage` : 'noch keine Daten'}</span></div>
+          <div><span class="stat-value">${active.length}</span><span class="muted small">Präparate</span></div>
+        </div>
+        ${calendarHtml(supplements, log)}
+        ${checklistHtml(supplements, log)}` : ''}
+      <div class="section-title" style="margin-top:6px">Meine Supplements</div>
+      ${list}
+      <button class="btn btn-secondary full supp-add" data-action="supp-add">${Icon.plus} Supplement hinzufügen</button>
+      ${reminderHtml(active)}`;
+  }
+
+  // Innerhalb des Sheets nur den Inhalt neu malen – ein Tausch über
+  // openSheet würde jedes Abhaken mit einer Einblend-Animation quittieren.
+  function paint() {
+    const el = qs('.sheet-body', sheetRoot);
+    if (!el) return;
+    const scroll = el.scrollTop;
+    el.innerHTML = body();
+    el.scrollTop = scroll;
+    bind();
+  }
+
+  function bind() {
+    const root = qs('.sheet-body', sheetRoot);
+    qsa('[data-action="supp-toggle"]', root).forEach((btn) => btn.addEventListener('click', () =>
+      toggleSupplements([btn.dataset.id], btn.dataset.day, root, () => { paint(); refreshSupplementCard(); })));
+    qs('[data-action="supp-day-all"]', root)?.addEventListener('click', () => {
+      const taken = Store.getSupplementLog()[selected] || {};
+      const open = activeOn(Store.getSupplements(), selected).filter((s) => !taken[s.id]).map((s) => s.id);
+      toggleSupplements(open, selected, root, () => { paint(); refreshSupplementCard(); });
+    });
+    qsa('[data-action="supp-pick-day"]', root).forEach((btn) => btn.addEventListener('click', () => {
+      selected = btn.dataset.day;
+      paint();
+      dropIn(qs('.supp-day-card', root));
+    }));
+    qsa('[data-action="supp-cal"]', root).forEach((btn) => btn.addEventListener('click', () => {
+      const d = new Date(view.year, view.month + +btn.dataset.delta, 1);
+      view = { year: d.getFullYear(), month: d.getMonth() };
+      paint();
+      const grid = qs('.calendar-grid', root);
+      if (grid && !prefersReducedMotion()) {
+        grid.style.setProperty('--enter-x', +btn.dataset.delta > 0 ? '20px' : '-20px');
+        dropIn(grid);
+      }
+    }));
+    qsa('[data-action="supp-edit"]', root).forEach((btn) => btn.addEventListener('click', () =>
+      openSupplementEditor(btn.dataset.id, () => openSupplementSheet(selected))));
+    qs('[data-action="supp-add"]', root)?.addEventListener('click', () =>
+      openSupplementEditor(null, () => openSupplementSheet(selected)));
+    qsa('.supp-time', root).forEach((select) => select.addEventListener('change', () => {
+      const settings = Store.getSettings();
+      Store.saveSettings({
+        ...settings,
+        supplementReminders: { ...(settings.supplementReminders || {}), [select.dataset.slot]: select.value },
+      });
+      qs(`[data-reminder-link="${select.dataset.slot}"]`, root).href = reminderFile(select.value);
+    }));
+  }
+
+  openSheet('Supplements', body(), { onMount: bind });
+}
+
+// Anlegen per Vorschlag (ein Tipp) oder frei; Bearbeiten mit Tageszeit,
+// Dosierung und Entfernen. `back` führt zurück zur Übersicht.
+function openSupplementEditor(id, back) {
+  const existing = id ? Store.getSupplements().find((s) => s.id === id) : null;
+  const draft = existing ? { ...existing } : { id: uid(), name: '', dose: '', slot: 'morning', since: dayKey() };
+
+  const slotChips = () => SLOTS.map((slot) => `
+    <button class="chip ${draft.slot === slot.id ? 'active' : ''}" data-action="supp-slot" data-slot="${slot.id}">
+      ${slot.icon}<span class="chip-sub">${slot.label.replace('Vor dem Schlafen', 'Nachts')}</span></button>`).join('');
+
+  const taken = new Set(Store.getActiveSupplements().map((s) => s.name.toLowerCase()));
+  const presets = existing ? '' : `
+    <div class="section-title">Schnell hinzufügen</div>
+    <div class="preset-row">
+      ${SUPPLEMENT_PRESETS.map((p) => taken.has(p.name.toLowerCase())
+        ? `<span class="chip preset done">${Icon.check} ${escapeHtml(p.name)}</span>`
+        : `<button class="chip preset" data-action="supp-preset" data-name="${escapeHtml(p.name)}" data-slot="${p.slot}">${Icon.plus} ${escapeHtml(p.name)}</button>`).join('')}
+    </div>
+    <div class="section-title" style="margin-top:16px">Oder eigenes</div>`;
+
+  openSheet(existing ? 'Supplement bearbeiten' : 'Supplement hinzufügen', `
+    ${presets}
+    <label class="field-label">Name</label>
+    <input type="text" id="supp-name" class="text-input" value="${escapeHtml(draft.name)}" placeholder="z.B. Kreatin" />
+    <label class="field-label">Dosis (optional)</label>
+    <input type="text" id="supp-dose" class="text-input" value="${escapeHtml(draft.dose || '')}" placeholder="z.B. 5 g oder 2 Kapseln" />
+    <label class="field-label">Wann</label>
+    <div class="chip-row supp-slots">${slotChips()}</div>
+  `, {
+    footer: `
+      <button class="btn btn-primary full" data-action="supp-save">Speichern</button>
+      ${existing ? `<button class="btn btn-ghost danger full" data-action="supp-remove">${Icon.trash} Entfernen</button>` : ''}`,
+    onDismiss: back,
+    onMount: () => {
+      qsa('[data-action="supp-slot"]').forEach((btn) => btn.addEventListener('click', () => {
+        draft.slot = btn.dataset.slot;
+        qsa('[data-action="supp-slot"]').forEach((b) => b.classList.toggle('active', b === btn));
+      }));
+      qsa('[data-action="supp-preset"]').forEach((btn) => btn.addEventListener('click', () => {
+        Store.saveSupplement({ id: uid(), name: btn.dataset.name, dose: '', slot: btn.dataset.slot, since: dayKey() });
+        Sound.setDone();
+        btn.outerHTML = `<span class="chip preset done item-in">${Icon.check} ${escapeHtml(btn.dataset.name)}</span>`;
+        refreshSupplementCard();
+      }));
+      qs('[data-action="supp-save"]').addEventListener('click', () => {
+        const name = qs('#supp-name').value.trim();
+        if (!name) {
+          // Nur Vorschläge angetippt, kein eigener Name: einfach zurück.
+          if (!existing) { back(); return; }
+          qs('#supp-name').focus();
+          return;
+        }
+        Store.saveSupplement({ ...draft, name, dose: qs('#supp-dose').value.trim() });
+        refreshSupplementCard();
+        back();
+      });
+      qs('[data-action="supp-remove"]')?.addEventListener('click', () => {
+        if (!confirm(`„${draft.name}" entfernen? Bisherige Einnahmen bleiben im Verlauf.`)) return;
+        Sound.remove();
+        Store.removeSupplement(draft.id, dayKey());
+        refreshSupplementCard();
+        back();
+      });
+    },
+  });
+}
+
 function bindStartEvents() {
+  bindSupplementCard();
   qs('[data-action="start-blank"]')?.addEventListener('click', () => {
     if (Store.getActive()) return;
     Store.setActive({ id: uid(), routineId: null, routineName: null, startedAt: new Date().toISOString(), finishedAt: null, entries: [] });
@@ -872,7 +1271,11 @@ function bindWorkoutEvents() {
       state.historySubTab = 'log';
       render();
     });
-    toast('Training gespeichert 💪');
+    // Nach dem Training ist ein guter Moment, an offene Supplements zu denken.
+    const openSupps = Store.getSettings().supplements
+      && Store.getActiveSupplements().length
+      && !dayStatus(Store.getSupplements(), Store.getSupplementLog(), dayKey()).complete;
+    toast(openSupps ? 'Gespeichert 💪 Supplements noch offen' : 'Training gespeichert 💪');
   });
   qs('[data-action="add-exercise-to-workout"]').addEventListener('click', openAddExerciseToWorkoutSheet);
   qs('[data-action="reorder-workout"]')?.addEventListener('click', openReorderSheet);
@@ -1665,6 +2068,18 @@ function renderSettings() {
     <section class="card">
       <div class="toggle-row">
         <div>
+          <strong>Supplements</strong>
+          <p class="muted small">Tägliches Abhaken auf der Startseite, mit Serie und Kalender-Erinnerung.</p>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggle-supplements" ${settings.supplements ? 'checked' : ''} />
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+    </section>
+    <section class="card">
+      <div class="toggle-row">
+        <div>
           <strong>Standortbestimmung</strong>
           <p class="muted small">Zeigt auf der Startseite ein ehrliches Urteil zu Konstanz und Kraftentwicklung – samt dem nächsten konkreten Schritt.</p>
         </div>
@@ -1927,6 +2342,9 @@ function bindSettingsEvents() {
     qsa('[data-action="set-sound-style"]').forEach((b) => b.classList.toggle('active', b === btn));
     Sound.setDone();
   }));
+  qs('#toggle-supplements')?.addEventListener('change', (e) => {
+    Store.saveSettings({ ...Store.getSettings(), supplements: e.target.checked });
+  });
   qs('#toggle-motivation')?.addEventListener('change', (e) => {
     Store.saveSettings({ ...Store.getSettings(), motivation: e.target.checked });
     render(); // blendet das Wochenziel direkt ein oder aus
@@ -2193,6 +2611,7 @@ const CUSTOM_SOUND_ACTIONS = new Set([
   'toggle-set', 'finish-workout', 'start-blank', 'start-routine', 'resume-workout',
   'remove-set', 'remove-exercise', 'toggle-group', 'toggle-exercise', 'set-sound-style',
   'delete-workout', 'delete-exercise', 'delete-routine', 'discard-workout', 'wipe-data',
+  'supp-toggle', 'supp-slot-all', 'supp-day-all', 'supp-preset',
 ]);
 
 document.addEventListener('pointerdown', (e) => {

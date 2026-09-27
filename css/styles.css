@@ -726,6 +726,157 @@ button, input, select, textarea {
   line-height: 1.4;
 }
 
+/* Supplements: tägliche Karte auf dem Start-Tab */
+.supp-card { padding: 12px 14px; }
+.supp-head { display: flex; align-items: center; gap: 8px; }
+.supp-head strong { flex: 1; font-size: 16px; }
+.supp-progress { font-size: 14px; font-weight: 700; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+.supp-slot { margin-top: 8px; }
+.supp-slot.later { opacity: 0.55; }
+.supp-slot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin: 4px 0 2px;
+}
+.supp-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 9px 2px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 15.5px;
+  text-align: left;
+  transition: transform 0.15s;
+}
+.supp-item:active { transform: scale(0.985); }
+.supp-check {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  color: transparent;
+  flex-shrink: 0;
+  transition: background 0.25s, border-color 0.25s, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.supp-check svg { width: 15px; height: 15px; }
+.supp-item.on .supp-check { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); transform: scale(1.08); }
+.supp-name { transition: color 0.25s; }
+.supp-item.on .supp-name { color: var(--text-secondary); }
+.supp-dose { color: var(--text-secondary); font-size: 13.5px; }
+
+.supp-all {
+  display: inline-flex; align-items: center; gap: 4px;
+  border: none;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.supp-all svg { width: 12px; height: 12px; }
+
+.supp-slot-done {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 2px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+.supp-ok { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--success); }
+.supp-ok svg { width: 13px; height: 13px; }
+
+.supp-backfill {
+  display: block;
+  margin-top: 8px;
+  padding: 8px 0 2px;
+  border: none;
+  border-top: 1px solid var(--border);
+  width: 100%;
+  background: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+
+/* Eingeklappte Zustände: Einladung und "alles erledigt" */
+.supp-row-btn {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+.supp-row-btn > svg { width: 18px; height: 18px; color: var(--text-secondary); flex-shrink: 0; }
+.supp-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.supp-row-text strong { font-size: 15.5px; }
+.supp-emoji {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 19px;
+  background: var(--bg-input);
+  flex-shrink: 0;
+}
+.supp-emoji.done { background: var(--success); color: #fff; }
+.supp-emoji.done svg { width: 18px; height: 18px; }
+.supp-complete { background: color-mix(in srgb, var(--success) 7%, var(--bg-elevated)); border-color: color-mix(in srgb, var(--success) 28%, var(--border)); }
+
+/* Supplement-Sheet */
+.supp-day { border: none; background: none; font: inherit; cursor: pointer; }
+.supp-day:disabled { cursor: default; }
+.supp-day.full { background: var(--accent); color: var(--accent-contrast); font-weight: 700; }
+.supp-day.partial { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); font-weight: 700; }
+/* Vergessen als Ring statt Füllung: eine hellrote Füllung wäre neben der
+   hellen Akzentfüllung von "teilweise" kaum zu unterscheiden. */
+.supp-day.missed { background: transparent; color: var(--danger); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--danger) 60%, transparent); }
+.calendar-header [data-action="supp-cal"][data-delta="-1"] svg { transform: scaleX(-1); }
+.calendar-header .icon-btn:disabled { opacity: 0.25; }
+.supp-day.future { color: var(--text-secondary); opacity: 0.45; }
+.supp-day.selected { box-shadow: 0 0 0 2px var(--bg-elevated), 0 0 0 4px var(--text); }
+.supp-legend { display: flex; justify-content: center; gap: 14px; margin-top: 10px; font-size: 11.5px; color: var(--text-secondary); }
+.supp-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.lg { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.lg.full { background: var(--accent); }
+.lg.partial { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.lg.missed { background: transparent; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--danger) 70%, transparent); }
+.sheet-body > .card + .card, .sheet-body > .card + .section-title { margin-top: 12px; }
+.supp-day-card { margin-top: 12px; }
+.supp-add { margin-top: 12px; }
+
+.supp-reminder { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.supp-reminder-label { flex: 1; font-size: 14px; font-weight: 600; min-width: 0; }
+.supp-time { width: auto; margin: 0; padding: 8px 10px; font-size: 14px; }
+.supp-reminder .btn { white-space: nowrap; text-decoration: none; }
+.supp-tip { margin: 6px 0 0; }
+
+.preset-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip.preset { flex: 0 0 auto; padding: 8px 12px; display: inline-flex; align-items: center; gap: 5px; font-size: 13.5px; }
+.chip.preset svg { width: 14px; height: 14px; }
+.chip.preset.done { background: color-mix(in srgb, var(--success) 14%, transparent); color: var(--success); border-color: transparent; }
+.supp-slots .chip { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px; font-size: 18px; }
+.chip-sub { font-size: 11px; font-weight: 600; }
+
 /* Wochenübersicht auf dem Start-Tab */
 .week-strip { display: flex; justify-content: space-between; margin: 2px 0 14px; }
 .week-day {

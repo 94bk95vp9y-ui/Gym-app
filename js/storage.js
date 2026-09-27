@@ -11,6 +11,8 @@ const KEYS = {
   settings: 'gym.settings',
   catalogVersion: 'gym.catalogVersion',
   rest: 'gym.rest',
+  supplements: 'gym.supplements',
+  supplementLog: 'gym.supplementLog',
 };
 
 function read(key, fallback) {
@@ -56,6 +58,9 @@ const DEFAULT_SETTINGS = {
   sound: true,
   soundVolume: 0.7,
   soundStyle: 'click',
+  supplements: true,
+  // Zuletzt gewählte Erinnerungszeit je Tageszeit (HHMM), nur fürs Formular
+  supplementReminders: {},
 };
 
 export const REST_OPTIONS = [0, 60, 90, 120, 180];
@@ -171,6 +176,49 @@ export const Store = {
     localStorage.removeItem(KEYS.rest);
   },
 
+  // Supplements. Entfernen ist bewusst nur ein Markieren: die Historie muss
+  // wissen, was an einem vergangenen Tag dran war, sonst verschiebt ein
+  // abgesetztes Präparat rückwirkend die Bilanz.
+  getSupplements() {
+    return read(KEYS.supplements, []);
+  },
+  getActiveSupplements() {
+    return Store.getSupplements().filter((s) => !s.removedOn);
+  },
+  saveSupplement(supplement) {
+    const list = Store.getSupplements();
+    const i = list.findIndex((s) => s.id === supplement.id);
+    if (i >= 0) list[i] = supplement;
+    else list.push(supplement);
+    write(KEYS.supplements, list);
+  },
+  removeSupplement(id, onDay) {
+    const list = Store.getSupplements();
+    const target = list.find((s) => s.id === id);
+    if (!target) return;
+    // Heute erst angelegt und gleich wieder weg: dann hat es nie gezählt.
+    if (target.since >= onDay) {
+      write(KEYS.supplements, list.filter((s) => s.id !== id));
+      return;
+    }
+    target.removedOn = onDay;
+    write(KEYS.supplements, list);
+  },
+  getSupplementLog() {
+    return read(KEYS.supplementLog, {});
+  },
+  setSupplementsTaken(day, ids, taken) {
+    const log = Store.getSupplementLog();
+    const entry = { ...(log[day] || {}) };
+    ids.forEach((id) => {
+      if (taken) entry[id] = true;
+      else delete entry[id];
+    });
+    if (Object.keys(entry).length) log[day] = entry;
+    else delete log[day];
+    write(KEYS.supplementLog, log);
+  },
+
   // Laufende Satzpause – überlebt bewusst auch ein Neuladen der App,
   // damit die Pause beim Zurückkehren noch stimmt.
   getRest() {
@@ -199,6 +247,8 @@ export const Store = {
       routines: Store.getRoutines(),
       workouts: read(KEYS.workouts, []),
       settings: Store.getSettings(),
+      supplements: Store.getSupplements(),
+      supplementLog: Store.getSupplementLog(),
     };
   },
   importAll(data) {
@@ -206,6 +256,8 @@ export const Store = {
     if (data.routines) write(KEYS.routines, data.routines);
     if (data.workouts) write(KEYS.workouts, data.workouts);
     if (data.settings) write(KEYS.settings, data.settings);
+    if (data.supplements) write(KEYS.supplements, data.supplements);
+    if (data.supplementLog) write(KEYS.supplementLog, data.supplementLog);
     // Das Backup ist maßgeblich: gelöschte Katalog-Übungen sollen durch den
     // Import nicht wieder auftauchen.
     write(KEYS.catalogVersion, CATALOG_VERSION);
