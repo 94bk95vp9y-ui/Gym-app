@@ -206,6 +206,75 @@ export const Sound = {
     });
   },
 
+  // ---- Fight-Modus ----
+  // Ringglocke: unharmonische Teiltöne wie bei echtem Metall, langer Nachhall.
+  // count Schläge im Abstand von ~0,3 s (1 = Rundenbeginn, 3 = Rundenende).
+  boxBell(count = 1) {
+    withAudio((ac) => {
+      for (let i = 0; i < count; i += 1) {
+        const at = i * 0.3;
+        noise(ac, at, { dur: 0.03, peak: 0.34, freq: 5200, q: 0.6 });
+        [[830, 1.3, 0.3], [2290, 0.9, 0.12], [4480, 0.5, 0.06], [1250, 1.1, 0.08]].forEach(([f, dur, peak]) =>
+          pluck(ac, at, { from: f, dur, peak, type: 'sine' }));
+      }
+    });
+  },
+  // Holzklappern 10 Sekunden vor Rundenende
+  clapper() {
+    withAudio((ac) => {
+      [0, 0.14, 0.28].forEach((at) => {
+        noise(ac, at, { dur: 0.035, peak: 0.5, freq: 1700, q: 1.6 });
+        pluck(ac, at, { from: 950, dur: 0.05, peak: 0.12, type: 'triangle' });
+      });
+    });
+  },
+  // Luftzug einer Technik
+  whoosh() {
+    withAudio((ac) => {
+      const t0 = ac.currentTime;
+      const dur = 0.22;
+      const frames = Math.ceil(ac.sampleRate * dur);
+      const buffer = ac.createBuffer(1, frames, ac.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < frames; i += 1) data[i] = (Math.random() * 2 - 1) * Math.sin((Math.PI * i) / frames);
+      const src = ac.createBufferSource();
+      src.buffer = buffer;
+      const band = ac.createBiquadFilter();
+      band.type = 'bandpass';
+      band.Q.value = 1.2;
+      band.frequency.setValueAtTime(500, t0);
+      band.frequency.exponentialRampToValueAtTime(2400, t0 + dur);
+      const gain = ac.createGain();
+      gain.gain.value = 0.22;
+      src.connect(band).connect(gain).connect(master);
+      src.start(t0);
+      src.stop(t0 + dur + 0.02);
+    });
+  },
+  // Treffer auf Pratze / Sack
+  hit() {
+    withAudio((ac) => {
+      noise(ac, 0, { dur: 0.05, peak: 0.55, freq: 900, q: 0.7 });
+      pluck(ac, 0, { from: 180, to: 70, dur: 0.14, peak: 0.4 });
+    });
+  },
+  // Moduswechsel: Gong in den Fight-Modus, Hantelscheiben zurück ins Gym.
+  gong() {
+    withAudio((ac) => {
+      noise(ac, 0, { dur: 0.06, peak: 0.25, freq: 3000, q: 0.5 });
+      [[98, 2.4, 0.34], [196, 2.0, 0.2], [311, 1.6, 0.14], [523, 1.2, 0.08], [740, 0.9, 0.05]].forEach(([f, dur, peak]) =>
+        pluck(ac, 0, { from: f, dur, peak, type: 'sine' }));
+    });
+  },
+  plates() {
+    withAudio((ac) => {
+      [0, 0.09].forEach((at, i) => {
+        noise(ac, at, { dur: 0.04, peak: 0.4 - i * 0.12, freq: 3800, q: 0.6 });
+        [[520, 0.35], [1310, 0.25], [2870, 0.18]].forEach(([f, dur]) => pluck(ac, at, { from: f * (1 - i * 0.04), dur, peak: 0.16 - i * 0.04, type: 'sine' }));
+      });
+    });
+  },
+
   // Training beendet: auflösender Dur-Dreiklang.
   finish() {
     withAudio((ac) => {

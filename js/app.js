@@ -44,8 +44,23 @@ let tickInterval = null;
 function qs(sel, parent = document) { return parent.querySelector(sel); }
 function qsa(sel, parent = document) { return [...parent.querySelectorAll(sel)]; }
 
+// Im Fight-Modus gilt immer das Signalrot des Modus, im Gym die gewählte Farbe.
+const FIGHT_ACCENT = '#ff2e3e';
 function applyAccent() {
-  document.documentElement.style.setProperty('--accent', Store.getSettings().accent);
+  const settings = Store.getSettings();
+  document.documentElement.style.setProperty('--accent', settings.mode === 'fight' ? FIGHT_ACCENT : settings.accent);
+}
+
+function isFightMode() { return Store.getSettings().mode === 'fight'; }
+
+// Farbe der Statusleiste: im Fight-Modus immer dunkel.
+const themeMetas = [...document.querySelectorAll('meta[name="theme-color"]')].map((m) => ({ m, value: m.content }));
+function applyMode() {
+  const fight = isFightMode();
+  if (fight) document.documentElement.dataset.mode = 'fight';
+  else delete document.documentElement.dataset.mode;
+  themeMetas.forEach(({ m, value }) => { m.content = fight ? '#09090b' : value; });
+  applyAccent();
 }
 
 // iOS meldet in der installierten Web-App eine Safe Area unten (34px), auch
@@ -418,6 +433,20 @@ let renderedDay = null;
 function render() {
   stopTicking();
   renderedDay = dayKey();
+  if (isFightMode()) {
+    releaseWakeLock();
+    if (fightModule) fightModule.renderFight(root);
+    else {
+      root.innerHTML = '<div class="f-boot"></div>';
+      loadFight().then(() => { if (isFightMode()) render(); }).catch(() => {
+        // Modul nicht ladbar (z.B. offline ohne Cache): zurück ins Gym statt leerer Seite
+        Store.saveSettings({ ...Store.getSettings(), mode: 'gym' });
+        applyMode();
+        render();
+      });
+    }
+    return;
+  }
   const key = `${state.tab}:${state.workoutOpen}:${state.historySubTab}:${state.librarySubTab}`;
   const prevView = qs('.view');
   const scrollTop = key === lastRenderKey && prevView ? prevView.scrollTop : 0;
@@ -450,7 +479,10 @@ function render() {
   root.innerHTML = `
     <header class="topbar">
       <h1>${tabTitle()}</h1>
-      ${tabAction()}
+      <div class="topbar-actions">
+        ${tabAction()}
+        <button class="mode-btn" data-action="mode-fight" aria-label="Zum Fight-Modus: Kickboxen und Ausdauer">${Icon.glove}<span>Fight</span></button>
+      </div>
     </header>
     <main class="view">${renderTab()}</main>
     <div class="tabbar-wrap">
@@ -2991,7 +3023,7 @@ async function exportBackup() {
 // Import oder Zurücksetzen neu anwenden.
 function applySettings() {
   const settings = Store.getSettings();
-  applyAccent();
+  applyMode();
   setSoundEnabled(settings.sound);
   setSoundVolume(settings.soundVolume);
   setSoundStyle(settings.soundStyle);
@@ -3093,6 +3125,64 @@ function bindGlobalEvents() {
   qs('.tabbar')?.addEventListener('pointerdown', tabSwipe.onPointerDown);
   qs('[data-action="add-exercise"]')?.addEventListener('click', () => openExerciseSheet(null));
   qs('[data-action="add-routine"]')?.addEventListener('click', () => openRoutineSheet(null));
+  qs('[data-action="mode-fight"]')?.addEventListener('click', () => switchMode('fight'));
+}
+
+// ---- Fight-Modus (Kickboxen & Ausdauer) ----
+// Eigener Teil der App mit eigener Startseite, Navigation und Optik. Das
+// Modul wird erst beim ersten Wechsel geladen, damit der Gym-Teil so schnell
+// startet wie bisher.
+let fightModule = null;
+let fightLoading = null;
+function loadFight() {
+  if (!fightLoading) {
+    fightLoading = import('./fight/index.js').then((m) => {
+      m.initFight({
+        openSheet, closeSheet, dismissSheet, toast, render, go, prefersReducedMotion, dropIn, collapseAway,
+        enableDragReorder, switchMode, morphReplace, elementFrom,
+        renderSupplementCard, bindSupplementCard, renderMobilityCard, bindMobilityCard, startMobilityRoutine,
+        planRotation, exerciseNames, openGymWorkout: () => { state.workoutOpen = true; },
+      });
+      fightModule = m;
+      return m;
+    }).catch((err) => { fightLoading = null; throw err; });
+  }
+  return fightLoading;
+}
+
+// Wechsel mit Blende: ein schräges Band wischt über den Bildschirm, darunter
+// wird umgebaut. Beim Gym-Wechsel klappern Hantelscheiben, beim Fight-Wechsel
+// schlägt der Gong.
+let modeSwitching = false;
+async function switchMode(target) {
+  if (modeSwitching || Store.getSettings().mode === target) return;
+  modeSwitching = true;
+  const toFight = target === 'fight';
+  const loading = toFight ? loadFight() : null;
+  loading?.catch(() => {});
+  if (toFight) Sound.gong(); else Sound.plates();
+  const reduced = prefersReducedMotion();
+  const wipe = document.createElement('div');
+  wipe.className = `mode-wipe ${toFight ? 'to-fight' : 'to-gym'} ${reduced ? 'reduced' : ''}`;
+  wipe.innerHTML = `<div class="mode-wipe-band"><span>${toFight ? 'Fight' : 'Gym'}</span></div>`;
+  document.body.appendChild(wipe);
+  requestAnimationFrame(() => wipe.classList.add('cover'));
+  await new Promise((r) => setTimeout(r, reduced ? 120 : 430));
+  try {
+    if (loading) await loading;
+    Store.saveSettings({ ...Store.getSettings(), mode: target });
+  } catch {
+    toast('Fight-Modus konnte nicht geladen werden');
+  }
+  applyMode();
+  closeSheet();
+  if (!toFight) fightModule?.leaveFight?.();
+  state.workoutOpen = false;
+  lastRenderKey = null;
+  lastScreenPosition = null;
+  render();
+  wipe.classList.add('reveal');
+  setTimeout(() => { wipe.remove(); modeSwitching = false; }, reduced ? 200 : 700);
 }
 
 // ---- Wischbare Auswahl (Tabbar + Segmented Controls): das Pill-/Thumb-Element
@@ -3305,12 +3395,13 @@ const CUSTOM_SOUND_ACTIONS = new Set([
   'supp-toggle', 'supp-slot-all', 'supp-day-all', 'supp-preset',
   'ch-attempt', 'ch-accept',
   'mob-quickstart', 'mob-start', 'mob-routine-start', 'mob-single', 'mob-pick', 'opt', 'finish-mobility',
+  'mode-fight',
 ]);
 
 document.addEventListener('pointerdown', (e) => {
   const el = e.target.closest('button, label.btn, .chip, .swatch');
   if (!el || el.disabled) return;
-  if (CUSTOM_SOUND_ACTIONS.has(el.dataset.action)) return;
+  if (CUSTOM_SOUND_ACTIONS.has(el.dataset.action) || 'nosound' in el.dataset) return;
   Sound.tap();
 }, true);
 

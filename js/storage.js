@@ -17,6 +17,16 @@ const KEYS = {
   mobilityLog: 'gym.mobilityLog',
   mobilityChecks: 'gym.mobilityChecks',
   challenges: 'gym.challenges',
+  // Fight-Modus (Kickboxen & Ausdauer)
+  fightProfile: 'gym.fightProfile',
+  fightProgress: 'gym.fightProgress',
+  fightLog: 'gym.fightLog',
+  fightCombos: 'gym.fightCombos',
+  fightCircuits: 'gym.fightCircuits',
+  fightPlan: 'gym.fightPlan',
+  runs: 'gym.runs',
+  reactionLog: 'gym.reactionLog',
+  pulseLog: 'gym.pulseLog',
 };
 
 // Geparste Werte werden zwischengespeichert: ein Neuaufbau der Ansicht liest
@@ -86,6 +96,9 @@ const DEFAULT_SETTINGS = {
   mobilityGoal: 5,
   mobilityPrep: 10,
   mobilityVoice: true,
+  // Welcher Teil der App offen ist: 'gym' oder 'fight' (Kickboxen & Ausdauer)
+  mode: 'gym',
+  fightVoice: true,
   // Zuletzt gewählte Erinnerungszeit je Tageszeit (HHMM), nur fürs Formular
   supplementReminders: {},
 };
@@ -132,9 +145,10 @@ let sortedWorkouts = { source: null, sorted: [] };
 // alles überschreibt. Gibt eine Fehlermeldung zurück oder null.
 export function validateBackup(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return 'Die Datei enthält keine Gym-Sicherung.';
-  const known = ['exercises', 'routines', 'workouts', 'settings', 'supplements', 'supplementLog', 'mobilityLog'];
+  const known = ['exercises', 'routines', 'workouts', 'settings', 'supplements', 'supplementLog', 'mobilityLog', 'fightLog', 'runs'];
   if (!known.some((k) => k in data)) return 'Die Datei enthält keine Gym-Sicherung.';
-  const lists = ['exercises', 'routines', 'workouts', 'supplements', 'mobilityLog', 'mobilityChecks'];
+  const lists = ['exercises', 'routines', 'workouts', 'supplements', 'mobilityLog', 'mobilityChecks',
+    'fightLog', 'runs', 'fightCombos', 'fightCircuits', 'reactionLog', 'pulseLog'];
   const broken = lists.find((k) => k in data && !Array.isArray(data[k]));
   if (broken) return 'Die Sicherung ist beschädigt.';
   if ((data.exercises || []).some((e) => !e || !e.id || typeof e.name !== 'string')) return 'Die Übungen in der Sicherung sind beschädigt.';
@@ -145,6 +159,10 @@ export function validateBackup(data) {
   }
   if ('settings' in data && (typeof data.settings !== 'object' || Array.isArray(data.settings))) return 'Die Einstellungen in der Sicherung sind beschädigt.';
   if (data.challenges && (typeof data.challenges !== 'object' || Array.isArray(data.challenges))) return 'Die Challenges in der Sicherung sind beschädigt.';
+  const objects = ['fightProfile', 'fightProgress', 'fightPlan'];
+  if (objects.some((k) => data[k] && (typeof data[k] !== 'object' || Array.isArray(data[k])))) return 'Die Kampfsport-Daten in der Sicherung sind beschädigt.';
+  if ((data.runs || []).some((r) => !r || typeof r.at !== 'string' || !(r.seconds >= 0))) return 'Die Läufe in der Sicherung sind beschädigt.';
+  if ((data.fightLog || []).some((f) => !f || typeof f.at !== 'string' || typeof f.type !== 'string')) return 'Die Kampfsport-Einheiten in der Sicherung sind beschädigt.';
   return null;
 }
 
@@ -308,6 +326,30 @@ export const Store = {
     write(KEYS.challenges, value);
   },
 
+  // Fight-Modus: Profil aus der Einrichtung, Lernstand (Gürtel, Techniken),
+  // Einheiten, eigene Kombinationen/Zirkel, Trainingsplan, Läufe,
+  // Reaktionstests und Ruhepuls. Zählt – wie Mobility – nicht als Gym-Training.
+  getFightProfile() { return read(KEYS.fightProfile, null); },
+  saveFightProfile(value) { write(KEYS.fightProfile, value); },
+  getFightProgress() { return read(KEYS.fightProgress, null); },
+  saveFightProgress(value) { write(KEYS.fightProgress, value); },
+  getFightLog() { return read(KEYS.fightLog, []); },
+  addFightSession(session) { write(KEYS.fightLog, [...Store.getFightLog(), session]); },
+  saveFightLog(list) { write(KEYS.fightLog, list); },
+  getFightCombos() { return read(KEYS.fightCombos, []); },
+  saveFightCombos(list) { write(KEYS.fightCombos, list); },
+  getFightCircuits() { return read(KEYS.fightCircuits, []); },
+  saveFightCircuits(list) { write(KEYS.fightCircuits, list); },
+  getFightPlan() { return read(KEYS.fightPlan, null); },
+  saveFightPlan(value) { if (value) write(KEYS.fightPlan, value); else remove(KEYS.fightPlan); },
+  getRuns() { return read(KEYS.runs, []); },
+  addRun(run) { write(KEYS.runs, [...Store.getRuns(), run]); },
+  saveRuns(list) { write(KEYS.runs, list); },
+  getReactionLog() { return read(KEYS.reactionLog, []); },
+  addReaction(entry) { write(KEYS.reactionLog, [...Store.getReactionLog(), entry]); },
+  getPulseLog() { return read(KEYS.pulseLog, []); },
+  addPulse(entry) { write(KEYS.pulseLog, [...Store.getPulseLog(), entry]); },
+
   // Laufende Satzpause – überlebt bewusst auch ein Neuladen der App,
   // damit die Pause beim Zurückkehren noch stimmt.
   getRest() {
@@ -342,6 +384,15 @@ export const Store = {
       mobilityLog: Store.getMobilityLog(),
       mobilityChecks: Store.getMobilityChecks(),
       challenges: Store.getChallengeState(),
+      fightProfile: Store.getFightProfile(),
+      fightProgress: Store.getFightProgress(),
+      fightLog: Store.getFightLog(),
+      fightCombos: Store.getFightCombos(),
+      fightCircuits: Store.getFightCircuits(),
+      fightPlan: Store.getFightPlan(),
+      runs: Store.getRuns(),
+      reactionLog: Store.getReactionLog(),
+      pulseLog: Store.getPulseLog(),
     };
   },
   importAll(data) {
@@ -355,6 +406,12 @@ export const Store = {
     if (data.mobilityLog) write(KEYS.mobilityLog, data.mobilityLog);
     if (data.mobilityChecks) write(KEYS.mobilityChecks, data.mobilityChecks);
     if (data.challenges && typeof data.challenges === 'object') write(KEYS.challenges, data.challenges);
+    ['fightProfile', 'fightProgress', 'fightPlan'].forEach((k) => {
+      if (data[k] && typeof data[k] === 'object') write(KEYS[k], data[k]);
+    });
+    ['fightLog', 'fightCombos', 'fightCircuits', 'runs', 'reactionLog', 'pulseLog'].forEach((k) => {
+      if (Array.isArray(data[k])) write(KEYS[k], data[k]);
+    });
     // Das Backup ist maßgeblich: gelöschte Katalog-Übungen sollen durch den
     // Import nicht wieder auftauchen.
     write(KEYS.catalogVersion, CATALOG_VERSION);
@@ -362,5 +419,10 @@ export const Store = {
   wipeAll() {
     Object.values(KEYS).forEach(remove);
     seedIfEmpty();
+  },
+  // Nur den Fight-Modus zurücksetzen (Gym bleibt unangetastet)
+  wipeFight() {
+    ['fightProfile', 'fightProgress', 'fightLog', 'fightCombos', 'fightCircuits', 'fightPlan', 'runs', 'reactionLog', 'pulseLog']
+      .forEach((k) => remove(KEYS[k]));
   },
 };

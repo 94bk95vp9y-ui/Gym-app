@@ -27,7 +27,7 @@ export const PB_XP = 20; // neuer Bestwert ohne neue Stufe
 export const SWEEP_XP = 100; // alle Wochen-Challenges geschafft
 export const MAX_ACTIVE = 4;
 
-export const CATEGORIES = ['Körpergewicht', 'Kraft', 'Halten', 'Skills', 'Ausdauer'];
+export const CATEGORIES = ['Körpergewicht', 'Kraft', 'Halten', 'Skills', 'Kampfsport', 'Ausdauer'];
 
 export const CHALLENGES = [
   // ---- Körpergewicht ----
@@ -163,16 +163,71 @@ export const CHALLENGES = [
     tip: 'Zweimal pro Woche 5–6 Halteversuche in der aktuellen Stufe, dazu langsame Negativen aus der Umkehr. Geduld – das ist eine Challenge für Monate.',
   },
 
+  // ---- Kampfsport (Fight-Modus) ----
+  {
+    id: 'fight-rounds', name: 'Shadowboxing-Runden am Stück', short: 'Runden', icon: '🥊', category: 'Kampfsport',
+    kind: 'reps', unitLabel: 'Runden', autoOnly: true, autoFight: 'rounds', tiers: [6, 8, 10, 12, 15],
+    standard: [
+      'Eine Einheit im Fight-Modus (Shadowboxing, Sack, Pratzen oder Gegner).',
+      'Runden ab 2 Minuten, mindestens 80 % jeder Runde durchgezogen.',
+      'Wird automatisch aus deinen Einheiten übernommen.',
+    ],
+    tip: 'Runden über Wochen steigern: erst die Rundenzahl, dann das Tempo. Pausen nicht verkürzen – die Qualität zählt.',
+  },
+  {
+    id: 'reaction', name: 'Reaktionszeit', short: 'Reaktion', icon: '⚡', category: 'Kampfsport',
+    kind: 'ms', autoOnly: true, autoFight: 'reaction', tiers: [300, 280, 265, 250, 235],
+    standard: [
+      'Reaktionstest im Fight-Modus (Reaktion → Reaktionstest).',
+      'Gewertet wird der Median aus 5 Versuchen – ein Glückstreffer reicht nicht.',
+      'Handy-Werte enthalten die Touch-Verzögerung des Geräts.',
+    ],
+    tip: 'Ausgeschlafen testen. Reflex-Drills und Gegner-Runden schärfen die Reaktion im echten Bewegungsablauf.',
+  },
+  {
+    id: 'doubleunders', name: 'Double-Unders am Stück', short: 'Double-Unders', icon: '🪢', category: 'Kampfsport',
+    kind: 'reps', tiers: [10, 25, 50, 75, 100],
+    standard: [
+      'Ein Sprung, zwei Seildurchgänge – ohne Zwischenhüpfer.',
+      'Zählt bis zum ersten Fehler.',
+    ],
+    tip: 'Erst den Rhythmus mit einzelnen Double-Unders zwischen Grundsprüngen finden. Handgelenke drehen, nicht die Arme.',
+  },
+  {
+    id: 'sprawls', name: 'Sprawls in 1 Minute', short: 'Sprawls', icon: '🤼', category: 'Kampfsport',
+    kind: 'reps', tiers: [20, 25, 30, 35, 40],
+    standard: [
+      'Aus der Kampfstellung: Hüfte zum Boden, Beine nach hinten, zurück in die Stellung.',
+      'Die Hüfte berührt fast den Boden, die Hände kommen zurück in die Deckung.',
+    ],
+    tip: 'Im Konditions-Zirkel „Kampfrunden-Simulation“ üben. Tempo kommt aus sauberer Technik, nicht aus Hektik.',
+  },
+
   // ---- Ausdauer ----
   {
+    id: 'cooper', name: 'Cooper-Test', short: 'Cooper', icon: '📏', category: 'Ausdauer',
+    kind: 'dist', autoRun: 'cooper', tiers: [2400, 2600, 2800, 3000, 3200],
+    standard: [
+      '12 Minuten so weit wie möglich laufen.',
+      'Mit GPS im Fight-Modus (geführter Cooper-Test) oder auf der Bahn gemessen.',
+    ],
+    tip: 'Alle 4 Wochen testen. Dazwischen: viel locker, einmal pro Woche 4 × 4 Minuten hart.',
+  },
+  {
+    id: 'run10k', name: '10 km Lauf', short: '10 km', icon: '🛣️', category: 'Ausdauer',
+    kind: 'time', autoRun: '10k', tiers: [3300, 3000, 2760, 2580, 2400],
+    standard: ['10 km am Stück, draußen oder Laufband mit mindestens 1 % Steigung.', 'Zeit aus dem Fight-Modus, Uhr oder Lauf-App.'],
+    tip: 'Ein langer lockerer Lauf pro Woche, dazu Tempoläufe an der Schwelle. Das Tempo kommt aus dem Volumen.',
+  },
+  {
     id: 'run5k', name: '5 km Lauf', short: '5 km', icon: '🏃', category: 'Ausdauer',
-    kind: 'time', tiers: [1620, 1440, 1320, 1200, 1110],
+    kind: 'time', autoRun: '5k', tiers: [1620, 1440, 1320, 1200, 1110],
     standard: ['5 km am Stück, Laufband mit mindestens 1 % Steigung oder draußen.', 'Zeit aus Uhr oder Lauf-App.'],
     tip: 'Einmal pro Woche Intervalle (z. B. 6 × 800 m etwas schneller als Zieltempo), sonst locker. Die meisten Läufe sollten sich leicht anfühlen.',
   },
   {
     id: 'row2k', name: '2000 m Rudern', short: '2 km Rudern', icon: '🚣', category: 'Ausdauer',
-    kind: 'time', tiers: [480, 450, 430, 410, 390],
+    kind: 'time', autoRun: 'row2k', tiers: [480, 450, 430, 410, 390],
     standard: ['Am Rudergerät, Widerstand frei wählbar.', 'Zeit laut Monitor.'],
     tip: 'Technik vor Kraft: Beine – Oberkörper – Arme. Einmal pro Woche 4 × 500 m im Zieltempo mit 2 Minuten Pause.',
   },

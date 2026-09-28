@@ -1,0 +1,4 @@
+MediaPipe Tasks Vision (@mediapipe/tasks-vision 1.0.1) and the Pose Landmarker
+(lite) model are provided by Google under the Apache License, Version 2.0.
+https://github.com/google-ai-edge/mediapipe  ·  http://www.apache.org/licenses/LICENSE-2.0
+Model card: https://storage.googleapis.com/mediapipe-assets/Model%20Card%20BlazePose%20GHUM%203D.pdf

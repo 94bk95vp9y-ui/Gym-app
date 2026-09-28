@@ -23,6 +23,16 @@
   <link rel="manifest" href="manifest.webmanifest" />
 
   <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/fight.css" />
+  <!-- Fight-Modus schon vor dem ersten Bild setzen, sonst blitzt beim Start
+       kurz die helle Gym-Optik auf. -->
+  <script>
+    try {
+      if (JSON.parse(localStorage.getItem('gym.settings') || '{}').mode === 'fight') {
+        document.documentElement.dataset.mode = 'fight';
+      }
+    } catch (e) { /* ohne Einstellungen: Gym */ }
+  </script>
 </head>
 <body>
   <div id="app-root"></div>

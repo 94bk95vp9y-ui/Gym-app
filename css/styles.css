@@ -123,6 +123,72 @@ button, input, select, textarea {
   z-index: 5;
 }
 
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
+
+/* Wechsel in den Fight-Modus: kleine dunkle Kapsel mit rotem Handschuh –
+   bewusst anders als die übrigen Knöpfe, damit sie als Tür erkennbar ist. */
+.mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 34px;
+  padding: 0 12px 0 9px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #1b1b1f, #0b0b0d);
+  color: #fff;
+  font-family: 'Barlow Condensed', -apple-system, system-ui, sans-serif;
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  box-shadow: 0 4px 14px rgba(255, 46, 62, 0.28), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  transition: transform 0.15s;
+}
+.mode-btn svg { width: 19px; height: 19px; color: #ff2e3e; }
+.mode-btn:active { transform: scale(0.94); }
+
+/* Blende beim Moduswechsel */
+.mode-wipe { position: fixed; inset: 0; z-index: 2000; pointer-events: all; overflow: hidden; }
+.mode-wipe-band {
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: -40%;
+  width: 180%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateX(-110%) skewX(-14deg);
+  transition: transform 0.43s cubic-bezier(0.7, 0, 0.3, 1);
+}
+.mode-wipe.to-fight .mode-wipe-band {
+  background: linear-gradient(100deg, #09090b 0%, #09090b 38%, #ff2e3e 38.5%, #ff2e3e 41%, #09090b 41.5%);
+}
+.mode-wipe.to-gym .mode-wipe-band {
+  background: linear-gradient(100deg, var(--bg) 0%, var(--bg) 38%, #ff5a36 38.5%, #ff5a36 41%, var(--bg) 41.5%);
+}
+.mode-wipe-band span {
+  transform: skewX(14deg) scale(0.9);
+  font-family: 'Barlow Condensed', -apple-system, system-ui, sans-serif;
+  font-weight: 800;
+  font-style: italic;
+  font-size: 88px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity 0.2s 0.2s, transform 0.5s 0.15s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.mode-wipe.to-fight .mode-wipe-band span { color: #fff; text-shadow: 0 0 40px rgba(255, 46, 62, 0.7); }
+.mode-wipe.to-gym .mode-wipe-band span { color: var(--text); }
+.mode-wipe.cover .mode-wipe-band { transform: translateX(0) skewX(-14deg); }
+.mode-wipe.cover .mode-wipe-band span { opacity: 1; transform: skewX(14deg) scale(1); }
+.mode-wipe.reveal .mode-wipe-band { transform: translateX(110%) skewX(-14deg); transition-duration: 0.5s; }
+.mode-wipe.reveal .mode-wipe-band span { opacity: 0; transition-delay: 0s; }
+.mode-wipe.reduced .mode-wipe-band { transform: none; opacity: 0; transition: opacity 0.12s; }
+.mode-wipe.reduced.cover .mode-wipe-band { opacity: 1; }
+.mode-wipe.reduced.reveal .mode-wipe-band { opacity: 0; }
+
 .topbar h1 {
   font-size: 28px;
   font-weight: 800;
@@ -2096,3 +2162,10 @@ select.text-input { appearance: none; -webkit-appearance: none; }
 @keyframes medal-in { from { transform: scale(0.1) rotate(-160deg); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes rays-in { from { opacity: 0; transform: scale(0.4); } to { opacity: 0.55; transform: none; } }
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+/* Gürtel-Medaille (Fight-Modus) */
+.medal.belt {
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--belt) 70%, #fff), var(--belt) 60%, color-mix(in srgb, var(--belt) 70%, #000));
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.12), 0 12px 40px color-mix(in srgb, var(--belt) 55%, transparent);
+}
+

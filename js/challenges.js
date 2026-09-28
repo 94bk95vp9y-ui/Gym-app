@@ -37,7 +37,7 @@ function save(s) { Store.saveChallengeState(s); }
 function all(s) { return [...CHALLENGES, ...(s.custom || [])]; }
 function find(id, s) { return all(s).find((c) => c.id === id) || null; }
 
-const lowerIsBetter = (ch) => ch.kind === 'time';
+const lowerIsBetter = (ch) => ch.kind === 'time' || ch.kind === 'ms';
 const meets = (ch, value, target) => (lowerIsBetter(ch) ? value <= target : value >= target);
 const better = (ch, a, b) => b === null || b === undefined || (lowerIsBetter(ch) ? a < b : a > b);
 
@@ -62,6 +62,8 @@ export function formatValue(ch, v) {
   if (ch.kind === 'hold' || ch.kind === 'time') return clock(v);
   if (ch.kind === 'lift') return `${ch.id === 'weighted-pullup' ? '+' : ''}${formatWeight(v, unit())}`;
   if (ch.kind === 'steps') return v > 0 ? ch.tiers[v - 1] : 'noch keine Stufe';
+  if (ch.kind === 'ms') return `${Math.round(v)} ms`;
+  if (ch.kind === 'dist') return `${Math.round(v).toLocaleString('de-DE')} m`;
   return String(v);
 }
 const targetLabel = (ch, i) => (ch.kind === 'steps' ? ch.tiers[i] : formatValue(ch, targets(ch)[i]));
@@ -78,7 +80,43 @@ function newProgress() {
 
 // Bester Wert aus den Trainings (Kraft: schwerste Wiederholung; Körpergewicht:
 // meiste Wiederholungen in einem Satz).
+// Fight-Modus: Läufe und Einheiten liefern Werte für Ausdauer- und
+// Kampfsport-Challenges.
+function runBest(ch) {
+  let best = null;
+  Store.getRuns().forEach((r) => {
+    let v = null;
+    const running = r.type === 'run' || r.type === 'treadmill';
+    if (ch.autoRun === '5k') v = r.test5k || (running && r.distance >= 5000 && r.distance <= 5500 ? Math.round((r.seconds * 5000) / r.distance) : null);
+    else if (ch.autoRun === '10k') v = running && r.distance >= 10000 && r.distance <= 11000 ? Math.round((r.seconds * 10000) / r.distance) : null;
+    else if (ch.autoRun === 'cooper') v = r.cooper || null;
+    else if (ch.autoRun === 'row2k') v = r.type === 'row' && r.distance >= 2000 && r.distance <= 2200 ? Math.round((r.seconds * 2000) / r.distance) : null;
+    if (v && (!best || better(ch, v, best.value))) best = { value: v, at: r.at };
+  });
+  return best;
+}
+
+function fightBest(ch) {
+  let best = null;
+  if (ch.autoFight === 'rounds') {
+    Store.getFightLog().forEach((f) => {
+      if (!['shadow', 'bag', 'pads', 'opponent', 'timer', 'exam'].includes(f.type) || !(f.rounds > 0)) return;
+      const per = f.seconds / f.rounds;
+      if ((f.roundSec && f.roundSec < 120) || per < 100) return;
+      if (!best || f.rounds > best.value) best = { value: f.rounds, at: f.at };
+    });
+  } else if (ch.autoFight === 'reaction') {
+    Store.getReactionLog().forEach((r) => {
+      if (r.mode !== 'simple' || !r.median) return;
+      if (!best || r.median < best.value) best = { value: r.median, at: r.at };
+    });
+  }
+  return best;
+}
+
 function autoBest(ch) {
+  if (ch.autoRun) return runBest(ch);
+  if (ch.autoFight) return fightBest(ch);
   if (!ch.auto) return null;
   const ids = new Set(ch.auto);
   let best = null;
@@ -294,6 +332,35 @@ export function challengeHintForSet(exerciseId, weight, reps) {
   return null;
 }
 
+// Fight-Modus: XP für Gürtel, sitzende Techniken und Rekorde – dasselbe
+// Level wie im Gym, ein Athlet.
+export function grantXp({ kind = 'fight', xp, icon = '🥋', kicker, title, sub, color = null, big = true }) {
+  const s = load();
+  const before = totalXp(s);
+  addXp(s, { kind, xp, label: title });
+  save(s);
+  return { events: [{ type: 'award', icon, kicker, title, sub, xp, color, big }], before };
+}
+
+export function openChallengeCatalog() { openCatalog(); }
+export function openChallengeDetail(id) { openDetail(id); }
+
+// Aktive Challenges einer Kategorie (für den Fight-Modus)
+export function activeChallenges(categories) {
+  const s = load();
+  return s.active.map((id) => {
+    const ch = find(id, s);
+    const p = s.progress[id];
+    if (!ch || !p || (categories && !categories.includes(ch.category))) return null;
+    const next = nextTierIndex(p);
+    return { ch, p, next, current: currentTierIndex(p), best: p.best ?? bestOf(ch, p), label: next === null ? 'Alle Stufen' : `${TIERS[next].name}: ${targetLabel(ch, next)}`, progress: progressTowards(ch, p) };
+  }).filter(Boolean);
+}
+
+export function athleteLevel() {
+  return levelInfo(totalXp(load()));
+}
+
 // Für die Startseite/den Tab: gibt es diese Woche etwas Neues?
 export function challengeBadge() {
   const s = load();
@@ -329,7 +396,7 @@ function progressTowards(ch, p) {
 }
 
 function attemptState(ch, p) {
-  if (ch.kind === 'lift') return { mode: 'auto' };
+  if (ch.kind === 'lift' || ch.autoOnly) return { mode: 'auto' };
   if (!p.placed && ch.kind !== 'steps') return { mode: 'placement' };
   if (!p.placed && ch.kind === 'steps') return { mode: 'placement' };
   if (nextTierIndex(p) === null) return { mode: 'done' };
@@ -451,7 +518,7 @@ export function renderChallenges() {
       pb: ch ? `Neuer Bestwert · ${ch.short}` : 'Bestwert',
       weekly: 'Wochen-Challenge geschafft',
       sweep: 'Alle Wochen-Challenges',
-    }[e.kind] || 'XP';
+    }[e.kind] || e.label || 'XP';
     return `<div class="ch-feed-row"><span>${escapeHtml(text)}</span><span class="muted small">${formatDate(e.at)}</span><strong>+${e.xp}</strong></div>`;
   }).join('');
 
@@ -742,15 +809,15 @@ function accept(id) {
   let events = [];
   if (ch.kind !== 'steps') {
     if (autoBest(ch) || p.attempts.length) events = sync(s, id);
-    else if (ch.kind === 'lift') p.placed = true; // noch keine Daten: der erste schwere Satz zählt voll
+    else if (ch.kind === 'lift' || ch.autoOnly) p.placed = true; // noch keine Daten: der erste Wert zählt voll
   }
   save(s);
   ctx.closeSheet();
   ctx.render();
   Sound.start();
   if (events.length) celebrate(events, before, () => ctx.render());
-  else if (ch.kind !== 'lift') setTimeout(() => startAttempt(id), 350);
-  else ctx.toast(`${ch.short}: wird ab jetzt aus deinen Trainings übernommen`);
+  else if (ch.kind !== 'lift' && !ch.autoOnly) setTimeout(() => startAttempt(id), 350);
+  else ctx.toast(`${ch.short}: wird ab jetzt automatisch übernommen`);
 }
 
 // ---------- Versuch ----------
@@ -811,7 +878,7 @@ function startAttempt(id, { manualLift = false } = {}) {
     qs('[data-att="go"]', body).addEventListener('click', () => runCounter(body, ch, target, best, finish));
     qs('[data-att="enter"]', body).addEventListener('click', () => { body.innerHTML = `${intro}${enterHtml(ch, 'Wiederholungen am Stück')}`; bindEnter(body, ch, finish); });
   } else {
-    const label = ch.kind === 'time' ? 'Deine Zeit (m:ss)' : ch.kind === 'lift' ? 'Gewicht' : `Wiederholungen${ch.unitLabel ? ` ${ch.unitLabel}` : ''} am Stück`;
+    const label = ch.kind === 'time' ? 'Deine Zeit (m:ss)' : ch.kind === 'lift' ? 'Gewicht' : ch.kind === 'dist' ? 'Strecke in Metern' : `Wiederholungen${ch.unitLabel ? ` ${ch.unitLabel}` : ''} am Stück`;
     body.innerHTML = `${intro}${enterHtml(ch, label)}`;
     bindEnter(body, ch, finish);
   }
@@ -1074,6 +1141,7 @@ export function celebrate(events, xpBefore, done) {
     if (e.type === 'tier') screens.push(e);
     else if (e.type === 'placement') screens.push(e);
     else if (e.type === 'weekly' || e.type === 'sweep') screens.push(e);
+    else if (e.type === 'award') screens.push(e);
   });
   const pbs = events.filter((e) => e.type === 'pb');
   if (!screens.length) {
@@ -1107,7 +1175,7 @@ export function celebrate(events, xpBefore, done) {
     stage.classList.remove('in');
     void stage.offsetWidth;
     stage.classList.add('in');
-    const big = e.type === 'tier' || e.type === 'level' || (e.type === 'placement' && e.tiers.length);
+    const big = e.type === 'tier' || e.type === 'level' || (e.type === 'placement' && e.tiers.length) || (e.type === 'award' && e.big);
     if (big) { confetti(qs('.cel-confetti', el), e.type === 'tier' ? e.tier : e.type === 'placement' ? Math.max(...e.tiers) : 2); }
     if (e.type === 'level') Sound.levelUp(); else if (big) Sound.unlock(); else Sound.record();
     // XP hochzählen und den Level-Balken mitziehen
@@ -1125,7 +1193,7 @@ export function celebrate(events, xpBefore, done) {
       const t0 = performance.now();
       const dur = 900;
       const step = (now) => {
-        const k = Math.min(1, (now - t0) / dur);
+        const k = Math.max(0, Math.min(1, (now - t0) / dur));
         const eased = 1 - (1 - k) ** 3;
         counter.textContent = `+${Math.round(gain * eased)}`;
         const lv = levelInfo(Math.round(from + gain * eased));
@@ -1170,6 +1238,13 @@ function celebrationHtml(e) {
     kicker = 'Einstufung';
     title = top !== null ? `Du startest bei ${TIERS[top].name}` : 'Startpunkt gesetzt';
     sub = `${e.ch.kind === 'steps' ? '' : `${escapeHtml(formatValue(e.ch, e.value))} · `}${next !== null ? `Dein erstes Ziel: <strong>${TIERS[next].name} – ${escapeHtml(targetLabel(e.ch, next))}</strong>` : 'Schon alles gemeistert.'}`;
+  } else if (e.type === 'award') {
+    medalHtml = e.color
+      ? `<span class="medal belt xl" style="--belt:${e.color}">${e.icon}</span>`
+      : `<span class="medal wk xl">${e.icon}</span>`;
+    kicker = escapeHtml(e.kicker || 'Geschafft');
+    title = escapeHtml(e.title || '');
+    sub = e.sub || '';
   } else if (e.type === 'weekly') {
     medalHtml = `<span class="medal wk xl">${e.icon}</span>`;
     kicker = 'Wochen-Challenge geschafft';
