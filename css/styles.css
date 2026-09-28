@@ -250,15 +250,18 @@ button, input, select, textarea {
 }
 
 .list-item:last-child { border-bottom: none; }
+/* Nur der Griff fängt die Ziehgeste ab – auf dem Rest der Zeile muss sich
+   die Liste ganz normal scrollen lassen. */
 .list-item.reorder-item {
-  touch-action: none;
+  touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
 .drag-handle {
   display: flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px;
+  width: 32px; height: 44px;
+  margin: -9px -3px;
   color: var(--text-secondary);
   flex-shrink: 0;
   cursor: grab;
@@ -1705,3 +1708,28 @@ select.text-input { appearance: none; -webkit-appearance: none; }
 .set-stepper.big { background: var(--bg-elevated); padding: 4px; }
 .set-stepper.big .step-btn { width: 36px; height: 36px; font-size: 20px; }
 .set-stepper.big .step-value { min-width: 64px; font-size: 16px; }
+
+/* Startseite: das nächste Training als Hauptkarte, darunter klar getrennte
+   Abschnitte */
+.start-group { display: flex; flex-direction: column; gap: 10px; }
+.start-group > .section-title { margin-bottom: -2px; }
+.hero-card {
+  padding: 16px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-elevated));
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--border));
+}
+.hero-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.hero-card h2 { margin: 10px 0 4px; font-size: 26px; font-weight: 800; letter-spacing: -0.4px; line-height: 1.15; }
+.hero-preview { margin: 0 0 14px; font-size: 13.5px; line-height: 1.45; color: var(--text-secondary); }
+.hero-card .btn svg { width: 16px; height: 16px; }
+.start-blank-row { gap: 12px; }
+.start-blank-row .list-item-main { flex: 1; }
+.start-blank-icon {
+  width: 30px; height: 30px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-input);
+}
+.list-item .start-blank-icon svg { width: 16px; height: 16px; color: var(--text); }
+.hero-preview { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

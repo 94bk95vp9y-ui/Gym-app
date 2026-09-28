@@ -548,32 +548,63 @@ function renderStart() {
     </section>`;
   }
 
+  // Aufbau von oben nach unten nach Wichtigkeit: das Training, das jetzt
+  // dran ist – was heute noch abzuhaken ist – die übrigen Pläne – die Bilanz.
   const { lastDone, next } = planRotation(routines, Store.getWorkouts());
-  const routineCards = routines.length ? routines.map((r) => {
-    const when = lastDone.has(r.id) ? `zuletzt ${relativeDay(lastDone.get(r.id))}` : 'noch nie trainiert';
-    const isNext = r.id === next;
-    return `
-    <div class="list-item ${isNext ? 'plan-next' : ''}">
-      <div class="list-item-main">
-        <strong>${escapeHtml(r.name)}${isNext ? ' <span class="pill pill-chosen">Als Nächstes</span>' : ''}</strong>
-        <span class="muted">${plural(r.exerciseIds.length, 'Übung', 'Übungen')} · ${when}</span>
+  const names = exerciseNames();
+  const whenOf = (r) => (lastDone.has(r.id) ? `zuletzt ${relativeDay(lastDone.get(r.id))}` : 'noch nie trainiert');
+  const nextPlan = !active && routines.find((r) => r.id === next);
+
+  let hero = activeCard;
+  if (nextPlan) {
+    const preview = nextPlan.exerciseIds.map((id) => names.get(id)).filter(Boolean).join(' · ');
+    hero = `
+    <section class="card hero-card">
+      <div class="hero-top">
+        <span class="pill pill-chosen">Als Nächstes</span>
+        <span class="muted small">${whenOf(nextPlan)}</span>
       </div>
-      <button class="btn btn-small ${!next || isNext ? 'btn-primary' : 'btn-secondary'}" data-action="start-routine" data-id="${r.id}" ${active ? 'disabled' : ''}>Start</button>
-    </div>`;
-  }).join('') : `<p class="empty">Noch keine Pläne. Leg welche in der Bibliothek an – oder lass sie dir in den Einstellungen per KI erstellen.</p>`;
+      <h2>${escapeHtml(nextPlan.name)}</h2>
+      ${preview ? `<p class="hero-preview">${escapeHtml(preview)}</p>` : ''}
+      <button class="btn btn-primary full" data-action="start-routine" data-id="${nextPlan.id}">${Icon.play} Training starten</button>
+    </section>`;
+  }
+
+  const others = routines.filter((r) => r !== nextPlan);
+  const planRows = others.map((r) => `
+    <div class="list-item">
+      <div class="list-item-main">
+        <strong>${escapeHtml(r.name)}</strong>
+        <span class="muted">${plural(r.exerciseIds.length, 'Übung', 'Übungen')} · ${whenOf(r)}</span>
+      </div>
+      <button class="btn btn-small ${nextPlan ? 'btn-secondary' : 'btn-primary'}" data-action="start-routine" data-id="${r.id}">Start</button>
+    </div>`).join('');
+  const blankRow = `
+    <button class="list-item selectable start-blank-row" data-action="start-blank">
+      <span class="start-blank-icon">${Icon.plus}</span>
+      <div class="list-item-main"><strong>Leeres Training</strong><span class="muted">Übungen spontan zusammenstellen</span></div>
+      ${Icon.chevron}
+    </button>`;
+  // Läuft schon ein Training, lässt sich nichts Neues starten – dann bleibt
+  // der Abschnitt ganz weg statt voller ausgegrauter Knöpfe.
+  const plans = active ? '' : `
+    <section>
+      <div class="section-title">${nextPlan ? 'Weitere Pläne' : 'Plan starten'}</div>
+      <div class="card list">
+        ${routines.length ? '' : '<p class="empty small">Noch keine Pläne. Leg welche in der Bibliothek an – oder lass sie dir in den Einstellungen per KI erstellen.</p>'}
+        ${planRows}${blankRow}
+      </div>
+    </section>`;
+
+  const today = `${renderSupplementCard()}${renderMobilityCard()}`;
+  const motivationOn = Store.getSettings().motivation;
+  const week = motivationOn ? renderMotivationCard() : renderWeekCard();
 
   return `
-    ${activeCard}
-    ${renderSupplementCard()}
-    ${Store.getSettings().motivation ? renderMotivationCard() : renderWeekCard()}
-    <section>
-      <div class="section-title">Plan starten</div>
-      <div class="card list">${routineCards}</div>
-    </section>
-    <section>
-      <button class="btn btn-secondary full" data-action="start-blank" ${active ? 'disabled' : ''}>${Icon.plus} Leeres Training starten</button>
-    </section>
-    ${renderMobilityCard()}`;
+    ${hero}
+    ${today.trim() ? `<section class="start-group"><div class="section-title">Heute</div>${today}</section>` : ''}
+    ${plans}
+    ${week ? (motivationOn ? `<section class="start-group"><div class="section-title">Deine Woche</div>${week}</section>` : week) : ''}`;
 }
 
 const WEEKDAY_LETTERS = ['M', 'D', 'M', 'D', 'F', 'S', 'S'];
@@ -841,7 +872,13 @@ function refreshSupplementCard() {
   if (!card) return Promise.resolve();
   const next = elementFrom(renderSupplementCard());
   if (!next) {
-    return new Promise((resolve) => collapseAway(card, () => { card.remove(); resolve(); }));
+    return new Promise((resolve) => collapseAway(card, () => {
+      const group = card.closest('.start-group');
+      card.remove();
+      // Abschnitt "Heute" ohne Inhalt nicht als leere Überschrift stehen lassen
+      if (group && !group.querySelector('.card')) group.remove();
+      resolve();
+    }));
   }
 
   // Anderer Grundzustand (z.B. Liste -> "alles genommen"): ganze Karte überblenden.
