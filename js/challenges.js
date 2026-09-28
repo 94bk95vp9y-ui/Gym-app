@@ -347,6 +347,47 @@ function actionButton(ch, p) {
   return `<button class="btn btn-small btn-primary ch-go" data-action="ch-attempt" data-id="${ch.id}">${label}</button>`;
 }
 
+// Vorschläge für den Einstieg: zuerst, was die Trainings schon hergeben
+// (dort gibt es gleich eine Einstufung), dann eine bunte Mischung aus den
+// übrigen Bereichen.
+const STARTERS = ['pullups', 'pushups', 'muscleup', 'deadhang', 'bench', 'plank', 'run5k'];
+function suggestions(s, count = 3) {
+  const open = all(s).filter((ch) => !s.active.includes(ch.id) && !(s.progress[ch.id] && nextTierIndex(s.progress[ch.id]) === null));
+  const known = open
+    .map((ch) => ({ ch, auto: autoBest(ch) }))
+    .filter((x) => x.auto && x.ch.kind !== 'steps')
+    .map((x) => ({ ...x, reach: targets(x.ch).filter((t) => meets(x.ch, x.auto.value, t)).length, share: x.auto.value / targets(x.ch)[0] }))
+    // am reizvollsten: knapp unter oder gerade über der ersten Stufe
+    .sort((a, b) => Math.abs(1 - a.share) - Math.abs(1 - b.share));
+  const picked = known.slice(0, 2);
+  const cats = new Set(picked.map((x) => x.ch.category));
+  for (const id of STARTERS) {
+    if (picked.length >= count) break;
+    const ch = open.find((c) => c.id === id);
+    if (!ch || picked.some((x) => x.ch.id === id) || cats.has(ch.category)) continue;
+    picked.push({ ch, auto: autoBest(ch) });
+    cats.add(ch.category);
+  }
+  open.forEach((ch) => { if (picked.length < count && !picked.some((x) => x.ch.id === ch.id)) picked.push({ ch, auto: null }); });
+  return picked.map(({ ch, auto }) => {
+    let hint;
+    if (auto && ch.kind !== 'steps') {
+      const reached = targets(ch).filter((t) => meets(ch, auto.value, t)).length;
+      hint = reached
+        ? `Dein Bestwert ${formatValue(ch, auto.value)} – ${TIERS[reached - 1].name} hast du schon`
+        : `Dein Bestwert ${formatValue(ch, auto.value)} · Bronze bei ${targetLabel(ch, 0)}`;
+    } else {
+      hint = ch.kind === 'steps' ? `${ch.tiers.length} Etappen bis ${ch.tiers[4]}` : `${targetLabel(ch, 0)} → ${targetLabel(ch, 4)}`;
+    }
+    return `
+      <button class="list-item selectable ch-row" data-action="ch-pick" data-id="${ch.id}">
+        <span class="ch-row-icon">${ch.icon}</span>
+        <div class="list-item-main"><strong>${escapeHtml(ch.name)}</strong><span class="muted small">${escapeHtml(hint)}</span></div>
+        ${Icon.chevron}
+      </button>`;
+  }).join('');
+}
+
 // ---------- Tab ----------
 export function renderChallenges() {
   const s = load();
@@ -429,22 +470,28 @@ export function renderChallenges() {
     </section>
 
     <section>
+      <div class="section-title ch-section-head">Deine Challenges <span>${s.active.length}/${MAX_ACTIVE}</span></div>
+      ${activeHtml || `
+        <div class="card ch-empty">
+          <div class="ch-empty-head">
+            <span class="ch-empty-icon">🎯</span>
+            <div>
+              <strong>Such dir deine erste Challenge</strong>
+              <p class="muted small">Tipp eine an – du siehst Stufen und Regeln und kannst sie direkt annehmen.</p>
+            </div>
+          </div>
+          <div class="ch-suggest-title">Vorschläge für dich</div>
+          <div class="list ch-suggest">${suggestions(s)}</div>
+        </div>`}
+      ${s.active.length < MAX_ACTIVE ? `<button class="btn ${s.active.length ? 'btn-secondary' : 'btn-primary'} full ch-add" data-action="ch-catalog">${s.active.length ? `${Icon.plus} Weitere Challenge wählen` : `Alle ${all(s).length} Challenges ansehen`}</button>` : ''}
+    </section>
+
+    <section>
       <div class="section-title ch-section-head">Wochen-Challenges <span>noch ${plural(daysLeft, 'Tag', 'Tage')}</span></div>
       <div class="card ch-week ${week.sweep ? 'sweep' : ''}">
         ${weeklyHtml}
         <p class="muted small ch-week-foot">${week.sweep ? '🔥 Woche komplett – Bonus eingesammelt.' : `Alle drei geschafft: +${SWEEP_XP} XP Bonus`}</p>
       </div>
-    </section>
-
-    <section>
-      <div class="section-title ch-section-head">Deine Challenges <span>${s.active.length}/${MAX_ACTIVE}</span></div>
-      ${activeHtml || `
-        <div class="card ch-empty">
-          <span class="ch-empty-icon">🎯</span>
-          <strong>Such dir deine erste Challenge</strong>
-          <p class="muted small">Bis zu ${MAX_ACTIVE} gleichzeitig – Fokus bringt mehr als zehn halbe Ziele. Dein erster Versuch stuft dich ein, danach geht die Jagd los.</p>
-        </div>`}
-      ${s.active.length < MAX_ACTIVE ? `<button class="btn btn-secondary full ch-add" data-action="ch-catalog">${Icon.plus} Challenge wählen</button>` : ''}
     </section>
 
     ${trophies.length ? `
@@ -467,6 +514,7 @@ export function renderChallenges() {
 export function bindChallenges(root) {
   qsa('[data-action="ch-open"]', root).forEach((b) => b.addEventListener('click', () => openDetail(b.dataset.id)));
   qsa('[data-action="ch-attempt"]', root).forEach((b) => b.addEventListener('click', () => startAttempt(b.dataset.id)));
+  qsa('[data-action="ch-pick"]', root).forEach((b) => b.addEventListener('click', () => openDetail(b.dataset.id)));
   qs('[data-action="ch-catalog"]', root)?.addEventListener('click', openCatalog);
   // Wochen gesehen – der Punkt am Tab verschwindet
   const s = load();
@@ -499,7 +547,7 @@ function openCatalog() {
     <button class="btn btn-secondary full" style="margin-top:14px" data-action="ch-custom">${Icon.plus} Eigene Challenge erstellen</button>
   `, {
     onMount: (root) => {
-      qsa('[data-action="ch-pick"]', root).forEach((b) => b.addEventListener('click', () => openDetail(b.dataset.id, { preview: true })));
+      qsa('[data-action="ch-pick"]', root).forEach((b) => b.addEventListener('click', () => openDetail(b.dataset.id, { back: openCatalog })));
       qs('[data-action="ch-custom"]', root).addEventListener('click', openCustomEditor);
     },
   });
@@ -571,7 +619,7 @@ function openCustomEditor() {
         };
         s.custom = [...(s.custom || []), ch];
         save(s);
-        openDetail(ch.id, { preview: true });
+        openDetail(ch.id, { back: openCatalog });
       });
     },
   });
@@ -612,7 +660,7 @@ function ladderHtml(ch, p) {
   }).join('')}</div>`;
 }
 
-function openDetail(id, { preview = false } = {}) {
+function openDetail(id, { back = null } = {}) {
   const s = load();
   const ch = find(id, s);
   if (!ch) return;
@@ -655,7 +703,7 @@ function openDetail(id, { preview = false } = {}) {
     <p class="ch-tip">${escapeHtml(ch.tip)}</p>
   `, {
     footer,
-    onDismiss: preview ? openCatalog : null,
+    onDismiss: back,
     onMount: (root) => {
       const canvas = qs('.ch-chart', root);
       if (canvas) drawLineChart(canvas, attempts.map((a) => ({ value: a.value, label: formatDate(a.at) })));
