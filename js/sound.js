@@ -172,6 +172,21 @@ export const Sound = {
     });
   },
 
+  // Mobility: leiser Countdown-Tick, heller Einsatz, ruhiger Übergang.
+  tick() { withAudio((ac) => pluck(ac, 0, { from: 1046, dur: 0.05, peak: 0.12 })); },
+  go() {
+    withAudio((ac) => {
+      pluck(ac, 0, { from: 784, dur: 0.18, peak: 0.24 });
+      pluck(ac, 0.07, { from: 1175, dur: 0.3, peak: 0.2 });
+    });
+  },
+  bell() {
+    withAudio((ac) => {
+      pluck(ac, 0, { from: 660, dur: 0.6, peak: 0.2 });
+      pluck(ac, 0, { from: 1320, dur: 0.35, peak: 0.06 });
+    });
+  },
+
   // Training beendet: auflösender Dur-Dreiklang.
   finish() {
     withAudio((ac) => {

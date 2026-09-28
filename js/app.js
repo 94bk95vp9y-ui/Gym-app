@@ -7,6 +7,9 @@ import { buildMotivation } from './motivation.js';
 import { Sound, setSoundEnabled, setSoundVolume, setSoundStyle, SOUND_STYLES } from './sound.js';
 import { fatigueOf, muscleGroupLookup } from './fatigue.js';
 import {
+  initMobility, renderMobilityCard, bindMobilityCard, startMobilityRoutine, mobilityDoneToday,
+} from './mobility.js';
+import {
   SLOTS, SUPPLEMENT_PRESETS, REMINDER_TIMES, dayKey, shiftDay, dateOfKey, currentSlot,
   activeOn, dayStatus, streak, adherence, reminderFile,
 } from './supplements.js';
@@ -569,7 +572,8 @@ function renderStart() {
     </section>
     <section>
       <button class="btn btn-secondary full" data-action="start-blank" ${active ? 'disabled' : ''}>${Icon.plus} Leeres Training starten</button>
-    </section>`;
+    </section>
+    ${renderMobilityCard()}`;
 }
 
 const WEEKDAY_LETTERS = ['M', 'D', 'M', 'D', 'F', 'S', 'S'];
@@ -1190,6 +1194,7 @@ function openSupplementEditor(id, back) {
 
 function bindStartEvents() {
   bindSupplementCard();
+  bindMobilityCard(root);
   qs('[data-action="start-blank"]')?.addEventListener('click', () => {
     if (Store.getActive()) return;
     Store.setActive({ id: uid(), routineId: null, routineName: null, startedAt: new Date().toISOString(), finishedAt: null, entries: [] });
@@ -1541,6 +1546,8 @@ function bindWorkoutEvents() {
   });
   qs('[data-action="discard-workout"]').addEventListener('click', () => {
     if (confirm('Training wirklich verwerfen? Alle Sätze gehen verloren.')) {
+      stopTicking();
+      qs('#rest-bar')?.remove();
       Store.clearActive();
       releaseWakeLock();
       state.collapsedExercises.clear();
@@ -1552,6 +1559,10 @@ function bindWorkoutEvents() {
     const totalSets = w.entries.reduce((n, e) => n + e.sets.filter((s) => s.done).length, 0);
     if (totalSets === 0 && !confirm('Keine Sätze abgeschlossen. Training trotzdem speichern?')) return;
     w.finishedAt = new Date().toISOString();
+    // Laufende Pause still beenden – sonst meldet der Takt bis zum
+    // Seitenwechsel noch "Pause vorbei".
+    stopTicking();
+    qs('#rest-bar')?.remove();
     Store.finishActiveWorkout(w);
     releaseWakeLock();
     Sound.finish();
@@ -2159,6 +2170,9 @@ function openFinishSummary(id) {
   const openSupps = settings.supplements
     && Store.getActiveSupplements().length
     && !dayStatus(Store.getSupplements(), Store.getSupplementLog(), dayKey()).complete;
+  // Direkt nach dem Training ist der beste Moment zum Dehnen – die Muskeln
+  // sind warm. Nur anbieten, wenn heute noch keine Mobility lief.
+  const offerMobility = settings.mobility && !mobilityDoneToday();
 
   openSheet('Training gespeichert', `
     <div class="finish-hero">
@@ -2183,10 +2197,18 @@ function openFinishSummary(id) {
         <div class="list-item-main"><strong>💊 Supplements noch offen</strong><span class="muted">Jetzt abhaken, solange du dran denkst</span></div>
         ${Icon.chevron}
       </button>` : ''}
+    ${offerMobility ? `<button class="list-item selectable finish-supps finish-mobility" data-action="finish-mobility">
+        <div class="list-item-main"><strong>${Icon.mobility} 5 Min Mobility dranhängen</strong><span class="muted">Die Muskeln sind warm – der beste Moment zum Dehnen</span></div>
+        ${Icon.play}
+      </button>` : ''}
   `, {
     footer: '<button class="btn btn-primary full" data-action="close-sheet">Fertig</button>',
     onMount: () => {
       qs('[data-action="finish-open-supps"]')?.addEventListener('click', () => openSupplementSheet());
+      qs('[data-action="finish-mobility"]')?.addEventListener('click', () => {
+        closeSheet();
+        startMobilityRoutine('quick');
+      });
       if (!prefersReducedMotion()) {
         qs('.finish-badge')?.classList.add('pop');
       }
@@ -2663,6 +2685,7 @@ function renderSettings() {
             </div>` : ''}
         </div>
         ${toggleRow('toggle-supplements', 'Supplements', 'Tägliches Abhaken auf der Startseite, mit Serie und Kalender-Erinnerung.', settings.supplements)}
+        ${toggleRow('toggle-mobility', 'Mobility', 'Geführte Beweglichkeits-Routinen für Hüfte und Beine – dezent unten auf der Startseite.', settings.mobility)}
       </div>
     </section>
 
@@ -2947,6 +2970,9 @@ function bindSettingsEvents() {
   qs('#toggle-supplements')?.addEventListener('change', (e) => {
     Store.saveSettings({ ...Store.getSettings(), supplements: e.target.checked });
   });
+  qs('#toggle-mobility')?.addEventListener('change', (e) => {
+    Store.saveSettings({ ...Store.getSettings(), mobility: e.target.checked });
+  });
   qs('#toggle-motivation')?.addEventListener('change', (e) => {
     Store.saveSettings({ ...Store.getSettings(), motivation: e.target.checked });
     render(); // blendet das Wochenziel direkt ein oder aus
@@ -3216,6 +3242,7 @@ const CUSTOM_SOUND_ACTIONS = new Set([
   'remove-set', 'remove-exercise', 'toggle-group', 'toggle-exercise', 'set-sound-style',
   'delete-workout', 'delete-exercise', 'delete-routine', 'discard-workout', 'wipe-data',
   'supp-toggle', 'supp-slot-all', 'supp-day-all', 'supp-preset',
+  'mob-quickstart', 'mob-start', 'mob-routine-start', 'mob-single', 'mob-pick', 'opt', 'finish-mobility',
 ]);
 
 document.addEventListener('pointerdown', (e) => {
@@ -3278,6 +3305,9 @@ document.addEventListener('visibilitychange', () => {
 });
 
 applySettings();
+initMobility({
+  openSheet, closeSheet, toast, render, enableDragReorder, dropIn, prefersReducedMotion,
+});
 calibrateSafeArea();
 window.addEventListener('resize', calibrateSafeArea);
 window.addEventListener('orientationchange', () => setTimeout(calibrateSafeArea, 150));

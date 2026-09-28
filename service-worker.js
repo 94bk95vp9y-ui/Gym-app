@@ -1,4 +1,4 @@
-const CACHE = 'gym-cache-v2';
+const CACHE = 'gym-cache-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -14,6 +14,11 @@ const ASSETS = [
   './js/fatigue.js',
   './js/sound.js',
   './js/supplements.js',
+  './js/mobility.js',
+  './js/mobility-data.js',
+  './js/mobility-figure.js',
+  // 3D für Mobility – vorab gespeichert, damit es auch ohne Netz im Gym läuft
+  './js/vendor/three.module.min.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',

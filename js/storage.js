@@ -13,6 +13,9 @@ const KEYS = {
   rest: 'gym.rest',
   supplements: 'gym.supplements',
   supplementLog: 'gym.supplementLog',
+  mobilityRoutines: 'gym.mobilityRoutines',
+  mobilityLog: 'gym.mobilityLog',
+  mobilityChecks: 'gym.mobilityChecks',
 };
 
 // Geparste Werte werden zwischengespeichert: ein Neuaufbau der Ansicht liest
@@ -78,6 +81,10 @@ const DEFAULT_SETTINGS = {
   soundStyle: 'click',
   keepAwake: true,
   supplements: true,
+  mobility: true,
+  mobilityGoal: 5,
+  mobilityPrep: 10,
+  mobilityVoice: true,
   // Zuletzt gewählte Erinnerungszeit je Tageszeit (HHMM), nur fürs Formular
   supplementReminders: {},
 };
@@ -124,9 +131,9 @@ let sortedWorkouts = { source: null, sorted: [] };
 // alles überschreibt. Gibt eine Fehlermeldung zurück oder null.
 export function validateBackup(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return 'Die Datei enthält keine Gym-Sicherung.';
-  const known = ['exercises', 'routines', 'workouts', 'settings', 'supplements', 'supplementLog'];
+  const known = ['exercises', 'routines', 'workouts', 'settings', 'supplements', 'supplementLog', 'mobilityLog'];
   if (!known.some((k) => k in data)) return 'Die Datei enthält keine Gym-Sicherung.';
-  const lists = ['exercises', 'routines', 'workouts', 'supplements'];
+  const lists = ['exercises', 'routines', 'workouts', 'supplements', 'mobilityLog', 'mobilityChecks'];
   const broken = lists.find((k) => k in data && !Array.isArray(data[k]));
   if (broken) return 'Die Sicherung ist beschädigt.';
   if ((data.exercises || []).some((e) => !e || !e.id || typeof e.name !== 'string')) return 'Die Übungen in der Sicherung sind beschädigt.';
@@ -268,6 +275,28 @@ export const Store = {
     write(KEYS.supplementLog, log);
   },
 
+  // Mobility: eigene Routinen (null = noch die Standard-Routinen), Einheiten
+  // und die Ergebnisse des Beweglichkeits-Checks. Zählt bewusst nicht als
+  // Training.
+  getMobilityRoutines() {
+    return read(KEYS.mobilityRoutines, null);
+  },
+  saveMobilityRoutines(list) {
+    write(KEYS.mobilityRoutines, list);
+  },
+  getMobilityLog() {
+    return read(KEYS.mobilityLog, []);
+  },
+  addMobilitySession(session) {
+    write(KEYS.mobilityLog, [...Store.getMobilityLog(), session]);
+  },
+  getMobilityChecks() {
+    return read(KEYS.mobilityChecks, []);
+  },
+  addMobilityCheck(check) {
+    write(KEYS.mobilityChecks, [...Store.getMobilityChecks(), check]);
+  },
+
   // Laufende Satzpause – überlebt bewusst auch ein Neuladen der App,
   // damit die Pause beim Zurückkehren noch stimmt.
   getRest() {
@@ -298,6 +327,9 @@ export const Store = {
       settings: Store.getSettings(),
       supplements: Store.getSupplements(),
       supplementLog: Store.getSupplementLog(),
+      mobilityRoutines: Store.getMobilityRoutines(),
+      mobilityLog: Store.getMobilityLog(),
+      mobilityChecks: Store.getMobilityChecks(),
     };
   },
   importAll(data) {
@@ -307,6 +339,9 @@ export const Store = {
     if (data.settings) write(KEYS.settings, data.settings);
     if (data.supplements) write(KEYS.supplements, data.supplements);
     if (data.supplementLog) write(KEYS.supplementLog, data.supplementLog);
+    if (Array.isArray(data.mobilityRoutines)) write(KEYS.mobilityRoutines, data.mobilityRoutines);
+    if (data.mobilityLog) write(KEYS.mobilityLog, data.mobilityLog);
+    if (data.mobilityChecks) write(KEYS.mobilityChecks, data.mobilityChecks);
     // Das Backup ist maßgeblich: gelöschte Katalog-Übungen sollen durch den
     // Import nicht wieder auftauchen.
     write(KEYS.catalogVersion, CATALOG_VERSION);
