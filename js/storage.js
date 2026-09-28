@@ -16,6 +16,7 @@ const KEYS = {
   mobilityRoutines: 'gym.mobilityRoutines',
   mobilityLog: 'gym.mobilityLog',
   mobilityChecks: 'gym.mobilityChecks',
+  challenges: 'gym.challenges',
 };
 
 // Geparste Werte werden zwischengespeichert: ein Neuaufbau der Ansicht liest
@@ -143,6 +144,7 @@ export function validateBackup(data) {
     return 'Die Trainings in der Sicherung sind beschädigt.';
   }
   if ('settings' in data && (typeof data.settings !== 'object' || Array.isArray(data.settings))) return 'Die Einstellungen in der Sicherung sind beschädigt.';
+  if (data.challenges && (typeof data.challenges !== 'object' || Array.isArray(data.challenges))) return 'Die Challenges in der Sicherung sind beschädigt.';
   return null;
 }
 
@@ -297,6 +299,15 @@ export const Store = {
     write(KEYS.mobilityChecks, [...Store.getMobilityChecks(), check]);
   },
 
+  // Challenges: aktive Challenges, Fortschritt je Challenge, XP-Verlauf,
+  // Wochen-Challenges und eigene Challenges – alles in einem Objekt.
+  getChallengeState() {
+    return read(KEYS.challenges, null);
+  },
+  saveChallengeState(value) {
+    write(KEYS.challenges, value);
+  },
+
   // Laufende Satzpause – überlebt bewusst auch ein Neuladen der App,
   // damit die Pause beim Zurückkehren noch stimmt.
   getRest() {
@@ -330,6 +341,7 @@ export const Store = {
       mobilityRoutines: Store.getMobilityRoutines(),
       mobilityLog: Store.getMobilityLog(),
       mobilityChecks: Store.getMobilityChecks(),
+      challenges: Store.getChallengeState(),
     };
   },
   importAll(data) {
@@ -342,6 +354,7 @@ export const Store = {
     if (Array.isArray(data.mobilityRoutines)) write(KEYS.mobilityRoutines, data.mobilityRoutines);
     if (data.mobilityLog) write(KEYS.mobilityLog, data.mobilityLog);
     if (data.mobilityChecks) write(KEYS.mobilityChecks, data.mobilityChecks);
+    if (data.challenges && typeof data.challenges === 'object') write(KEYS.challenges, data.challenges);
     // Das Backup ist maßgeblich: gelöschte Katalog-Übungen sollen durch den
     // Import nicht wieder auftauchen.
     write(KEYS.catalogVersion, CATALOG_VERSION);

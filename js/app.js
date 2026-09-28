@@ -7,6 +7,9 @@ import { buildMotivation } from './motivation.js';
 import { Sound, setSoundEnabled, setSoundVolume, setSoundStyle, SOUND_STYLES } from './sound.js';
 import { fatigueOf, muscleGroupLookup } from './fatigue.js';
 import {
+  initChallenges, renderChallenges, bindChallenges, checkChallenges, celebrate, challengeHintForSet, challengeBadge,
+} from './challenges.js';
+import {
   initMobility, renderMobilityCard, bindMobilityCard, startMobilityRoutine, mobilityDoneToday,
 } from './mobility.js';
 import {
@@ -440,6 +443,10 @@ function render() {
   state.workoutOpen = false;
   releaseWakeLock(); // außerhalb des Trainings darf sich das iPhone wieder sperren
 
+  // Challenges zuerst mit den Trainings abgleichen, damit der Tab den
+  // aktuellen Stand zeigt – Neues wird danach gefeiert.
+  const challengeNews = state.tab === 'challenges' && !isSwipeDragging ? checkChallenges() : null;
+
   root.innerHTML = `
     <header class="topbar">
       <h1>${tabTitle()}</h1>
@@ -449,6 +456,7 @@ function render() {
     <div class="tabbar-wrap">
       <nav class="tabbar">
         ${tabButton('start', Icon.home, 'Start')}
+        ${tabButton('challenges', Icon.trophy, 'Challenges')}
         ${tabButton('history', Icon.history, 'Verlauf')}
         ${tabButton('library', Icon.library, 'Bibliothek')}
         ${tabButton('settings', Icon.settings, 'Einstellungen')}
@@ -466,6 +474,13 @@ function render() {
   if (state.tab === 'history') bindHistoryEvents();
   if (state.tab === 'library') bindLibraryEvents();
   if (state.tab === 'settings') bindSettingsEvents();
+  if (state.tab === 'challenges') bindChallenges(root);
+
+  if (challengeNews?.events.length) {
+    setTimeout(() => {
+      if (state.tab === 'challenges') celebrate(challengeNews.events, challengeNews.before, () => render());
+    }, 350);
+  }
 
   if (state.tab === 'start' && Store.getActive()) {
     startTicking(() => {
@@ -478,7 +493,7 @@ function render() {
 
 function tabTitle() {
   return {
-    start: 'Training', history: 'Verlauf', library: 'Bibliothek', settings: 'Einstellungen',
+    start: 'Training', challenges: 'Challenges', history: 'Verlauf', library: 'Bibliothek', settings: 'Einstellungen',
   }[state.tab];
 }
 
@@ -494,13 +509,16 @@ function tabAction() {
 
 function tabButton(id, icon, label) {
   const active = state.tab === id ? 'active' : '';
-  return `<button class="tab-btn ${active}" data-action="set-tab" data-tab="${id}">
+  // Punkt am Challenges-Tab, solange die neuen Wochen-Challenges ungesehen sind
+  const news = id === 'challenges' && state.tab !== 'challenges' && challengeBadge() ? 'has-news' : '';
+  return `<button class="tab-btn ${active} ${news}" data-action="set-tab" data-tab="${id}">
     <span class="tab-icon">${icon}</span><span class="tab-label">${label}</span>
   </button>`;
 }
 
 function renderTab() {
   if (state.tab === 'start') return renderStart();
+  if (state.tab === 'challenges') return renderChallenges();
   if (state.tab === 'history') return renderHistory();
   if (state.tab === 'library') return renderLibrary();
   if (state.tab === 'settings') return renderSettings();
@@ -1613,6 +1631,11 @@ function bindWorkoutEvents() {
     // Erst die Belohnung, dann der Verlauf: die Zusammenfassung legt sich
     // über den frisch aktualisierten Verlauf.
     setTimeout(() => openFinishSummary(w.id), totalSets ? 380 : 0);
+    // Frisch geknackte Challenge-Stufen gleich im Anschluss feiern
+    setTimeout(() => {
+      const news = checkChallenges();
+      if (news.events.length) celebrate(news.events, news.before);
+    }, totalSets ? 1100 : 300);
   });
   qs('[data-action="add-exercise-to-workout"]').addEventListener('click', openAddExerciseToWorkoutSheet);
   qs('[data-action="reorder-workout"]')?.addEventListener('click', openReorderSheet);
@@ -1698,7 +1721,8 @@ function bindWorkoutEvents() {
     updateWorkoutProgress(w, ei);
     if (set.done) {
       startRest();
-      if (prIndex === si) { Sound.record(); toast('Neuer Rekord 🏆'); } else Sound.setDone();
+      const hint = challengeHintForSet(w.entries[ei].exerciseId, set.weight, set.reps);
+      if (hint) { Sound.unlock(); toast(hint); } else if (prIndex === si) { Sound.record(); toast('Neuer Rekord 🏆'); } else Sound.setDone();
     } else {
       Sound.setUndone();
     }
@@ -3279,6 +3303,7 @@ const CUSTOM_SOUND_ACTIONS = new Set([
   'remove-set', 'remove-exercise', 'toggle-group', 'toggle-exercise', 'set-sound-style',
   'delete-workout', 'delete-exercise', 'delete-routine', 'discard-workout', 'wipe-data',
   'supp-toggle', 'supp-slot-all', 'supp-day-all', 'supp-preset',
+  'ch-attempt', 'ch-accept',
   'mob-quickstart', 'mob-start', 'mob-routine-start', 'mob-single', 'mob-pick', 'opt', 'finish-mobility',
 ]);
 
@@ -3294,7 +3319,7 @@ window.addEventListener('pointermove', (e) => activeSwipeSelector?.onPointerMove
 window.addEventListener('pointerup', () => activeSwipeSelector?.onPointerUp());
 window.addEventListener('pointercancel', () => activeSwipeSelector?.onPointerUp());
 
-const TAB_IDS = ['start', 'history', 'library', 'settings'];
+const TAB_IDS = ['start', 'challenges', 'history', 'library', 'settings'];
 const tabSwipe = createSwipeSelector({
   barSelector: '.tabbar',
   indicatorSelector: '.tab-indicator',
@@ -3342,6 +3367,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 applySettings();
+initChallenges({ openSheet, closeSheet, toast, render, prefersReducedMotion });
 initMobility({
   openSheet, closeSheet, toast, render, enableDragReorder, dropIn, prefersReducedMotion,
 });

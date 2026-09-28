@@ -1,4 +1,4 @@
-const CACHE = 'gym-cache-v3';
+const CACHE = 'gym-cache-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -14,6 +14,8 @@ const ASSETS = [
   './js/fatigue.js',
   './js/sound.js',
   './js/supplements.js',
+  './js/challenges.js',
+  './js/challenges-data.js',
   './js/mobility.js',
   './js/mobility-data.js',
   './js/mobility-figure.js',

@@ -187,6 +187,25 @@ export const Sound = {
     });
   },
 
+  // Challenges: Wiederholung gezählt, Countdown, Stufe freigeschaltet, Level-Up.
+  rep() { withAudio((ac) => { noise(ac, 0, { dur: 0.02, peak: 0.25, freq: 2400 }); pluck(ac, 0, { from: 880, to: 1320, dur: 0.08, peak: 0.26, type: 'triangle' }); }); },
+  beep(high = false) { withAudio((ac) => pluck(ac, 0, { from: high ? 1318 : 659, dur: high ? 0.35 : 0.14, peak: 0.3, type: 'triangle' })); },
+  unlock() {
+    withAudio((ac) => {
+      noise(ac, 0, { dur: 0.05, peak: 0.3, freq: 4200, q: 0.5 });
+      [392, 523, 659, 784].forEach((f, i) => pluck(ac, i * 0.085, { from: f, dur: 0.22, peak: 0.28, type: 'triangle' }));
+      pluck(ac, 0.34, { from: 1047, dur: 0.9, peak: 0.3 });
+      pluck(ac, 0.34, { from: 1568, dur: 0.7, peak: 0.12 });
+      [0.5, 0.62, 0.74].forEach((t, i) => pluck(ac, t, { from: 2093 + i * 300, dur: 0.12, peak: 0.07 }));
+    });
+  },
+  levelUp() {
+    withAudio((ac) => {
+      [523, 659, 784, 1047, 1319].forEach((f, i) => pluck(ac, i * 0.07, { from: f, dur: 0.3, peak: 0.24 }));
+      pluck(ac, 0.36, { from: 1568, dur: 1.0, peak: 0.26 });
+    });
+  },
+
   // Training beendet: auflösender Dur-Dreiklang.
   finish() {
     withAudio((ac) => {
