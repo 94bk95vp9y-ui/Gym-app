@@ -16,6 +16,7 @@ import {
   situationRoutine, customRoutines, saveCustomRoutines, customRoutine, situationSuggestions, regionVolume,
   regionTargets, weekStats, log, counted, sessionRegions, checks, checkDue, checkSelection, prepSeconds,
   mondayOf, startOfDay, weekdayIndex, DAY, nextDeepId,
+  isDeep,
 } from './state.js';
 import { mountFigure, stopFigure, fillThumbs, thumb, mzTheme } from './figures.js';
 
@@ -235,7 +236,7 @@ function renderToday() {
           <button class="mz-btn primary" data-go="main" data-nosound>${Icon.play} ${plan.done ? 'Nochmal' : 'Starten'}</button>
           <button class="mz-btn ghost" data-view="main">Ablauf</button>
         </div>
-        ${plan.alt ? `<button class="mz-link" data-go="alt">Lieber die tägliche Routine · ${mins(routineSeconds(plan.alt.items, prepSeconds()))}</button>` : ''}
+        ${plan.alt ? `<button class="mz-link" data-go="alt">${plan.alt.kind === 'deep' ? `Oder Tiefe Einheit ${plan.alt.letter}` : 'Lieber die tägliche Routine'} · ${mins(routineSeconds(plan.alt.items, prepSeconds()))}</button>` : ''}
       </div>
     </section>
 
@@ -489,7 +490,7 @@ function renderProgress() {
     <div class="mz-sec">Beweglichkeits-Tests ${last ? `<span>${chks.length > 1 ? `seit ${new Date(first.date).toLocaleDateString('de-DE')}` : 'erster Test'}</span>` : ''}</div>
     <section class="mz-card mz-tests">
       ${checkRows || '<p class="mz-empty">Noch kein Test. Mach ihn jetzt und alle vier Wochen wieder – so siehst du schwarz auf weiß, was sich tut.</p>'}
-      <button class="mz-btn ${due.due ? 'primary' : 'soft'} full" data-check>${Icon.chart} ${due.first ? 'Ersten Test machen' : due.due ? 'Test machen – fällig' : `Test wiederholen · nächster in ${CHECK_INTERVAL_DAYS - due.age} Tagen`}</button>
+      <button class="mz-btn ${due.due ? 'primary' : 'soft'} full" data-check>${Icon.chart} ${due.first ? 'Ersten Test machen' : due.due ? 'Test machen – fällig' : `Nächster Test in ${CHECK_INTERVAL_DAYS - due.age} Tagen`}</button>
     </section>
 
     <div class="mz-sec">Verlauf</div>
@@ -497,7 +498,7 @@ function renderProgress() {
       const d = new Date(s.startedAt);
       const regs = Object.entries(sessionRegions(s)).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([r]) => REGION[r]?.short).filter(Boolean);
       return `<div class="mz-card mz-row static">
-        <span class="mz-row-icon ${s.kind === 'deep' ? 'deep' : ''}">${s.kind === 'deep' ? DEEP.find((x) => x.id === s.routineId)?.letter || 'T' : counted(s) ? '✓' : '·'}</span>
+        <span class="mz-row-icon ${isDeep(s) ? 'deep' : ''}">${isDeep(s) ? DEEP.find((x) => x.id === s.routineId)?.letter || 'T' : counted(s) ? '✓' : '·'}</span>
         <span class="mz-row-text"><strong>${escapeHtml(s.name)}</strong><span>${d.getDate()}.${d.getMonth() + 1}. · ${mins(s.seconds || 0)}${regs.length ? ` · ${regs.join(', ')}` : ''}</span></span>
       </div>`;
     }).join('') || '<p class="mz-empty">Noch keine Einheit.</p>'}</div>`;
@@ -596,7 +597,7 @@ export function openExercise(id, back = null) {
       <div><span>Schwerer</span><p>${ex.harder}</p></div>
       ${ex.pnf ? `<div class="pnf"><span>Anspannen-Loslassen</span><p>${ex.pnf}</p></div>` : ''}
     </div>
-    ${ex.harder && exercise(ex.harder) || ex.easier && exercise(ex.easier) ? `<div class="mz-sec small">Varianten</div>${variant(ex.easier, 'Leichtere Stufe')}${variant(ex.harder, 'Nächste Stufe')}` : ''}
+    ${exercise(ex.up) || exercise(ex.down) ? `<div class="mz-sec small">Stufen</div>${variant(ex.down, 'Leichtere Stufe')}${variant(ex.up, 'Nächste Stufe')}` : ''}
     ${usedIn.length ? `<p class="mz-note">Kommt vor in: ${usedIn.map(escapeHtml).join(', ')}</p>` : ''}`, {
     footer: `<button class="mz-btn primary full" data-single data-nosound>${Icon.play} Einzeln üben · ${ex.seconds} s${ex.sides ? ' pro Seite' : ''}</button>`,
     onDismiss: back,
@@ -780,7 +781,7 @@ export function openCheck(step = 0, answers = {}, ids = checkSelection()) {
       <p class="mz-note">Richtwert: ab etwa ${test.good} cm gilt das Sprunggelenk als gut beweglich.</p>`
     : `<div class="mz-options">${test.options.map((o, i) => `<button class="${value === i ? 'on' : ''}" data-opt="${i}"><i></i>${escapeHtml(o)}</button>`).join('')}</div>`;
   sheet(`Test ${step + 1}/${ids.length} · ${test.name}`, `
-    <div class="mz-stage mz-stage-sheet" id="mz-check-stage"></div>
+    <div class="mz-stage mz-stage-sheet mz-stage-check" id="mz-check-stage"></div>
     <p class="mz-why">${test.how}</p>
     <div class="mz-sec small">${test.question}</div>
     ${input}`, {

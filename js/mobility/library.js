@@ -37,22 +37,22 @@ export const KINDS = {
 
 // Einordnung der ursprünglichen Übungen
 const META = {
-  'hip-flexor': { regions: ['hipflex'], kind: 'stretch', harder: 'couch-stretch', feel: 'Vorn an der Hüfte des hinteren Beins', pnf: 'Hinteres Knie sanft in den Boden drücken, als wolltest du es nach vorn ziehen.' },
-  pigeon: { regions: ['hiprot'], kind: 'stretch', easier: 'figure-four', feel: 'Tief im Gesäß des vorderen Beins', pnf: 'Vorderes Knie und Schienbein sanft in den Boden drücken.' },
-  'ninety-switch': { regions: ['hiprot'], kind: 'dynamic', harder: 'ninety-liftoff', feel: 'Rund um beide Hüftgelenke' },
+  'hip-flexor': { regions: ['hipflex'], kind: 'stretch', up: 'couch-stretch', feel: 'Vorn an der Hüfte des hinteren Beins', pnf: 'Hinteres Knie sanft in den Boden drücken, als wolltest du es nach vorn ziehen.' },
+  pigeon: { regions: ['hiprot'], kind: 'stretch', down: 'figure-four', feel: 'Tief im Gesäß des vorderen Beins', pnf: 'Vorderes Knie und Schienbein sanft in den Boden drücken.' },
+  'ninety-switch': { regions: ['hiprot'], kind: 'dynamic', up: 'ninety-liftoff', feel: 'Rund um beide Hüftgelenke' },
   'ninety-hold': { regions: ['hiprot'], kind: 'stretch', feel: 'Gesäß und Außenseite der vorderen Hüfte', pnf: 'Vorderes Schienbein sanft in den Boden drücken.' },
   frog: { regions: ['adductors'], kind: 'stretch', feel: 'Innenseite beider Oberschenkel', pnf: 'Knie sanft in den Boden drücken, als wolltest du sie zusammenziehen.' },
-  'hamstring-supine': { regions: ['hamstrings'], kind: 'stretch', harder: 'half-split', feel: 'Rückseite des Oberschenkels, bis in die Kniekehle', pnf: 'Ferse gegen das Handtuch sanft Richtung Boden drücken.' },
-  'deep-squat': { regions: ['calves', 'adductors'], kind: 'stretch', harder: 'squat-shift', feel: 'Waden, Sprunggelenke und Leiste' },
+  'hamstring-supine': { regions: ['hamstrings'], kind: 'stretch', up: 'half-split', feel: 'Rückseite des Oberschenkels, bis in die Kniekehle', pnf: 'Ferse gegen das Handtuch sanft Richtung Boden drücken.' },
+  'deep-squat': { regions: ['calves', 'adductors'], kind: 'stretch', up: 'squat-shift', feel: 'Waden, Sprunggelenke und Leiste' },
   'calf-wall': { regions: ['calves'], kind: 'stretch', feel: 'Wade des hinteren Beins', pnf: 'Fußballen hinten sanft in den Boden drücken.' },
-  butterfly: { regions: ['adductors'], kind: 'stretch', harder: 'frog', feel: 'Leiste und Innenseite der Oberschenkel', pnf: 'Knie sanft gegen die Hände nach oben drücken.' },
-  straddle: { regions: ['adductors', 'hamstrings'], kind: 'stretch', harder: 'pancake-reach', feel: 'Innenseite und Rückseite der Beine', pnf: 'Fersen sanft in den Boden drücken.' },
+  butterfly: { regions: ['adductors'], kind: 'stretch', up: 'frog', feel: 'Leiste und Innenseite der Oberschenkel', pnf: 'Knie sanft gegen die Hände nach oben drücken.' },
+  straddle: { regions: ['adductors', 'hamstrings'], kind: 'stretch', up: 'pancake-reach', feel: 'Innenseite und Rückseite der Beine', pnf: 'Fersen sanft in den Boden drücken.' },
   'supine-twist': { regions: ['lowback', 'hiprot'], kind: 'stretch', feel: 'Seitlich im Gesäß und unteren Rücken' },
   'worlds-greatest': { regions: ['hipflex', 'tspine'], kind: 'dynamic', feel: 'Hüfte, Leiste und oberer Rücken' },
   cossack: { regions: ['adductors'], kind: 'active', feel: 'Innenseite des gestreckten Beins' },
   'leg-swing': { regions: ['hamstrings', 'hipflex'], kind: 'dynamic', feel: 'Vorder- und Rückseite der Hüfte' },
   'knee-to-wall': { regions: ['calves'], kind: 'dynamic', feel: 'Wade und vorderes Sprunggelenk' },
-  'forward-fold': { regions: ['hamstrings', 'lowback'], kind: 'stretch', harder: 'seated-pike', feel: 'Rückseite der Beine' },
+  'forward-fold': { regions: ['hamstrings', 'lowback'], kind: 'stretch', up: 'seated-pike', feel: 'Rückseite der Beine' },
   'hip-circles': { regions: ['hiprot'], kind: 'dynamic', feel: 'Rund um das Hüftgelenk' },
 };
 
@@ -572,7 +572,7 @@ const EXTRA = [
     mistakes: ['In die Brust atmen und die Schultern heben.'],
     easier: 'Unterschenkel auf einen Stuhl legen.',
     harder: 'Beim Ausatmen die Fersen sanft in die Wand drücken.',
-    cam: { az: 90, el: 20 },
+    cam: { az: 104, el: 20 },
     highlight: ['abdomen'],
     props: [{ type: 'wall', z: 0.5 }],
     loop: 10,
@@ -697,7 +697,7 @@ const EXTRA = [
     easier: 'Oberkörper nach vorn lehnen, Hände auf dem vorderen Knie.',
     harder: 'Ganz aufrecht, die Arme über den Kopf.',
     pnf: 'Hinteren Fuß sanft gegen die Wand drücken.',
-    cam: { az: 90, el: 12 },
+    cam: { az: 68, el: 12 },
     highlight: ['thighL'],
     props: [{ type: 'wall', z: -0.46 }],
     ...HOLD,
@@ -1041,7 +1041,7 @@ const EXTRA = [
     mistakes: ['Das Bein nach vorn drehen oder die Hüfte hochziehen.'],
     easier: 'Weniger hoch, dafür sauber.',
     harder: 'Oben 5 Sekunden halten.',
-    cam: { az: 0, el: 8 },
+    cam: { az: 20, el: 8 },
     highlight: ['thighL'],
     props: [{ type: 'wall', x: -0.56 }],
     mat: { hidden: true },
@@ -1073,7 +1073,7 @@ const EXTRA = [
     easier: 'Kleinerer Schritt.',
     harder: 'Tiefer in die Knie gehen.',
     pnf: 'Hinteren Fußballen sanft in den Boden drücken.',
-    cam: { az: 90, el: 10 },
+    cam: { az: 104, el: 10 },
     highlight: ['shinL'],
     props: [{ type: 'wall', z: 0.62 }],
     mat: { z: 0.0 },
@@ -1198,6 +1198,11 @@ export const EXERCISES = [
   ...EXTRA,
 ];
 const BY_ID = new Map(EXERCISES.map((e) => [e.id, e]));
+// Stufen in beide Richtungen verknüpfen: up = nächste Stufe, down = leichtere
+EXERCISES.forEach((e) => {
+  const next = e.up && BY_ID.get(e.up);
+  if (next && !next.down) next.down = e.id;
+});
 export function exercise(id) { return BY_ID.get(id) || null; }
 
 export function exercisesOfRegion(region) {

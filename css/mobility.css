@@ -301,6 +301,7 @@ button.mz-card > svg:last-child { width: 18px; height: 18px; color: var(--mz-fai
 
 .mz-stage { position: relative; border-radius: 22px; overflow: hidden; background: linear-gradient(180deg, color-mix(in srgb, var(--mz-accent) 12%, var(--mz-card)), var(--mz-card)); }
 .mz-stage-sheet { height: 280px; margin-bottom: 12px; }
+.mz-stage-check { height: 200px; }
 .mz-stage canvas { display: block; }
 .mz-rotate { position: absolute; top: 12px; right: 12px; z-index: 2; display: flex; align-items: center; gap: 4px; padding: 5px 9px; border-radius: 999px; background: color-mix(in srgb, var(--mz-card) 80%, transparent); font-size: 12px; font-weight: 600; color: var(--mz-sub); transition: opacity 0.4s; pointer-events: none; }
 .mz-rotate svg { width: 13px; height: 13px; }

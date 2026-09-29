@@ -120,11 +120,11 @@ function suggestionsFrom(ids, p) {
     const ex = exercise(id);
     if (!ex) return;
     const base = Object.keys(p.levels).find((b) => p.levels[b] === id);
-    if (r.length >= 3 && r.slice(-3).every((v) => v === 1) && ex.harder && exercise(ex.harder)) {
-      out.push({ dir: 'up', base: base || id, from: id, to: ex.harder });
+    if (r.length >= 3 && r.slice(-3).every((v) => v === 1) && exercise(ex.up)) {
+      out.push({ dir: 'up', base: base || id, from: id, to: ex.up });
     } else if (r.length >= 2 && r.slice(-2).every((v) => v === -1)) {
       if (base) out.push({ dir: 'down', base, from: id, to: base });
-      else if (ex.easier && exercise(ex.easier)) out.push({ dir: 'down', base: id, from: id, to: ex.easier });
+      else if (exercise(ex.down)) out.push({ dir: 'down', base: id, from: id, to: ex.down });
     }
   });
   return out;
@@ -215,6 +215,8 @@ export function sessionRegions(s) {
   Object.keys(out).forEach((k) => { out[k] = Math.round(out[k]); });
   return out;
 }
+// Tiefe Einheit – auch die alte eingebaute "deep"-Routine von früher
+export function isDeep(s) { return s.kind === 'deep' || s.routineId === 'deep'; }
 export function counted(s) { return s.completed || (s.seconds || 0) >= COUNT_MIN_SECONDS; }
 export function log() { return Store.getMobilityLog(); }
 
@@ -243,7 +245,7 @@ export function weekStats() {
     const d = new Date(s.startedAt);
     if (d >= monday) {
       days[weekdayIndex(d)] = true;
-      if (s.kind === 'deep') deepDaysDone[weekdayIndex(d)] = true;
+      if (isDeep(s)) deepDaysDone[weekdayIndex(d)] = true;
     }
   });
   const perWeek = new Map();
@@ -296,6 +298,8 @@ export function todayPlan(date = new Date(), p = getProfile()) {
   const deep = deepSuggestion(date, p);
   const daily = dailyRoutine(date, p);
   const stats = weekStats();
+  // Heute schon etwas gemacht: die tägliche Routine vorn, die tiefe Einheit bleibt als Angebot
+  if (deep && stats.today) return { main: daily, alt: deep, deepDay: true, done: true, stats };
   return { main: deep || daily, alt: deep ? daily : null, deepDay: !!deep, done: stats.today, stats };
 }
 
