@@ -16,6 +16,7 @@ const KEYS = {
   mobilityRoutines: 'gym.mobilityRoutines',
   mobilityLog: 'gym.mobilityLog',
   mobilityChecks: 'gym.mobilityChecks',
+  mobilityProfile: 'gym.mobilityProfile',
   challenges: 'gym.challenges',
   // Fight-Modus (Kickboxen & Ausdauer)
   fightProfile: 'gym.fightProfile',
@@ -159,7 +160,7 @@ export function validateBackup(data) {
   }
   if ('settings' in data && (typeof data.settings !== 'object' || Array.isArray(data.settings))) return 'Die Einstellungen in der Sicherung sind beschädigt.';
   if (data.challenges && (typeof data.challenges !== 'object' || Array.isArray(data.challenges))) return 'Die Challenges in der Sicherung sind beschädigt.';
-  const objects = ['fightProfile', 'fightProgress', 'fightPlan'];
+  const objects = ['fightProfile', 'fightProgress', 'fightPlan', 'mobilityProfile'];
   if (objects.some((k) => data[k] && (typeof data[k] !== 'object' || Array.isArray(data[k])))) return 'Die Kampfsport-Daten in der Sicherung sind beschädigt.';
   if ((data.runs || []).some((r) => !r || typeof r.at !== 'string' || !(r.seconds >= 0))) return 'Die Läufe in der Sicherung sind beschädigt.';
   if ((data.fightLog || []).some((f) => !f || typeof f.at !== 'string' || typeof f.type !== 'string')) return 'Die Kampfsport-Einheiten in der Sicherung sind beschädigt.';
@@ -316,6 +317,16 @@ export const Store = {
   addMobilityCheck(check) {
     write(KEYS.mobilityChecks, [...Store.getMobilityChecks(), check]);
   },
+  saveMobilityLog(list) {
+    write(KEYS.mobilityLog, list);
+  },
+  // Ziele, Zeitbudget, tiefe Einheiten, Bewertungen und gewählte Varianten
+  getMobilityProfile() {
+    return read(KEYS.mobilityProfile, null);
+  },
+  saveMobilityProfile(value) {
+    write(KEYS.mobilityProfile, value);
+  },
 
   // Challenges: aktive Challenges, Fortschritt je Challenge, XP-Verlauf,
   // Wochen-Challenges und eigene Challenges – alles in einem Objekt.
@@ -383,6 +394,7 @@ export const Store = {
       mobilityRoutines: Store.getMobilityRoutines(),
       mobilityLog: Store.getMobilityLog(),
       mobilityChecks: Store.getMobilityChecks(),
+      mobilityProfile: Store.getMobilityProfile(),
       challenges: Store.getChallengeState(),
       fightProfile: Store.getFightProfile(),
       fightProgress: Store.getFightProgress(),
@@ -405,6 +417,7 @@ export const Store = {
     if (Array.isArray(data.mobilityRoutines)) write(KEYS.mobilityRoutines, data.mobilityRoutines);
     if (data.mobilityLog) write(KEYS.mobilityLog, data.mobilityLog);
     if (data.mobilityChecks) write(KEYS.mobilityChecks, data.mobilityChecks);
+    if (data.mobilityProfile && typeof data.mobilityProfile === 'object' && !Array.isArray(data.mobilityProfile)) write(KEYS.mobilityProfile, data.mobilityProfile);
     if (data.challenges && typeof data.challenges === 'object') write(KEYS.challenges, data.challenges);
     ['fightProfile', 'fightProgress', 'fightPlan'].forEach((k) => {
       if (data[k] && typeof data[k] === 'object') write(KEYS[k], data[k]);

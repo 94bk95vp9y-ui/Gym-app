@@ -330,9 +330,11 @@ export class FigureStage {
     });
   }
 
-  applyTheme() {
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const accent = new THREE.Color(cssColor('--accent', '#ff5a36'));
+  // accent/dark überschreiben die App-Farben (Mobility-Bereich: eigenes Grün,
+  // im Fight-Modus immer dunkel)
+  applyTheme({ accent: accentOverride = null, dark: darkOverride = null } = {}) {
+    const dark = darkOverride ?? window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const accent = new THREE.Color(accentOverride || cssColor('--accent', '#ff5a36'));
     this.bodyMaterial.color.set(dark ? 0xd2ccc5 : 0xebe6e0);
     this.hiMaterial.color.copy(accent);
     this.hiMaterial.emissive.copy(accent);
@@ -358,7 +360,8 @@ export class FigureStage {
     this.walls = (ex.props || []).filter((p) => p.type === 'wall').map((p) => {
       const w = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.3), this.wallMaterial);
       w.receiveShadow = true;
-      if (p.z !== undefined) { w.position.set(0, 1.15, p.z); w.rotation.y = Math.PI; }
+      // Wand vor der Figur schaut zu ihr zurück, Wand hinter ihr nach vorn
+      if (p.z !== undefined) { w.position.set(0, 1.15, p.z); w.rotation.y = p.z > 0 ? Math.PI : 0; }
       if (p.x !== undefined) {
         const x = side === 'R' ? -p.x : p.x;
         w.position.set(x, 1.15, 0);

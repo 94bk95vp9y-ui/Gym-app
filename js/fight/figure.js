@@ -33,7 +33,7 @@ export const LOOKS = {
 };
 
 // Vollbild-Ebenen, hinter denen eine Szene nicht weiterlaufen muss
-const OVERLAYS = '.fp, .rx, .cc, .vc, .bc, .rp, .tv, .cel, .att';
+const OVERLAYS = '.fp, .rx, .cc, .vc, .bc, .rp, .tv, .cel, .att, .mz, .mzp';
 
 // Welche Teile zur Hose gehören (Oberschenkel samt Becken)
 const SHORTS = new Set(['pelvis', 'thighL', 'thighR', 'hipBallL', 'hipBallR']);

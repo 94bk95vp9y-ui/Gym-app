@@ -2291,7 +2291,7 @@ function openFinishSummary(id) {
         ${Icon.chevron}
       </button>` : ''}
     ${offerMobility ? `<button class="list-item selectable finish-supps finish-mobility" data-action="finish-mobility">
-        <div class="list-item-main"><strong>${Icon.mobility} 5 Min Mobility dranhängen</strong><span class="muted">Die Muskeln sind warm – der beste Moment zum Dehnen</span></div>
+        <div class="list-item-main"><strong>${Icon.mobility} Mobility dranhängen</strong><span class="muted">Passend zum Training – die Muskeln sind warm, der beste Moment zum Dehnen</span></div>
         ${Icon.play}
       </button>` : ''}
   `, {
@@ -2300,7 +2300,7 @@ function openFinishSummary(id) {
       qs('[data-action="finish-open-supps"]')?.addEventListener('click', () => openSupplementSheet());
       qs('[data-action="finish-mobility"]')?.addEventListener('click', () => {
         closeSheet();
-        startMobilityRoutine('quick');
+        startMobilityRoutine('after-workout');
       });
       if (!prefersReducedMotion()) {
         qs('.finish-badge')?.classList.add('pop');
@@ -2778,7 +2778,7 @@ function renderSettings() {
             </div>` : ''}
         </div>
         ${toggleRow('toggle-supplements', 'Supplements', 'Tägliches Abhaken auf der Startseite, mit Serie und Kalender-Erinnerung.', settings.supplements)}
-        ${toggleRow('toggle-mobility', 'Mobility', 'Geführte Beweglichkeits-Routinen für Hüfte und Beine – dezent unten auf der Startseite.', settings.mobility)}
+        ${toggleRow('toggle-mobility', 'Mobility', 'Eigener Bereich mit täglicher Routine, Zielen und 3D-Übungen – die Karte liegt unten auf der Startseite.', settings.mobility)}
       </div>
     </section>
 

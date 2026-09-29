@@ -141,7 +141,7 @@ export async function runPlan(action) {
       break;
     }
     case 'mobility':
-      fx.ctx.startMobilityRoutine('quick');
+      fx.ctx.startMobilityRoutine('today');
       break;
     default:
       break;

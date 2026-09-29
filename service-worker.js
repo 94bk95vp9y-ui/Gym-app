@@ -1,10 +1,11 @@
-const CACHE = 'gym-cache-v7';
+const CACHE = 'gym-cache-v8';
 const ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
   './css/styles.css',
   './css/fight.css',
+  './css/mobility.css',
   './fonts/barlow-condensed-600.woff2',
   './fonts/barlow-condensed-700.woff2',
   './fonts/barlow-condensed-800.woff2',
@@ -23,6 +24,12 @@ const ASSETS = [
   './js/mobility.js',
   './js/mobility-data.js',
   './js/mobility-figure.js',
+  './js/mobility/library.js',
+  './js/mobility/plans.js',
+  './js/mobility/state.js',
+  './js/mobility/figures.js',
+  './js/mobility/area.js',
+  './js/mobility/player.js',
   // 3D für Mobility – vorab gespeichert, damit es auch ohne Netz im Gym läuft
   './js/vendor/three.module.min.js',
   // Fight-Modus (Kickboxen & Ausdauer) – die Kamera-Erkennung (18 MB) wird
