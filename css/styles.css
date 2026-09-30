@@ -218,69 +218,6 @@ button, input, select, textarea {
    oberhalb des Home-Indikators enden lässt, und einmal durch das eigene
    bottom. Ist der Wert 0 (Seite reicht bis ganz unten), bleibt nur der
    gewollte Designabstand stehen. */
-.tabbar-wrap {
-  position: fixed;
-  inset: auto 0 0 0;
-  padding: 0 var(--tabbar-margin) calc(var(--tabbar-gap) + var(--safe-bottom));
-  z-index: 10;
-  pointer-events: none; /* neben der Pille bleibt der Inhalt bedienbar */
-}
-
-.tabbar {
-  display: flex;
-  position: relative;
-  pointer-events: auto;
-  height: var(--tabbar-height);
-  padding: 0 6px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-md);
-  touch-action: none;
-  -webkit-touch-callout: none;
-  user-select: none;
-}
-
-.tab-indicator {
-  position: absolute;
-  top: 7px;
-  bottom: 7px;
-  left: 6px;
-  width: calc((100% - 12px) / 5);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  transition: transform 0.35s cubic-bezier(0.34, 1.3, 0.4, 1);
-  z-index: 0;
-  pointer-events: none;
-}
-.tabbar:has(.tab-btn:nth-child(1).active) .tab-indicator { transform: translateX(0); }
-.tabbar:has(.tab-btn:nth-child(2).active) .tab-indicator { transform: translateX(100%); }
-.tabbar:has(.tab-btn:nth-child(3).active) .tab-indicator { transform: translateX(200%); }
-.tabbar:has(.tab-btn:nth-child(4).active) .tab-indicator { transform: translateX(300%); }
-.tabbar:has(.tab-btn:nth-child(5).active) .tab-indicator { transform: translateX(400%); }
-
-.tab-btn {
-  position: relative;
-  z-index: 2;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  font-size: 10.5px;
-  padding: 6px 0 2px;
-}
-
-.tab-btn .tab-icon svg { width: 23px; height: 23px; transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.2s; }
-.tab-btn { transition: color 0.2s; }
-.tab-btn.active { color: var(--accent); }
-.tab-btn.active .tab-icon svg { transform: translateY(-1px) scale(1.1); }
-.tab-btn:active .tab-icon svg { transform: scale(0.88); transition-duration: 0.12s; }
 
 /* Karten & Listen */
 .card {
@@ -548,12 +485,7 @@ button, input, select, textarea {
 .toggle input:checked + .toggle-track::before { transform: translateX(20px); }
 
 /* Aktives Training-Karte */
-.active-card {
-  background: color-mix(in srgb, var(--accent) 7%, var(--bg-elevated));
-  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
-}
-.active-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-.active-card h3 { margin: 4px 0 2px; font-size: 18px; }
+
 .pill {
   display: inline-flex;
   align-items: center;
@@ -565,26 +497,11 @@ button, input, select, textarea {
   color: var(--text-secondary);
 }
 .pill-chosen { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
-.pill-live { background: var(--accent); color: var(--accent-contrast); }
+
 .pill-done { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
 .list-item-main strong .pill { vertical-align: 2px; margin-left: 6px; }
 .plan-next { background: color-mix(in srgb, var(--accent) 5%, transparent); }
-.active-progress {
-  height: 4px;
-  margin: 10px 0 2px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-}
-.active-progress > span { display: block; height: 100%; background: var(--accent); transform-origin: left center; }
-.pill-live::before {
-  content: "";
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  margin-right: 5px;
-  animation: pulse 1.4s infinite;
-}
+
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 .elapsed { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent); }
 
@@ -1478,15 +1395,9 @@ select.text-input { appearance: none; -webkit-appearance: none; }
    Abschnitte */
 .start-group { display: flex; flex-direction: column; gap: 10px; }
 .start-group > .section-title { margin-bottom: -2px; }
-.hero-card {
-  padding: 16px;
-  background: color-mix(in srgb, var(--accent) 6%, var(--bg-elevated));
-  border-color: color-mix(in srgb, var(--accent) 26%, var(--border));
-}
+
 .hero-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.hero-card h2 { margin: 10px 0 4px; font-size: 26px; font-weight: 800; letter-spacing: -0.4px; line-height: 1.15; }
-.hero-preview { margin: 0 0 14px; font-size: 13.5px; line-height: 1.45; color: var(--text-secondary); }
-.hero-card .btn svg { width: 16px; height: 16px; }
+
 .start-blank-row { gap: 12px; }
 .start-blank-row .list-item-main { flex: 1; }
 .start-blank-icon {
@@ -1497,21 +1408,8 @@ select.text-input { appearance: none; -webkit-appearance: none; }
   background: var(--bg-input);
 }
 .list-item .start-blank-icon svg { width: 16px; height: 16px; color: var(--text); }
-.hero-preview { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* ================= Challenges ================= */
-.tab-btn { font-size: 10px; }
-.tab-btn .tab-label { white-space: nowrap; letter-spacing: -0.1px; }
-.tab-btn.has-news .tab-icon { position: relative; }
-.tab-btn.has-news .tab-icon::after {
-  content: "";
-  position: absolute;
-  top: -1px; right: -3px;
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  background: var(--danger);
-  box-shadow: 0 0 0 2px var(--bg-elevated);
-}
 
 /* Medaillen: fünf Stufen mit eigenem Material */
 :root {

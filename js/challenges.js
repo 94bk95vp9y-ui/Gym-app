@@ -361,6 +361,20 @@ export function athleteLevel() {
   return levelInfo(totalXp(load()));
 }
 
+// Kurzstand der Wochen-Challenges für „Heute“
+export function weeklyStatus() {
+  const s = load();
+  const { items, week } = weekly(s);
+  save(s);
+  return {
+    done: items.filter((it) => it.done).length,
+    total: items.length,
+    sweep: !!week.sweep,
+    daysLeft: 7 - ((new Date().getDay() + 6) % 7),
+    ratio: items.reduce((n, it) => n + Math.min(1, it.value / it.target), 0) / Math.max(1, items.length),
+  };
+}
+
 // Für die Startseite/den Tab: gibt es diese Woche etwas Neues?
 export function challengeBadge() {
   const s = load();
@@ -456,7 +470,7 @@ function suggestions(s, count = 3) {
 }
 
 // ---------- Tab ----------
-export function renderChallenges() {
+export function renderChallenges({ afterHero = '' } = {}) {
   const s = load();
   const xp = totalXp(s);
   const lvl = levelInfo(xp);
@@ -535,6 +549,7 @@ export function renderChallenges() {
         <div class="ch-medal-row">${medalsByTier.map((n, i) => `<span class="ch-medal-count">${medal(i, { size: 'xs' })}${n}</span>`).join('')}</div>
       </div>
     </section>
+    ${afterHero}
 
     <section>
       <div class="section-title ch-section-head">Deine Challenges <span>${s.active.length}/${MAX_ACTIVE}</span></div>
@@ -586,7 +601,7 @@ export function bindChallenges(root) {
   // Wochen gesehen – der Punkt am Tab verschwindet
   const s = load();
   const key = keyOf(monday());
-  if (s.seenWeek !== key) { s.seenWeek = key; save(s); qs('.tab-btn[data-tab="challenges"]')?.classList.remove('has-news'); }
+  if (s.seenWeek !== key) { s.seenWeek = key; save(s); qs('[data-gtab="profile"]')?.classList.remove('has-news'); }
 }
 
 // Beim Öffnen des Tabs: Neues aus den Trainings abgleichen und feiern.

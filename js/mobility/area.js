@@ -1,6 +1,6 @@
-// Mobility-Bereich: eigene Seite über der App (Gym oder Fight) mit Zurück,
-// vier Bereichen – Heute, Pläne, Übungen, Fortschritt – und eigenem, ruhigem
-// Design.
+// Mobility-Bereich mit vier Ansichten – Übersicht, Pläne, Übungen,
+// Fortschritt – und eigenem, ruhigem Design. Im Gym-Modus ein Tab der App,
+// im Fight-Modus eine eigene Seite über der App.
 
 import { Store, uid } from '../storage.js';
 import { Icon } from '../icons.js';
@@ -42,8 +42,18 @@ let startRoutine = null; // wird vom Player gesetzt (vermeidet Zyklus)
 export function setStarter(fn) { startRoutine = fn; }
 
 // ---------- Öffnen & Schließen ----------
+// Zwei Wege hinein: im Gym-Modus ist Mobility ein Tab der App (eingebettet,
+// die App liefert Kopfzeile und Umschalter). Im Fight-Modus öffnet sich der
+// Bereich als eigene Seite über der App – mit demselben Umschalter oben.
+export const AREA_TABS = TABS.map((t) => ({ id: t.id, label: t.id === 'today' ? 'Übersicht' : t.label }));
+
+export function segHtml(active, attr = 'data-mzseg') {
+  const i = Math.max(0, AREA_TABS.findIndex((t) => t.id === active));
+  return `<div class="g-seg" style="--n:${AREA_TABS.length};--i:${i}">${AREA_TABS.map((t) => `<button ${attr}="${t.id}" class="${t.id === active ? 'active' : ''}">${t.label}</button>`).join('')}<span class="g-seg-thumb" aria-hidden="true"></span></div>`;
+}
+
 export function openArea({ tab = 'today', focus = null } = {}) {
-  if (A) { A.tab = tab; paint(); return; }
+  if (A && !A.embedded) { showTab(tab); if (focus === 'check') openCheck(); return; }
   const el = document.createElement('div');
   el.className = 'mz';
   el.innerHTML = `
@@ -52,20 +62,29 @@ export function openArea({ tab = 'today', focus = null } = {}) {
       <div class="mz-brand"><span class="mz-leaf">${Icon.leaf}</span><strong>Mobility</strong></div>
       <button class="mz-round" data-mz="settings" aria-label="Einstellungen">${Icon.sliders}</button>
     </header>
-    <main class="mz-view"></main>
-    <nav class="mz-nav">${TABS.map((t) => `<button data-tab="${t.id}" aria-label="${t.label}">${t.icon}<span>${t.label}</span></button>`).join('')}</nav>`;
+    <div class="mz-segbar"></div>
+    <main class="mz-view"></main>`;
   document.body.appendChild(el);
   A = { el, tab, scroll: {} };
   requestAnimationFrame(() => el.classList.add('open'));
   qs('[data-mz="back"]', el).addEventListener('click', closeArea);
   qs('[data-mz="settings"]', el).addEventListener('click', openSettings);
-  qsa('.mz-nav [data-tab]', el).forEach((b) => b.addEventListener('click', () => goTab(b.dataset.tab)));
   paint();
   if (focus === 'check') openCheck();
 }
 
+// Im Gym-Modus: Inhalt in den Tab der App zeichnen
+export function mountEmbedded(container, tab = 'today') {
+  stopFigure('hero');
+  A = { el: container, tab, scroll: {}, embedded: true };
+  paint();
+}
+export function unmountEmbedded() {
+  if (A?.embedded) { stopFigure('hero'); A = null; }
+}
+
 export function closeArea() {
-  if (!A) return;
+  if (!A || A.embedded) return;
   const { el } = A;
   stopFigure('hero');
   A = null;
@@ -75,11 +94,20 @@ export function closeArea() {
   ctx.render();
 }
 
-export function isAreaOpen() { return !!A; }
+export function isAreaOpen() { return !!A && !A.embedded; }
 export function refreshArea() { if (A) paint(); }
+export function openMobilitySettings() { openSettings(); }
+
+// Wechsel zwischen Übersicht, Plänen, Übungen, Fortschritt
+function showTab(id) {
+  if (!A) return;
+  if (A.embedded) { ctx.setMobilityTab?.(id); return; }
+  goTab(id);
+}
 
 function goTab(id) {
   if (!A) return;
+  if (A.embedded) { showTab(id); return; }
   const view = qs('.mz-view', A.el);
   if (A.tab === id) { view.scrollTo({ top: 0, behavior: 'smooth' }); return; }
   A.scroll[A.tab] = view.scrollTop;
@@ -89,8 +117,12 @@ function goTab(id) {
 }
 
 function paint() {
-  const view = qs('.mz-view', A.el);
-  qsa('.mz-nav [data-tab]', A.el).forEach((b) => b.classList.toggle('on', b.dataset.tab === A.tab));
+  const view = A.embedded ? A.el : qs('.mz-view', A.el);
+  if (!A.embedded) {
+    const bar = qs('.mz-segbar', A.el);
+    bar.innerHTML = segHtml(A.tab);
+    qsa('[data-mzseg]', bar).forEach((b) => b.addEventListener('click', () => goTab(b.dataset.mzseg)));
+  }
   stopFigure('hero');
   const html = { today: renderToday, plans: renderPlans, library: renderLibrary, progress: renderProgress }[A.tab]();
   view.innerHTML = `<div class="mz-page mz-page-${A.tab}">${html}</div>`;
@@ -302,7 +334,7 @@ function bindToday(view) {
   }));
   qsa('[data-sit]', view).forEach((b) => b.addEventListener('click', () => openRoutine(situationRoutine(b.dataset.sit))));
   qsa('[data-prog]', view).forEach((b) => b.addEventListener('click', () => openProgram(b.dataset.prog)));
-  qsa('[data-tabgo]', view).forEach((b) => b.addEventListener('click', () => goTab(b.dataset.tabgo)));
+  qsa('[data-tabgo]', view).forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tabgo)));
   qs('[data-check]', view)?.addEventListener('click', () => openCheck());
   if (!plan.done) {
     // Für die Startkarte eine Übung ohne Wand oder Gurt – wirkt ruhiger
@@ -741,7 +773,7 @@ function openSettings() {
     <div class="mz-set"><strong>Vorbereitung vor jeder Übung</strong>${seg('mobilityPrep', [5, 10, 15], s.mobilityPrep, (v) => `${v} s`)}</div>
     <div class="mz-set row"><div><strong>Sprachansage</strong><span>Übung, Seitenwechsel, Atmung und Anspannen-Loslassen.</span></div>
       <label class="toggle"><input type="checkbox" id="mz-voice" ${s.mobilityVoice ? 'checked' : ''}/><span class="toggle-track"></span></label></div>
-    <div class="mz-set row"><div><strong>Karte auf der Startseite</strong><span>Mobility-Karte im Gym- und Fight-Modus.</span></div>
+    <div class="mz-set row"><div><strong>Karte auf „Heute“</strong><span>Mobility-Karte auf der Startseite im Gym- und Fight-Modus.</span></div>
       <label class="toggle"><input type="checkbox" id="mz-card" ${s.mobility ? 'checked' : ''}/><span class="toggle-track"></span></label></div>`, {
     onMount: (root) => {
       qsa('[data-seg]', root).forEach((sg) => qsa('button', sg).forEach((b) => b.addEventListener('click', () => {
@@ -807,7 +839,7 @@ export function openCheck(step = 0, answers = {}, ids = checkSelection()) {
         Sound.record();
         ctx.closeSheet();
         ctx.toast('Test gespeichert');
-        if (A) { A.tab = 'progress'; paint(); }
+        if (A) { if (A.embedded) showTab('progress'); else { A.tab = 'progress'; paint(); } }
       });
     },
   });

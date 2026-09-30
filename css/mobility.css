@@ -1,7 +1,7 @@
 /* Mobility-Bereich: eigene, ruhige Welt über Gym und Fight.
    Salbeigrün, weiche Flächen, abgerundete Schrift, viel Luft. */
 
-.mz, .mz-sheet, .mzp, .mz-entry {
+.mz, .mz-sheet, .mzp, .mz-entry, .g-app[data-tab="mobility"] {
   --mz-bg: #f1f5f3;
   --mz-bg2: #e6eeea;
   --mz-card: #ffffff;
@@ -19,7 +19,7 @@
   --mz-font: ui-rounded, 'SF Pro Rounded', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 @media (prefers-color-scheme: dark) {
-  .mz, .mz-sheet, .mzp, .mz-entry {
+  .mz, .mz-sheet, .mzp, .mz-entry, .g-app[data-tab="mobility"] {
     --mz-bg: #0d1311;
     --mz-bg2: #121a17;
     --mz-card: #17201c;
@@ -88,16 +88,25 @@ html[data-mode="fight"] .mz, html[data-mode="fight"] .mz-sheet, html[data-mode="
 .mz-page { padding: 6px 16px calc(var(--safe-bottom) + 108px); display: flex; flex-direction: column; gap: 12px; animation: mz-in 0.35s ease both; }
 @keyframes mz-in { from { opacity: 0; transform: translateY(8px); } }
 
-.mz-nav {
-  position: absolute; left: 14px; right: 14px; bottom: calc(var(--safe-bottom) + 10px); z-index: 3;
-  display: flex; padding: 6px; gap: 4px; border-radius: 24px;
-  background: color-mix(in srgb, var(--mz-card) 86%, transparent);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
-  box-shadow: 0 10px 30px rgba(10, 30, 22, 0.16), inset 0 0 0 1px var(--mz-line);
-}
-.mz-nav button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 7px 2px 6px; border: none; border-radius: 18px; background: none; color: var(--mz-faint); font-size: 11px; font-weight: 600; transition: background 0.25s, color 0.25s; }
-.mz-nav button svg { width: 22px; height: 22px; }
-.mz-nav button.on { background: var(--mz-soft); color: var(--mz-accent); }
+/* Umschalter oben (Fight-Modus: Seite über der App) */
+.mz-segbar { position: relative; z-index: 2; padding: 2px 16px 10px; }
+.mz .mz-page { padding-bottom: calc(var(--safe-bottom) + 40px); }
+.mz .g-seg, .g-app[data-tab="mobility"] .g-seg { background: color-mix(in srgb, var(--mz-ink) 7%, transparent); }
+.mz .g-seg button, .g-app[data-tab="mobility"] .g-seg button { color: var(--mz-sub); }
+.mz .g-seg button.active, .g-app[data-tab="mobility"] .g-seg button.active { color: var(--mz-ink); }
+.mz .g-seg-thumb, .g-app[data-tab="mobility"] .g-seg-thumb { background: var(--mz-card); }
+
+/* Gym-Modus: Mobility als Tab der App */
+.g-app[data-tab="mobility"] { --g-page: var(--mz-bg); color: var(--mz-ink); }
+.g-app[data-tab="mobility"]::before { background: radial-gradient(110% 90% at 85% -5%, color-mix(in srgb, var(--mz-accent) 20%, transparent), transparent 64%); }
+.g-app[data-tab="mobility"] .g-icon-btn { color: var(--mz-accent); background: var(--mz-card); }
+.g-app[data-tab="mobility"] .g-dock { background: color-mix(in srgb, var(--mz-card) 90%, transparent); }
+.g-app .view.mz-host { display: block; padding: 0; }
+.mz-embed .mz-page { padding: 4px 16px calc(var(--dock-h) + var(--safe-bottom) + 44px); }
+.g-app.has-live .mz-embed .mz-page { padding-bottom: calc(var(--dock-h) + var(--safe-bottom) + 108px); }
+.mz-embed .mz-title h1 { display: none; }
+.mz-embed .mz-title p { margin-top: 0; }
+.mz-embed { color: var(--mz-ink); }
 
 /* ---------- Bausteine ---------- */
 .mz-card { position: relative; background: var(--mz-card); border-radius: 22px; padding: 16px; box-shadow: var(--mz-shadow); border: none; color: inherit; text-align: left; width: 100%; }

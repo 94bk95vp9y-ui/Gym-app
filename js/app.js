@@ -8,10 +8,16 @@ import { Sound, setSoundEnabled, setSoundVolume, setSoundStyle, SOUND_STYLES } f
 import { fatigueOf, muscleGroupLookup } from './fatigue.js';
 import {
   initChallenges, renderChallenges, bindChallenges, checkChallenges, celebrate, challengeHintForSet, challengeBadge,
+  athleteLevel, weeklyStatus, activeChallenges, openChallengeDetail, openChallengeCatalog,
 } from './challenges.js';
 import {
   initMobility, renderMobilityCard, bindMobilityCard, startMobilityRoutine, mobilityDoneToday,
+  renderMobilityToday, bindMobilityToday, afterWorkoutRoutine, routineMinutes, mountEmbedded, unmountEmbedded,
+  openMobilitySettings, openCheck as openMobilityCheck, AREA_TABS, todayPlan as mobilityTodayPlan, weekStats as mobilityWeekStats,
 } from './mobility.js';
+import {
+  muscleMap, weeklySets, setShade, planGroups, MAP_GROUPS, SET_TARGET_MIN, SET_TARGET_MAX,
+} from './gym/muscles.js';
 import {
   SLOTS, SUPPLEMENT_PRESETS, REMINDER_TIMES, dayKey, shiftDay, dateOfKey, currentSlot,
   activeOn, dayStatus, streak, adherence, reminderFile,
@@ -27,10 +33,10 @@ const sheetRoot = document.getElementById('sheet-root');
 const toastRoot = document.getElementById('toast-root');
 
 const state = {
-  tab: 'start',
-  librarySubTab: 'exercises',
-  historySubTab: 'log',
-  progressExerciseId: null,
+  tab: 'today',
+  trainingSub: 'overview',
+  mobilitySub: 'today',
+  profilePage: null,
   workoutOpen: false,
   workoutAddExerciseQuery: '',
   calendarYear: new Date().getFullYear(),
@@ -417,13 +423,32 @@ let workoutEntering = false;
 // Datenänderung), nicht bei echter Navigation zu einer anderen Ansicht.
 let lastRenderKey = null;
 
+// ---------- Gerüst: vier Tabs und Start-Knopf in der Mitte ----------
+// Gleicher Aufbau wie im Fight-Modus: Heute | Training | ▶ | Mobility | Profil.
+// Training und Mobility sind die zwei Säulen und gleich gegliedert
+// (Übersicht · Pläne · Übungen · Fortschritt), Profil sammelt alles über dich.
+const GYM_TABS = [
+  { id: 'today', label: 'Heute', icon: 'home' },
+  { id: 'training', label: 'Training', icon: 'dumbbell' },
+  { id: 'mobility', label: 'Mobility', icon: 'leaf' },
+  { id: 'profile', label: 'Profil', icon: 'user' },
+];
+const TRAINING_SUBS = [
+  { id: 'overview', label: 'Übersicht' },
+  { id: 'plans', label: 'Pläne' },
+  { id: 'exercises', label: 'Übungen' },
+  { id: 'progress', label: 'Fortschritt' },
+];
+const PROFILE_PAGES = { training: 'Training', look: 'Darstellung & Töne', data: 'Daten & Sicherung' };
+
 // Position des aktuellen Screens auf einer gedachten Achse (Tab + Unter-Tab).
 // Daraus ergibt sich, ob ein Wechsel nach links oder rechts geht – der Inhalt
 // gleitet dann aus der passenden Richtung herein.
 function screenPosition() {
-  const base = TAB_IDS.indexOf(state.tab);
-  if (state.tab === 'history') return base + (state.historySubTab === 'progress' ? 0.5 : 0);
-  if (state.tab === 'library') return base + (state.librarySubTab === 'routines' ? 0.5 : 0);
+  const base = GYM_TABS.findIndex((t) => t.id === state.tab);
+  if (state.tab === 'training') return base + TRAINING_SUBS.findIndex((s) => s.id === state.trainingSub) * 0.2;
+  if (state.tab === 'mobility') return base + AREA_TABS.findIndex((s) => s.id === state.mobilitySub) * 0.2;
+  if (state.tab === 'profile' && state.profilePage) return base + 0.5;
   return base;
 }
 let lastScreenPosition = null;
@@ -435,6 +460,7 @@ function render() {
   renderedDay = dayKey();
   if (isFightMode()) {
     releaseWakeLock();
+    unmountEmbedded();
     if (fightModule) fightModule.renderFight(root);
     else {
       root.innerHTML = '<div class="f-boot"></div>';
@@ -447,13 +473,14 @@ function render() {
     }
     return;
   }
-  const key = `${state.tab}:${state.workoutOpen}:${state.historySubTab}:${state.librarySubTab}`;
+  const key = `${state.tab}:${state.workoutOpen}:${state.trainingSub}:${state.mobilitySub}:${state.profilePage}`;
   const prevView = qs('.view');
   const scrollTop = key === lastRenderKey && prevView ? prevView.scrollTop : 0;
   const screenChanged = key !== lastRenderKey;
   lastRenderKey = key;
 
   if (state.workoutOpen && Store.getActive()) {
+    unmountEmbedded();
     root.innerHTML = renderWorkout();
     workoutEntering = false;
     bindWorkoutEvents();
@@ -472,92 +499,204 @@ function render() {
   state.workoutOpen = false;
   releaseWakeLock(); // außerhalb des Trainings darf sich das iPhone wieder sperren
 
-  // Challenges zuerst mit den Trainings abgleichen, damit der Tab den
+  // Challenges zuerst mit den Trainings abgleichen, damit das Profil den
   // aktuellen Stand zeigt – Neues wird danach gefeiert.
-  const challengeNews = state.tab === 'challenges' && !isSwipeDragging ? checkChallenges() : null;
+  const challengeNews = state.tab === 'profile' && !state.profilePage && !isSwipeDragging ? checkChallenges() : null;
+  if (state.tab !== 'mobility') unmountEmbedded();
 
+  const active = Store.getActive();
   root.innerHTML = `
-    <header class="topbar">
-      <h1>${tabTitle()}</h1>
-      <div class="topbar-actions">
-        ${tabAction()}
-        <button class="mode-btn" data-action="mode-fight" aria-label="Zum Fight-Modus: Kickboxen und Ausdauer">${Icon.glove}<span>Fight</span></button>
-      </div>
-    </header>
-    <main class="view">${renderTab()}</main>
-    <div class="tabbar-wrap">
-      <nav class="tabbar">
-        ${tabButton('start', Icon.home, 'Start')}
-        ${tabButton('challenges', Icon.trophy, 'Challenges')}
-        ${tabButton('history', Icon.history, 'Verlauf')}
-        ${tabButton('library', Icon.library, 'Bibliothek')}
-        ${tabButton('settings', Icon.settings, 'Einstellungen')}
-        <span class="tab-indicator" aria-hidden="true"></span>
-      </nav>
+    <div class="g-app ${active && state.tab !== 'today' ? 'has-live' : ''}" data-tab="${state.tab}">
+      ${headerHtml()}
+      <main class="view ${state.tab === 'mobility' ? 'mz-host' : ''}">${renderTab()}</main>
+      ${active && state.tab !== 'today' ? liveBarHtml(active) : ''}
+      ${dockHtml(active)}
     </div>`;
   const newView = qs('.view');
+  if (state.tab === 'mobility') mountEmbedded(qs('#mz-embed'), state.mobilitySub);
   if (newView) {
     newView.scrollTop = scrollTop;
     if (screenChanged) animateScreenIn(newView);
+    const app = qs('.g-app');
+    const edge = () => app.classList.toggle('scrolled', newView.scrollTop > 6);
+    edge();
+    newView.addEventListener('scroll', edge, { passive: true });
   }
 
   bindGlobalEvents();
-  if (state.tab === 'start') bindStartEvents();
-  if (state.tab === 'history') bindHistoryEvents();
-  if (state.tab === 'library') bindLibraryEvents();
-  if (state.tab === 'settings') bindSettingsEvents();
-  if (state.tab === 'challenges') bindChallenges(root);
+  if (state.tab === 'today') bindTodayEvents();
+  if (state.tab === 'training') bindTrainingEvents();
+  if (state.tab === 'profile') bindProfileEvents();
 
   if (challengeNews?.events.length) {
     setTimeout(() => {
-      if (state.tab === 'challenges') celebrate(challengeNews.events, challengeNews.before, () => render());
+      if (state.tab === 'profile') celebrate(challengeNews.events, challengeNews.before, () => render());
     }, 350);
   }
 
-  if (state.tab === 'start' && Store.getActive()) {
+  if (active) {
     startTicking(() => {
-      const el = qs('#active-elapsed');
-      const active = Store.getActive();
-      if (el && active) el.textContent = elapsedLabel(active.startedAt);
+      const a = Store.getActive();
+      if (!a) return;
+      ['#active-elapsed', '#live-elapsed'].forEach((sel) => {
+        const el = qs(sel);
+        if (el) el.textContent = elapsedLabel(a.startedAt);
+      });
     });
   }
 }
 
-function tabTitle() {
-  return {
-    start: 'Training', challenges: 'Challenges', history: 'Verlauf', library: 'Bibliothek', settings: 'Einstellungen',
-  }[state.tab];
+function segHtml(id, items, active) {
+  const i = Math.max(0, items.findIndex((t) => t.id === active));
+  return `<div class="g-seg" id="${id}" style="--n:${items.length};--i:${i}">${items.map((t) => `<button data-seg="${t.id}" class="${t.id === active ? 'active' : ''}">${t.label}</button>`).join('')}<span class="g-seg-thumb" aria-hidden="true"></span></div>`;
 }
 
-function tabAction() {
-  if (state.tab === 'library' && state.librarySubTab === 'exercises') {
-    return `<button class="icon-btn accent" data-action="add-exercise">${Icon.plus}</button>`;
+function headerHtml() {
+  const t = state.tab;
+  const mode = `<button class="mode-btn" data-action="mode-fight" aria-label="Zum Fight-Modus: Kickboxen und Ausdauer">${Icon.glove}<span>Fight</span></button>`;
+  if (t === 'profile' && state.profilePage) {
+    return `
+      <header class="g-top g-top-sub">
+        <div class="g-top-row">
+          <button class="g-back" data-action="profile-back" aria-label="Zurück zum Profil">${Icon.back}<span>Profil</span></button>
+          <h1 class="g-title g-title-sub">${PROFILE_PAGES[state.profilePage]}</h1>
+          <span class="g-back-spacer"></span>
+        </div>
+      </header>`;
   }
-  if (state.tab === 'library' && state.librarySubTab === 'routines') {
-    return `<button class="icon-btn accent" data-action="add-routine">${Icon.plus}</button>`;
+  let title = '';
+  let actions = '';
+  let seg = '';
+  if (t === 'today') {
+    const lvl = athleteLevel();
+    const R = 2 * Math.PI * 15;
+    title = '<div class="g-brand"><span class="g-logo">Gym</span><span class="g-tagline">Kraft · Mobility</span></div>';
+    actions = `
+      <button class="g-level" data-action="goto-profile" aria-label="Level ${lvl.level} – zum Profil">
+        <svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" class="bg"/><circle cx="18" cy="18" r="15" class="fg" stroke-dasharray="${R}" stroke-dashoffset="${R * (1 - lvl.into / lvl.need)}"/></svg>
+        <span>${lvl.level}</span>
+      </button>`;
+  } else if (t === 'training') {
+    title = '<h1 class="g-title">Training</h1>';
+    if (state.trainingSub === 'plans') actions = `<button class="g-icon-btn" data-action="add-routine" aria-label="Neuer Plan">${Icon.plus}</button>`;
+    if (state.trainingSub === 'exercises') actions = `<button class="g-icon-btn" data-action="add-exercise" aria-label="Neue Übung">${Icon.plus}</button>`;
+    seg = segHtml('g-seg-training', TRAINING_SUBS, state.trainingSub);
+  } else if (t === 'mobility') {
+    title = `<h1 class="g-title"><span class="g-title-leaf">${Icon.leaf}</span>Mobility</h1>`;
+    actions = `<button class="g-icon-btn" data-action="mobility-settings" aria-label="Mobility-Einstellungen">${Icon.sliders}</button>`;
+    seg = segHtml('g-seg-mobility', AREA_TABS, state.mobilitySub);
+  } else {
+    title = '<h1 class="g-title">Profil</h1>';
   }
-  return '';
+  return `
+    <header class="g-top">
+      <div class="g-top-row">${title}<div class="g-top-actions">${actions}${mode}</div></div>
+      ${seg ? `<div class="g-top-seg">${seg}</div>` : ''}
+    </header>`;
 }
 
-function tabButton(id, icon, label) {
-  const active = state.tab === id ? 'active' : '';
-  // Punkt am Challenges-Tab, solange die neuen Wochen-Challenges ungesehen sind
-  const news = id === 'challenges' && state.tab !== 'challenges' && challengeBadge() ? 'has-news' : '';
-  return `<button class="tab-btn ${active} ${news}" data-action="set-tab" data-tab="${id}">
-    <span class="tab-icon">${icon}</span><span class="tab-label">${label}</span>
-  </button>`;
+function dockHtml(active) {
+  const badge = state.tab !== 'profile' && challengeBadge();
+  const tab = (t) => `
+    <button class="g-tab ${state.tab === t.id ? 'active' : ''} ${t.id === 'profile' && badge ? 'has-news' : ''}" data-gtab="${t.id}" aria-label="${t.label}">
+      <span class="g-tab-icon">${Icon[t.icon]}</span><span>${t.label}</span>
+    </button>`;
+  return `
+    <div class="g-dock-wrap">
+      <nav class="g-dock" aria-label="Navigation">
+        ${tab(GYM_TABS[0])}${tab(GYM_TABS[1])}
+        <div class="g-start-slot">
+          <button class="g-start ${active ? 'live' : ''}" data-action="open-start" data-nosound aria-label="${active ? 'Zum laufenden Training' : 'Einheit starten'}">${active ? Icon.dumbbell : Icon.play}</button>
+        </div>
+        ${tab(GYM_TABS[2])}${tab(GYM_TABS[3])}
+      </nav>
+    </div>`;
+}
+
+// Laufendes Training: schmale Leiste über der Navigation, auf jedem Tab
+function liveBarHtml(active) {
+  const p = workoutProgress(active);
+  return `
+    <button class="g-live" data-action="live-resume" data-nosound>
+      <span class="g-live-dot" aria-hidden="true"></span>
+      <span class="g-live-text"><strong>${escapeHtml(active.routineName || 'Freies Training')}</strong>
+        <span><span id="live-elapsed">${elapsedLabel(active.startedAt)}</span> · ${p.done}/${plural(p.total, 'Satz', 'Sätzen')}</span></span>
+      <span class="g-live-go">Weiter${Icon.chevron}</span>
+      <span class="g-live-bar" aria-hidden="true"><i style="transform:scaleX(${p.ratio})"></i></span>
+    </button>`;
 }
 
 function renderTab() {
-  if (state.tab === 'start') return renderStart();
-  if (state.tab === 'challenges') return renderChallenges();
-  if (state.tab === 'history') return renderHistory();
-  if (state.tab === 'library') return renderLibrary();
-  if (state.tab === 'settings') return renderSettings();
-  return '';
+  if (state.tab === 'training') return renderTraining();
+  if (state.tab === 'mobility') return '<div class="mz-embed" id="mz-embed"></div>';
+  if (state.tab === 'profile') return renderProfile();
+  return renderToday();
 }
 
-// ---- Start-Tab ----
+function goTab(id) {
+  if (state.tab === id) {
+    if (id === 'profile' && state.profilePage) { state.profilePage = null; render(); return; }
+    qs('.view')?.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  // Unterseiten des Profils schließen sich beim Verlassen des Tabs
+  if (state.tab === 'profile') state.profilePage = null;
+  state.tab = id;
+  render();
+}
+
+// ---- Training starten, fortsetzen, verwerfen ----
+function startRoutineWorkout(id) {
+  if (Store.getActive()) { resumeWorkout(); return; }
+  const routine = Store.getRoutine(id);
+  if (!routine) return;
+  const entries = routine.exerciseIds.map((eid) => {
+    const ex = Store.getExercise(eid);
+    const count = routine.setCounts?.[eid];
+    return { exerciseId: eid, exerciseName: ex ? ex.name : 'Unbekannt', sets: ex ? defaultSets(ex, undefined, count ?? 2) : [] };
+  });
+  Store.setActive({ id: uid(), routineId: routine.id, routineName: routine.name, startedAt: new Date().toISOString(), finishedAt: null, entries });
+  closeSheet();
+  Sound.start();
+  state.workoutOpen = true;
+  workoutEntering = true;
+  render();
+}
+
+function startBlankWorkout() {
+  if (Store.getActive()) { resumeWorkout(); return; }
+  Store.setActive({ id: uid(), routineId: null, routineName: null, startedAt: new Date().toISOString(), finishedAt: null, entries: [] });
+  closeSheet();
+  Sound.start();
+  state.workoutOpen = true;
+  workoutEntering = true;
+  render();
+}
+
+function resumeWorkout() {
+  closeSheet();
+  Sound.start();
+  state.workoutOpen = true;
+  workoutEntering = true;
+  render();
+}
+
+function bindStarters(scope) {
+  qsa('[data-action="start-blank"]', scope).forEach((b) => b.addEventListener('click', startBlankWorkout));
+  qsa('[data-action="start-routine"]', scope).forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    startRoutineWorkout(b.dataset.id);
+  }));
+  qsa('[data-action="resume-workout"]', scope).forEach((b) => b.addEventListener('click', resumeWorkout));
+  qsa('[data-action="discard-workout"]', scope).forEach((b) => b.addEventListener('click', () => {
+    if (confirm('Aktuelles Training wirklich verwerfen? Alle Sätze gehen verloren.')) {
+      Store.clearActive();
+      state.collapsedExercises.clear();
+      render();
+    }
+  }));
+}
+
 // Welcher Plan ist als Nächstes dran? Betrachtet werden nur Pläne, die in den
 // letzten 30 Tagen trainiert wurden (die aktuelle Rotation) – ein seit Monaten
 // ruhender Plan soll sich nicht ewig vordrängeln. Dran ist der, dessen letzte
@@ -575,86 +714,267 @@ function planRotation(routines, workouts) {
   return { lastDone, next };
 }
 
-function renderStart() {
-  const active = Store.getActive();
-  const routines = Store.getRoutines();
+// Immer genau ein Vorschlag: aus der Rotation, sonst der am längsten nicht
+// (oder noch nie) trainierte Plan.
+function nextPlanOf(routines, workouts = Store.getWorkouts()) {
+  if (!routines.length) return null;
+  const { lastDone, next } = planRotation(routines, workouts);
+  if (next) return routines.find((r) => r.id === next) || routines[0];
+  return [...routines].sort((a, b) => (lastDone.get(a.id) || '').localeCompare(lastDone.get(b.id) || ''))[0];
+}
 
-  let activeCard = '';
+function lastDoneLabel(lastDone, r) {
+  return lastDone.has(r.id) ? `zuletzt ${relativeDay(lastDone.get(r.id))}` : 'noch nie trainiert';
+}
+
+// Dauer eines Plans: wie lange er zuletzt gedauert hat
+function planMinutes(routine) {
+  const w = Store.getWorkouts().find((x) => x.finishedAt && x.routineId === routine.id);
+  return w ? Math.round((new Date(w.finishedAt) - new Date(w.startedAt)) / 60000) : null;
+}
+
+function isSameDay(iso, ref = new Date()) {
+  const d = new Date(iso);
+  return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth() && d.getDate() === ref.getDate();
+}
+
+// ---------- Start-Übersicht (Knopf in der Mitte) ----------
+function openStartSheet() {
+  if (Store.getActive()) { resumeWorkout(); return; }
+  const routines = Store.getRoutines();
+  const next = nextPlanOf(routines);
+  const { lastDone } = planRotation(routines, Store.getWorkouts());
+  const names = exerciseNames();
+  const item = ({ cls = '', icon, title, sub, attrs }) => `
+    <button class="g-start-item ${cls}" ${attrs}>
+      <span class="g-start-icon">${icon}</span>
+      <span class="g-start-text"><strong>${title}</strong><span>${sub}</span></span>
+      ${Icon.chevron}
+    </button>`;
+  const planItem = (r, hot) => item({
+    cls: hot ? 'hot' : '',
+    icon: hot ? Icon.play : Icon.dumbbell,
+    title: `${hot ? 'Als Nächstes: ' : ''}${escapeHtml(r.name)}`,
+    sub: escapeHtml(`${plural(r.exerciseIds.length, 'Übung', 'Übungen')} · ${lastDoneLabel(lastDone, r)}${hot ? ` · ${r.exerciseIds.map((id) => names.get(id)).filter(Boolean).slice(0, 3).join(', ')}` : ''}`),
+    attrs: `data-action="start-routine" data-id="${r.id}" data-nosound`,
+  });
+
+  const mob = Store.getSettings().mobility ? mobilityTodayPlan() : null;
+  const trainedToday = Store.getWorkouts().some((w) => w.finishedAt && isSameDay(w.startedAt));
+  const after = trainedToday ? afterWorkoutRoutine() : null;
+  const active = activeChallenges();
+
+  openSheet('Einheit starten', `
+    <div class="g-start-sec">Krafttraining</div>
+    <div class="g-start-list">
+      ${next ? planItem(next, true) : ''}
+      ${routines.filter((r) => r !== next).map((r) => planItem(r, false)).join('')}
+      ${item({ icon: Icon.plus, title: 'Leeres Training', sub: 'Übungen spontan zusammenstellen', attrs: 'data-action="start-blank" data-nosound' })}
+    </div>
+    ${mob ? `
+      <div class="g-start-sec">Mobility</div>
+      <div class="g-start-list">
+        ${after ? item({ cls: 'mob', icon: Icon.leaf, title: escapeHtml(after.name), sub: `Passend zum heutigen Training · ${routineMinutes(after)}`, attrs: 'data-start-mob="after"' }) : ''}
+        ${item({ cls: 'mob', icon: Icon.leaf, title: mob.main.kind === 'deep' ? `Tiefe Einheit ${mob.main.letter}` : 'Tägliche Routine', sub: `${mob.done ? 'Heute schon erledigt · ' : ''}${routineMinutes(mob.main)} · ${plural(mob.main.items.length, 'Übung', 'Übungen')}`, attrs: 'data-start-mob="today"' })}
+      </div>` : ''}
+    <div class="g-start-sec">Challenge</div>
+    <div class="g-start-list">
+      ${active.length ? active.slice(0, 3).map((a) => item({ cls: 'gold', icon: `<span class="g-start-emoji">${a.ch.icon}</span>`, title: escapeHtml(a.ch.name), sub: escapeHtml(a.label), attrs: `data-start-ch="${a.ch.id}"` })).join('')
+    : item({ cls: 'gold', icon: Icon.trophy, title: 'Challenge wählen', sub: 'Stufen erklimmen, XP sammeln', attrs: 'data-start-ch=""' })}
+    </div>`, {
+    onMount: (sheet) => {
+      bindStarters(sheet);
+      qsa('[data-start-mob]', sheet).forEach((b) => b.addEventListener('click', () => {
+        closeSheet();
+        startMobilityRoutine(b.dataset.startMob === 'after' ? 'after-workout' : 'today');
+      }));
+      qsa('[data-start-ch]', sheet).forEach((b) => b.addEventListener('click', () => {
+        if (b.dataset.startCh) openChallengeDetail(b.dataset.startCh);
+        else openChallengeCatalog();
+      }));
+    },
+  });
+}
+
+// ---------- Heute ----------
+// Nur was heute zählt, nach Wichtigkeit: das Training (oder sein Ergebnis),
+// die Mobility des Tages, die Supplements – danach die Woche im Überblick.
+function renderToday() {
+  const hero = renderTodayHero();
+  return `
+    ${hero}
+    ${renderMobilityToday()}
+    ${renderSupplementCard()}
+    ${renderWeekOverview()}`;
+}
+
+function renderTodayHero() {
+  const active = Store.getActive();
+  const unit = unitLabel(Store.getSettings().unit);
   if (active) {
     const progress = workoutProgress(active);
-    activeCard = `
-    <section class="card active-card">
-      <div class="active-card-top">
-        <span class="pill pill-live">Läuft</span>
-        <span id="active-elapsed" class="elapsed">${elapsedLabel(active.startedAt)}</span>
-      </div>
-      <h3>${escapeHtml(active.routineName || 'Freies Training')}</h3>
-      <p class="muted">${plural(active.entries.length, 'Übung', 'Übungen')} · ${progress.done} von ${plural(progress.total, 'Satz', 'Sätzen')} erledigt</p>
-      <div class="active-progress"><span style="transform:scaleX(${progress.ratio})"></span></div>
-      <div class="row gap">
+    return `
+    <section class="g-hero live">
+      <div class="g-hero-top"><span class="g-pill live"><i></i>Läuft</span><span id="active-elapsed" class="g-hero-time">${elapsedLabel(active.startedAt)}</span></div>
+      <h2>${escapeHtml(active.routineName || 'Freies Training')}</h2>
+      <p class="g-hero-meta">${plural(active.entries.length, 'Übung', 'Übungen')} · ${progress.done} von ${plural(progress.total, 'Satz', 'Sätzen')} erledigt</p>
+      <div class="g-hero-progress"><span style="transform:scaleX(${progress.ratio})"></span></div>
+      <div class="g-hero-actions">
         <button class="btn btn-primary" data-action="resume-workout">Weiter ${Icon.chevron}</button>
         <button class="btn btn-ghost danger" data-action="discard-workout">Verwerfen</button>
       </div>
     </section>`;
   }
 
-  // Aufbau von oben nach unten nach Wichtigkeit: das Training, das jetzt
-  // dran ist – was heute noch abzuhaken ist – die übrigen Pläne – die Bilanz.
-  const { lastDone, next } = planRotation(routines, Store.getWorkouts());
-  const names = exerciseNames();
-  const whenOf = (r) => (lastDone.has(r.id) ? `zuletzt ${relativeDay(lastDone.get(r.id))}` : 'noch nie trainiert');
-  const nextPlan = !active && routines.find((r) => r.id === next);
-
-  let hero = activeCard;
-  if (nextPlan) {
-    const preview = nextPlan.exerciseIds.map((id) => names.get(id)).filter(Boolean).join(' · ');
-    hero = `
-    <section class="card hero-card">
-      <div class="hero-top">
-        <span class="pill pill-chosen">Als Nächstes</span>
-        <span class="muted small">${whenOf(nextPlan)}</span>
+  const routines = Store.getRoutines();
+  const workouts = Store.getWorkouts();
+  const doneToday = workouts.find((w) => w.finishedAt && isSameDay(w.startedAt));
+  if (doneToday) {
+    const minutes = Math.round((new Date(doneToday.finishedAt) - new Date(doneToday.startedAt)) / 60000);
+    const sets = workoutDoneSets(doneToday);
+    const prs = doneToday.entries.reduce((n, e) => n + e.sets.filter((s) => s.done && s.pr).length, 0);
+    const after = Store.getSettings().mobility && !mobilityDoneToday() ? afterWorkoutRoutine() : null;
+    return `
+    <section class="g-hero done">
+      <div class="g-hero-top"><span class="g-pill done">${Icon.check}Heute trainiert</span><span class="g-hero-when">${formatDateTime(doneToday.finishedAt).split(',').pop().trim()}</span></div>
+      <h2>${escapeHtml(doneToday.routineName || 'Freies Training')}</h2>
+      <div class="g-hero-stats">
+        <div><b>${minutes}</b><span>Minuten</span></div>
+        <div><b>${sets}</b><span>Sätze</span></div>
+        <div><b>${formatVolume(workoutVolume(doneToday))}</b><span>Volumen (${unit})</span></div>
+        <div><b>${prs}</b><span>${prs === 1 ? 'Rekord' : 'Rekorde'}</span></div>
       </div>
-      <h2>${escapeHtml(nextPlan.name)}</h2>
-      ${preview ? `<p class="hero-preview">${escapeHtml(preview)}</p>` : ''}
-      <button class="btn btn-primary full" data-action="start-routine" data-id="${nextPlan.id}">${Icon.play} Training starten</button>
+      ${after ? `
+        <button class="g-hero-mob" data-action="mob-after" data-nosound>
+          <span class="g-hero-mob-icon">${Icon.leaf}</span>
+          <span><em>Passend dazu</em><strong>${escapeHtml(after.name)} · ${routineMinutes(after)}</strong></span>
+          <span class="g-hero-mob-play">${Icon.play}</span>
+        </button>` : ''}
+      <div class="g-hero-actions">
+        <button class="btn btn-secondary" data-action="open-workout" data-id="${doneToday.id}">Details ansehen</button>
+      </div>
     </section>`;
   }
 
-  const others = routines.filter((r) => r !== nextPlan);
-  const planRows = others.map((r) => `
-    <div class="list-item">
-      <div class="list-item-main">
-        <strong>${escapeHtml(r.name)}</strong>
-        <span class="muted">${plural(r.exerciseIds.length, 'Übung', 'Übungen')} · ${whenOf(r)}</span>
-      </div>
-      <button class="btn btn-small ${nextPlan ? 'btn-secondary' : 'btn-primary'}" data-action="start-routine" data-id="${r.id}">Start</button>
-    </div>`).join('');
-  const blankRow = `
-    <button class="list-item selectable start-blank-row" data-action="start-blank">
-      <span class="start-blank-icon">${Icon.plus}</span>
-      <div class="list-item-main"><strong>Leeres Training</strong><span class="muted">Übungen spontan zusammenstellen</span></div>
-      ${Icon.chevron}
-    </button>`;
-  // Läuft schon ein Training, lässt sich nichts Neues starten – dann bleibt
-  // der Abschnitt ganz weg statt voller ausgegrauter Knöpfe.
-  const plans = active ? '' : `
-    <section>
-      <div class="section-title">${nextPlan ? 'Weitere Pläne' : 'Plan starten'}</div>
-      <div class="card list">
-        ${routines.length ? '' : '<p class="empty small">Noch keine Pläne. Leg welche in der Bibliothek an – oder lass sie dir in den Einstellungen per KI erstellen.</p>'}
-        ${planRows}${blankRow}
+  if (!routines.length) {
+    return `
+    <section class="g-hero empty">
+      <span class="g-pill">Los geht’s</span>
+      <h2>Leg deinen ersten Plan an</h2>
+      <p class="g-hero-meta">Selbst zusammenstellen – oder per KI aus einer Sprachnachricht erstellen lassen.</p>
+      <div class="g-hero-actions">
+        <button class="btn btn-primary" data-action="goto-plans">${Icon.plus} Plan anlegen</button>
+        <button class="btn btn-ghost" data-action="start-blank">Leeres Training</button>
       </div>
     </section>`;
+  }
 
-  const today = `${renderSupplementCard()}${renderMobilityCard()}`;
-  const motivationOn = Store.getSettings().motivation;
-  const week = motivationOn ? renderMotivationCard() : renderWeekCard();
-
+  const plan = nextPlanOf(routines, workouts);
+  const { lastDone } = planRotation(routines, workouts);
+  const exercises = Store.getExercises();
+  const groups = planGroups(plan.exerciseIds, exercises);
+  const minutes = planMinutes(plan);
+  const targets = beatTargets(plan);
   return `
-    ${hero}
-    ${today.trim() ? `<section class="start-group"><div class="section-title">Heute</div>${today}</section>` : ''}
-    ${plans}
-    ${week ? (motivationOn ? `<section class="start-group"><div class="section-title">Deine Woche</div>${week}</section>` : week) : ''}`;
+    <section class="g-hero">
+      <div class="g-hero-top"><span class="g-pill">Als Nächstes</span><span class="g-hero-when">${lastDoneLabel(lastDone, plan)}</span></div>
+      <div class="g-hero-main">
+        <div class="g-hero-copy">
+          <h2>${escapeHtml(plan.name)}</h2>
+          <p class="g-hero-meta">${plural(plan.exerciseIds.length, 'Übung', 'Übungen')}${minutes ? ` · ca. ${minutes} Min` : ''}</p>
+          <div class="g-hero-groups">${Object.keys(groups).map((g) => `<span>${g}</span>`).join('')}</div>
+        </div>
+        <div class="g-hero-map">${muscleMap(groups, { labels: false })}</div>
+      </div>
+      ${targets.length ? `
+        <div class="g-beat">
+          <div class="g-beat-head">Heute schlagen</div>
+          ${targets.map((t) => `
+            <div class="g-beat-row">
+              <span class="g-beat-name">${escapeHtml(t.name)}</span>
+              <span class="g-beat-last">${escapeHtml(t.last)}</span>
+              <span class="g-beat-arrow">→</span>
+              <span class="g-beat-target ${t.up ? 'up' : ''}">${escapeHtml(t.target)}</span>
+            </div>`).join('')}
+        </div>` : ''}
+      <button class="btn btn-primary full" data-action="start-routine" data-id="${plan.id}" data-nosound>${Icon.play} Training starten</button>
+    </section>`;
+}
+
+// Was beim nächsten Training zu schlagen ist: bester Satz vom letzten Mal und
+// das Ziel für heute – mit Gewichts-Empfehlung, sobald sie fällig ist.
+function beatTargets(routine, limit = 3) {
+  const settings = Store.getSettings();
+  const unit = unitLabel(settings.unit);
+  const out = [];
+  for (const eid of routine.exerciseIds) {
+    const ex = Store.getExercise(eid);
+    if (!ex) continue;
+    const last = lastSessionFor(eid);
+    const best = last ? bestSet(last.entry.sets) : null;
+    if (!best) continue;
+    const overload = settings.progressiveOverload ? getOverloadSuggestion(ex) : null;
+    const target = overload
+      ? `${formatWeight(overload.to, unit)} × ${overload.threshold}`
+      : best.weight > 0 ? `${formatWeight(best.weight, unit)} × ${best.reps + 1}` : `${best.reps + 1} Wdh`;
+    out.push({ name: ex.name, last: formatSet(best, unit), target, up: !!overload });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+// Deine Woche: Training und Mobility auf einem Streifen, dazu die Serie,
+// ein Satz zur Lage und die Wochen-Challenges.
+function renderWeekOverview() {
+  const settings = Store.getSettings();
+  const workouts = Store.getWorkouts();
+  if (!workouts.some((w) => w.finishedAt) && !settings.mobility) return '';
+  const m = buildMotivation({
+    workouts,
+    exercises: Store.getExercises(),
+    goal: settings.weeklyGoal,
+    unit: unitLabel(settings.unit),
+    stepFor: (ex) => overloadStep(ex.muscleGroup, settings.unit),
+  });
+  const mob = settings.mobility ? mobilityWeekStats() : null;
+  const ch = weeklyStatus();
+  const days = WEEKDAY_LETTERS.map((label, i) => `
+    <span class="g-week-day ${i === m.week.todayIndex ? 'today' : ''} ${i > m.week.todayIndex ? 'future' : ''}">
+      <span class="g-week-dots"><i class="gym ${m.week.days[i] ? 'on' : ''}"></i>${mob ? `<i class="mob ${mob.days[i] ? 'on' : ''}"></i>` : ''}</span>
+      <span class="g-week-letter">${label}</span>
+    </span>`).join('');
+  return `
+    <section class="card g-week">
+      <div class="g-week-head">
+        <strong>Deine Woche</strong>
+        ${m.streak ? `<span class="streak-badge">🔥 ${plural(m.streak, 'Woche', 'Wochen')}</span>` : ''}
+      </div>
+      <div class="g-week-strip">${days}</div>
+      <div class="g-week-legend">
+        <span><i class="gym"></i>Training <b>${m.week.count}/${m.week.goal}</b></span>
+        ${mob ? `<span><i class="mob"></i>Mobility <b>${mob.count}/${mob.goal}</b></span>` : ''}
+      </div>
+      ${workouts.some((w) => w.finishedAt) ? `<p class="g-week-coach">${escapeHtml(m.coachLine)}</p>` : ''}
+      <button class="g-week-ch" data-action="goto-profile">
+        <span class="g-week-ch-icon">${ch.sweep ? '🔥' : '🏆'}</span>
+        <span class="g-week-ch-text"><strong>Wochen-Challenges ${ch.done}/${ch.total}</strong>
+          <span class="g-week-ch-bar"><i style="transform:scaleX(${ch.sweep ? 1 : ch.ratio})"></i></span></span>
+        <span class="muted small">${ch.sweep ? 'komplett' : `noch ${plural(ch.daysLeft, 'Tag', 'Tage')}`}</span>
+        ${Icon.chevron}
+      </button>
+    </section>`;
+}
+
+function bindTodayEvents() {
+  const view = qs('.view');
+  bindStarters(view);
+  bindSupplementCard();
+  bindMobilityToday(view);
+  qs('[data-action="mob-after"]', view)?.addEventListener('click', () => startMobilityRoutine('after-workout'));
+  qs('[data-action="open-workout"]', view)?.addEventListener('click', (e) => openWorkoutDetailSheet(e.currentTarget.dataset.id));
+  qsa('[data-action="goto-profile"]', view).forEach((b) => b.addEventListener('click', () => goTab('profile')));
+  qs('[data-action="goto-plans"]', view)?.addEventListener('click', () => { state.tab = 'training'; state.trainingSub = 'plans'; render(); });
+  qs('.view [data-action="open-start"]')?.addEventListener('click', openStartSheet);
 }
 
 const WEEKDAY_LETTERS = ['M', 'D', 'M', 'D', 'F', 'S', 'S'];
@@ -666,34 +986,9 @@ function weekStripHtml(days, todayIndex) {
     </span>`).join('')}</div>`;
 }
 
-// Kleine Wochenübersicht: an welchen Tagen war ich da, wie viel kam zusammen.
-function renderWeekCard() {
-  const now = new Date();
-  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
-  const done = Store.getWorkouts().filter((w) => w.finishedAt && new Date(w.startedAt) >= monday);
-  if (!Store.getWorkouts().some((w) => w.finishedAt)) return '';
-
-  const unit = unitLabel(Store.getSettings().unit);
-  const volume = done.reduce((sum, w) => sum + workoutVolume(w), 0);
-  const minutes = done.reduce((sum, w) => sum + (new Date(w.finishedAt) - new Date(w.startedAt)) / 60000, 0);
-  const days = Array.from({ length: 7 }, () => false);
-  done.forEach((w) => { days[(new Date(w.startedAt).getDay() + 6) % 7] = true; });
-
-  return `
-    <section class="card week-card">
-      <div class="section-title">Diese Woche</div>
-      ${weekStripHtml(days, (now.getDay() + 6) % 7)}
-      <div class="stat-row">
-        <div><span class="stat-value">${done.length}</span><span class="muted small">Trainings</span></div>
-        <div><span class="stat-value">${formatVolume(volume)}</span><span class="muted small">Volumen (${unit})</span></div>
-        <div><span class="stat-value">${Math.round(minutes)}</span><span class="muted small">Minuten</span></div>
-      </div>
-    </section>`;
-}
-
 // Standortbestimmung: ein Urteil, die Belege dazu und ein konkreter nächster
 // Schritt. Ersetzt die reine Wochenübersicht, wenn eingeschaltet.
-function renderMotivationCard() {
+function renderMotivationCard({ compact = false } = {}) {
   const settings = Store.getSettings();
   const m = buildMotivation({
     workouts: Store.getWorkouts(),
@@ -717,11 +1012,12 @@ function renderMotivationCard() {
         <span class="verdict">${m.verdict.label}</span>
         ${m.streak ? `<span class="streak-badge">🔥 ${m.streak} ${m.streak === 1 ? 'Woche' : 'Wochen'}</span>` : ''}
       </div>
+      ${compact ? '' : `
       <div class="goal-row">
         <span class="goal-count">${m.week.count}<span class="muted">/${m.week.goal}</span></span>
         <span class="muted small">Einheiten diese Woche</span>
       </div>
-      ${weekStripHtml(m.week.days, m.week.todayIndex)}
+      ${weekStripHtml(m.week.days, m.week.todayIndex)}`}
       ${trendRow}
       <p class="coach-line">${escapeHtml(m.coachLine)}</p>
     </section>`;
@@ -1279,47 +1575,6 @@ function openSupplementEditor(id, back) {
   });
 }
 
-function bindStartEvents() {
-  bindSupplementCard();
-  bindMobilityCard(root);
-  qs('[data-action="start-blank"]')?.addEventListener('click', () => {
-    if (Store.getActive()) return;
-    Store.setActive({ id: uid(), routineId: null, routineName: null, startedAt: new Date().toISOString(), finishedAt: null, entries: [] });
-    Sound.start();
-    state.workoutOpen = true;
-    workoutEntering = true;
-    render();
-  });
-  qsa('[data-action="start-routine"]').forEach((btn) => btn.addEventListener('click', () => {
-    if (Store.getActive()) return;
-    const routine = Store.getRoutine(btn.dataset.id);
-    if (!routine) return;
-    const entries = routine.exerciseIds.map((eid) => {
-      const ex = Store.getExercise(eid);
-      const count = routine.setCounts?.[eid];
-      return { exerciseId: eid, exerciseName: ex ? ex.name : 'Unbekannt', sets: ex ? defaultSets(ex, undefined, count ?? 2) : [] };
-    });
-    Store.setActive({ id: uid(), routineId: routine.id, routineName: routine.name, startedAt: new Date().toISOString(), finishedAt: null, entries });
-    Sound.start();
-    state.workoutOpen = true;
-    workoutEntering = true;
-    render();
-  }));
-  qs('[data-action="resume-workout"]')?.addEventListener('click', () => {
-    Sound.start();
-    state.workoutOpen = true;
-    workoutEntering = true;
-    render();
-  });
-  qs('[data-action="discard-workout"]')?.addEventListener('click', () => {
-    if (confirm('Aktuelles Training wirklich verwerfen? Alle Sätze gehen verloren.')) {
-      Store.clearActive();
-      state.collapsedExercises.clear();
-      render();
-    }
-  });
-}
-
 // ---- Workout-Ansicht (Vollbild) ----
 // Wenn eine Übung heute unter deutlich anderer Vorbelastung läuft als beim
 // letzten Mal, ist der Vergleich mit "letztes Mal" irreführend – dann sagen,
@@ -1629,7 +1884,7 @@ function bindWorkoutEvents() {
 
   qs('[data-action="minimize-workout"]').addEventListener('click', () => {
     releaseWakeLock();
-    go(() => { state.workoutOpen = false; state.tab = 'start'; render(); });
+    go(() => { state.workoutOpen = false; render(); });
   });
   qs('[data-action="discard-workout"]').addEventListener('click', () => {
     if (confirm('Training wirklich verwerfen? Alle Sätze gehen verloren.')) {
@@ -1656,8 +1911,7 @@ function bindWorkoutEvents() {
     state.collapsedExercises.clear();
     go(() => {
       state.workoutOpen = false;
-      state.tab = 'history';
-      state.historySubTab = 'log';
+      state.tab = 'today';
       render();
     });
     // Erst die Belohnung, dann der Verlauf: die Zusammenfassung legt sich
@@ -1941,17 +2195,6 @@ function openAddExerciseToWorkoutSheet() {
 }
 
 // ---- Verlauf-Tab ----
-function renderHistory() {
-  const sub = state.historySubTab;
-  return `
-    <div class="segmented" id="history-segmented">
-      <button class="${sub === 'log' ? 'active' : ''}" data-action="history-sub" data-sub="log">Verlauf</button>
-      <button class="${sub === 'progress' ? 'active' : ''}" data-action="history-sub" data-sub="progress">Fortschritt</button>
-      <span class="segmented-thumb" aria-hidden="true"></span>
-    </div>
-    ${sub === 'log' ? renderCalendar() + renderHistoryLog() : renderProgress()}`;
-}
-
 // Simpler Monatskalender: markiert Tage, an denen ein Training abgeschlossen wurde.
 function renderCalendar() {
   const { calendarYear: year, calendarMonth: month } = state;
@@ -2076,97 +2319,6 @@ function progressSeries(exerciseId) {
       sets: s.sets,
     }));
   return { loaded, points, sessions };
-}
-
-function renderProgress() {
-  const exercises = Store.getExercises();
-  // Übungen mit Verlauf, zuletzt trainierte zuerst ermittelt
-  const lastTrained = new Map();
-  Store.getWorkouts().filter((w) => w.finishedAt).forEach((w) => w.entries.forEach((e) => {
-    if (!lastTrained.has(e.exerciseId) && e.sets.some((s) => s.done && s.reps > 0)) lastTrained.set(e.exerciseId, w.startedAt);
-  }));
-  const withHistory = exercises.filter((ex) => lastTrained.has(ex.id));
-  if (!withHistory.length) return '<p class="empty">Noch keine Trainingsdaten. Nach ein paar Einheiten siehst du hier, wie sich jede Übung entwickelt.</p>';
-  if (!state.progressExerciseId || !lastTrained.has(state.progressExerciseId) || !withHistory.some((e) => e.id === state.progressExerciseId)) {
-    state.progressExerciseId = [...lastTrained.keys()].find((id) => withHistory.some((e) => e.id === id));
-  }
-  const unit = unitLabel(Store.getSettings().unit);
-  const { loaded, points, sessions } = progressSeries(state.progressExerciseId);
-
-  // Auswahl nach Muskelgruppen gegliedert – bei vielen Übungen sonst endlos
-  const options = MUSCLE_GROUPS.map((group) => {
-    const inGroup = withHistory.filter((ex) => groupOf(ex) === group).sort((a, b) => a.name.localeCompare(b.name, 'de'));
-    if (!inGroup.length) return '';
-    return `<optgroup label="${group}">${inGroup.map((ex) => `<option value="${ex.id}" ${ex.id === state.progressExerciseId ? 'selected' : ''}>${escapeHtml(ex.name)}</option>`).join('')}</optgroup>`;
-  }).join('');
-
-  const allSets = sessions.flatMap((s) => s.sets.filter((x) => x.done && x.reps > 0));
-  let stats = '';
-  let delta = '';
-  if (loaded) {
-    const heaviest = allSets.filter((x) => x.weight > 0).reduce((a, b) => (b.weight > a.weight || (b.weight === a.weight && b.reps > a.reps) ? b : a));
-    const best1RM = Math.max(...points.map((p) => p.value));
-    stats = `
-      <div><span class="stat-value">${formatNumber(heaviest.weight)} × ${heaviest.reps}</span><span class="muted small">schwerster Satz (${unit})</span></div>
-      <div><span class="stat-value">${formatNumber(Math.round(best1RM))}</span><span class="muted small">1RM geschätzt (${unit})</span></div>
-      <div><span class="stat-value">${sessions.length}</span><span class="muted small">Einheiten</span></div>`;
-    if (points.length >= 2) {
-      const diff = Math.round((points[points.length - 1].value - points[0].value) * 10) / 10;
-      delta = diff
-        ? `${diff > 0 ? '+' : '−'}${formatWeight(Math.abs(diff), unit)} geschätztes 1RM seit ${formatDate(points[0].date)}`
-        : `Geschätztes 1RM unverändert seit ${formatDate(points[0].date)}`;
-    }
-  } else {
-    const mostReps = Math.max(...allSets.map((x) => x.reps));
-    const lastSession = sessions[sessions.length - 1];
-    stats = `
-      <div><span class="stat-value">${mostReps}</span><span class="muted small">meiste Wdh</span></div>
-      <div><span class="stat-value">${lastSession.sets.filter((x) => x.done).reduce((n, x) => n + (x.reps || 0), 0)}</span><span class="muted small">Wdh zuletzt gesamt</span></div>
-      <div><span class="stat-value">${sessions.length}</span><span class="muted small">Einheiten</span></div>`;
-    if (points.length >= 2) {
-      const diff = points[points.length - 1].value - points[0].value;
-      delta = diff
-        ? `${diff > 0 ? '+' : '−'}${Math.abs(diff)} Wdh im besten Satz seit ${formatDate(points[0].date)}`
-        : `Bester Satz unverändert seit ${formatDate(points[0].date)}`;
-    }
-  }
-
-  const recent = sessions.slice(-5).reverse().map((s) => `
-    <div class="list-item">
-      <div class="list-item-main"><strong>${formatDate(s.workout.startedAt)}</strong><span class="muted">${formatSetList(s.sets, unit)}</span></div>
-      ${s.sets.some((x) => x.pr) ? '<span class="pr-count">🏆</span>' : ''}
-    </div>`).join('');
-
-  return `
-    <div class="select-wrap">
-      <select id="progress-select" class="text-input" aria-label="Übung wählen">${options}</select>
-      <span class="select-chevron">${Icon.chevron}</span>
-    </div>
-    <div class="card">
-      <div class="section-title">${loaded ? 'Geschätztes 1RM' : 'Beste Wiederholungen'}</div>
-      ${points.length ? '<canvas id="progress-chart" class="chart"></canvas>' : '<p class="empty">Noch keine Sätze für diese Übung.</p>'}
-      ${delta ? `<p class="muted small progress-delta">${delta}</p>` : ''}
-    </div>
-    <div class="card stat-row">${stats}</div>
-    <section>
-      <div class="section-title">Letzte Einheiten</div>
-      <div class="card list">${recent}</div>
-    </section>`;
-}
-
-function bindHistoryEvents() {
-  qsa('[data-action="history-sub"]').forEach((btn) => btn.addEventListener('click', () => {
-    historySwipe.selectWithSlide(btn.dataset.sub);
-  }));
-  qs('#history-segmented')?.addEventListener('pointerdown', historySwipe.onPointerDown);
-  qsa('.list-item[data-action="open-workout"]').forEach((btn) => btn.addEventListener('click', () => openWorkoutDetailSheet(btn.dataset.id)));
-  bindCalendarEvents();
-
-  if (state.historySubTab === 'progress') {
-    qs('#progress-select')?.addEventListener('change', (e) => { state.progressExerciseId = e.target.value; render(); });
-    const canvas = qs('#progress-chart');
-    if (canvas) animateChart(canvas, progressSeries(state.progressExerciseId).points);
-  }
 }
 
 function animateChart(canvas, points) {
@@ -2396,16 +2548,6 @@ function animateGroup(section, open) {
 }
 
 // ---- Bibliothek-Tab ----
-function renderLibrary() {
-  return `
-    <div class="segmented" id="library-segmented">
-      <button class="${state.librarySubTab === 'exercises' ? 'active' : ''}" data-action="library-sub" data-sub="exercises">Übungen</button>
-      <button class="${state.librarySubTab === 'routines' ? 'active' : ''}" data-action="library-sub" data-sub="routines">Pläne</button>
-      <span class="segmented-thumb" aria-hidden="true"></span>
-    </div>
-    ${state.librarySubTab === 'exercises' ? renderExerciseList() : renderRoutineList()}`;
-}
-
 // Letzte Leistung je Übung (bester Satz der jüngsten Einheit) – in einem
 // Durchgang über den Verlauf, der neueste Treffer gewinnt.
 function lastPerformanceMap() {
@@ -2449,47 +2591,6 @@ function renderExerciseGroups() {
   });
 }
 
-function renderRoutineList() {
-  const routines = Store.getRoutines();
-  if (!routines.length) return '<p class="empty">Noch keine Pläne. Tippe oben rechts auf + – oder lass dir in den Einstellungen per KI welche erstellen.</p>';
-  const names = exerciseNames();
-  return `<div class="card list">${routines.map((r) => {
-    const preview = r.exerciseIds.map((id) => names.get(id)).filter(Boolean).join(', ');
-    return `
-    <button class="list-item selectable" data-action="edit-routine" data-id="${r.id}">
-      <div class="list-item-main"><strong>${escapeHtml(r.name)}</strong>
-        <span class="muted">${plural(r.exerciseIds.length, 'Übung', 'Übungen')}</span>
-        ${preview ? `<span class="muted small routine-preview">${escapeHtml(preview)}</span>` : ''}</div>
-      ${Icon.chevron}
-    </button>`;
-  }).join('')}</div>`;
-}
-
-function bindLibraryEvents() {
-  qsa('[data-action="library-sub"]').forEach((btn) => btn.addEventListener('click', () => {
-    librarySwipe.selectWithSlide(btn.dataset.sub);
-  }));
-  qs('#library-segmented')?.addEventListener('pointerdown', librarySwipe.onPointerDown);
-  qsa('[data-action="edit-routine"]').forEach((btn) => btn.addEventListener('click', () => openRoutineSheet(btn.dataset.id)));
-
-  const groups = qs('#exercise-groups');
-  if (groups) {
-    const bindRows = () => {
-      bindGroupToggles(groups, groupState.library.open);
-      qsa('[data-action="edit-exercise"]', groups).forEach((btn) =>
-        btn.addEventListener('click', () => openExerciseSheet(btn.dataset.id)));
-    };
-    bindRows();
-    // Nur die Liste neu aufbauen statt render(): sonst verlöre das Suchfeld
-    // bei jedem Tastendruck den Fokus.
-    qs('#exercise-search')?.addEventListener('input', (e) => {
-      groupState.library.query = e.target.value;
-      groups.innerHTML = renderExerciseGroups();
-      bindRows();
-    });
-  }
-}
-
 // Beste je geschaffte Leistung einer Übung und die letzten Einheiten, damit
 // man beim Nachschlagen nicht erst in den Verlauf wechseln muss.
 function exerciseBestHtml(exerciseId) {
@@ -2518,16 +2619,24 @@ function exerciseBestHtml(exerciseId) {
       <div><span class="stat-value">${sessions.length}</span><span class="muted small">Einheiten</span></div>
     </div>
     <p class="muted small">Bestleistung am ${formatDate(best.date)} · zuletzt ${relativeDay(sessions[0].date)}</p>
-    <div class="card ex-history">${sessions.slice(0, 4).map((x) => `
-      <div class="ex-history-row"><span class="muted">${formatDate(x.date)}</span><span>${formatSetList(x.sets, unit)}</span></div>`).join('')}</div>`;
+    ${sessions.length >= 2 ? `
+      <div class="card ex-chart">
+        <div class="section-title">${loaded ? 'Geschätztes 1RM' : 'Beste Wiederholungen'}</div>
+        <canvas id="exercise-chart" class="chart"></canvas>
+      </div>` : ''}
+    <div class="section-title ex-sec">Letzte Einheiten</div>
+    <div class="card ex-history">${sessions.slice(0, 6).map((x) => `
+      <div class="ex-history-row"><span class="muted">${formatDate(x.date)}</span><span>${formatSetList(x.sets, unit)}${x.sets.some((y) => y.pr) ? ' 🏆' : ''}</span></div>`).join('')}</div>`;
 }
 
 function openExerciseSheet(id) {
   const ex = id ? Store.getExercise(id) : { id: uid(), name: '', muscleGroup: MUSCLE_GROUPS[0], notes: '' };
-  openSheet(id ? 'Übung bearbeiten' : 'Neue Übung', `
-    ${id ? exerciseBestHtml(ex.id) : ''}
+  const detail = id ? exerciseBestHtml(ex.id) : '';
+  openSheet(id ? escapeHtml(ex.name) : 'Neue Übung', `
+    ${detail}
+    ${detail ? '<div class="section-title ex-sec">Bearbeiten</div>' : ''}
     <label class="field-label">Name</label>
-    <input type="text" id="f-name" class="text-input" value="${escapeHtml(ex.name)}" placeholder="z.B. Bankdrücken" autofocus />
+    <input type="text" id="f-name" class="text-input" value="${escapeHtml(ex.name)}" placeholder="z.B. Bankdrücken" ${id ? '' : 'autofocus'} />
     <label class="field-label">Muskelgruppe</label>
     <select id="f-group" class="text-input">
       ${MUSCLE_GROUPS.map((g) => `<option value="${g}" ${g === ex.muscleGroup ? 'selected' : ''}>${g}</option>`).join('')}
@@ -2540,6 +2649,8 @@ function openExerciseSheet(id) {
       ${id ? `<button class="btn btn-ghost danger full" data-action="delete-exercise">${Icon.trash} Löschen</button>` : ''}
     `,
     onMount: () => {
+      const canvas = qs('#exercise-chart');
+      if (canvas) animateChart(canvas, progressSeries(ex.id).points.slice(-16));
       qs('[data-action="save-exercise"]').addEventListener('click', () => {
         const name = qs('#f-name').value.trim();
         if (!name) { qs('#f-name').focus(); return; }
@@ -2731,13 +2842,310 @@ function toggleRow(id, title, text, checked) {
     </div>`;
 }
 
-function renderSettings() {
+// ---------- Training ----------
+// Alles rund ums Krafttraining an einem Ort: wie es gerade läuft (Übersicht),
+// die Pläne, die Übungen mit ihren Rekorden und der Fortschritt samt Verlauf.
+function renderTraining() {
+  if (state.trainingSub === 'plans') return renderPlansPage();
+  if (state.trainingSub === 'exercises') return renderExerciseList();
+  if (state.trainingSub === 'progress') return renderProgressPage();
+  return renderTrainingOverview();
+}
+
+function renderTrainingOverview() {
   const settings = Store.getSettings();
-  const lastBackup = settings.lastBackupAt ? `Zuletzt gesichert ${relativeDay(settings.lastBackupAt)}` : 'Noch nie gesichert';
+  const workouts = Store.getWorkouts();
+  const exercises = Store.getExercises();
+  const unit = unitLabel(settings.unit);
+  if (!workouts.some((w) => w.finishedAt)) {
+    return `
+      <section class="card g-empty">
+        <span class="g-empty-icon">${Icon.dumbbell}</span>
+        <strong>Noch kein Training</strong>
+        <p class="muted">Nach der ersten Einheit siehst du hier deine Woche, die Sätze pro Muskel und deine Rekorde.</p>
+        <button class="btn btn-primary" data-action="goto-sub" data-sub="plans">Zu den Plänen</button>
+      </section>`;
+  }
+  const now = new Date();
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+  const week = workouts.filter((w) => w.finishedAt && new Date(w.startedAt) >= monday);
+  const minutes = week.reduce((n, w) => n + (new Date(w.finishedAt) - new Date(w.startedAt)) / 60000, 0);
+  const sets = weeklySets(workouts, exercises);
+  const trained = MAP_GROUPS.filter((g) => sets[g] > 0).length;
+  const inRange = MAP_GROUPS.filter((g) => sets[g] >= SET_TARGET_MIN).length;
+  const values = Object.fromEntries(MAP_GROUPS.map((g) => [g, setShade(sets[g])]));
+  const rows = [...MAP_GROUPS].sort((a, b) => sets[b] - sets[a]).map((g) => {
+    const n = sets[g];
+    const status = !n ? '' : n < SET_TARGET_MIN ? 'low' : n > SET_TARGET_MAX ? 'high' : 'ok';
+    return `
+      <div class="g-sets-row ${status}">
+        <span class="g-sets-name">${g}</span>
+        <span class="g-sets-bar"><i style="transform:scaleX(${Math.min(1, n / SET_TARGET_MAX)})"></i><em style="left:${(SET_TARGET_MIN / SET_TARGET_MAX) * 100}%"></em></span>
+        <span class="g-sets-n">${n}</span>
+      </div>`;
+  }).join('');
+  const records = recentRecords(30, 5);
+
   return `
+    <section class="card g-stats4">
+      <div><b>${week.length}<small>/${settings.weeklyGoal}</small></b><span>Trainings</span></div>
+      <div><b>${week.reduce((n, w) => n + workoutDoneSets(w), 0)}</b><span>Sätze</span></div>
+      <div><b>${formatVolume(week.reduce((n, w) => n + workoutVolume(w), 0))}</b><span>Volumen (${unit})</span></div>
+      <div><b>${Math.round(minutes)}</b><span>Minuten</span></div>
+    </section>
+    <div class="g-sec"><h2>Sätze pro Muskel</h2><span>letzte 7 Tage</span></div>
+    <section class="card g-setsmap">
+      <div class="g-setsmap-top">
+        <div class="g-setsmap-map">${muscleMap(values)}</div>
+        <div class="g-setsmap-sum">
+          <b>${inRange}<small>/${MAP_GROUPS.length}</small></b>
+          <span>Muskeln im Zielbereich</span>
+          <p>${trained ? `${trained} von ${MAP_GROUPS.length} trainiert` : 'Diese Woche noch nichts'}</p>
+        </div>
+      </div>
+      <div class="g-sets-list">${rows}</div>
+      <p class="muted small g-sets-note">Etwa ${SET_TARGET_MIN}–${SET_TARGET_MAX} harte Sätze pro Muskel und Woche bringen den meisten Muskelaufbau. Gezählt wird die Hauptmuskelgruppe jeder Übung.</p>
+    </section>
+    <div class="g-sec"><h2>Standortbestimmung</h2></div>
+    ${renderMotivationCard({ compact: true })}
+    ${records.length ? `
+      <div class="g-sec"><h2>Neue Rekorde</h2><span>30 Tage</span></div>
+      <section class="card list">${records.map((r) => `
+        <button class="list-item selectable" data-action="open-exercise" data-id="${r.id}">
+          <span class="g-pr-icon">🏆</span>
+          <div class="list-item-main"><strong>${escapeHtml(r.name)}</strong><span class="muted">${escapeHtml(r.set)} · ${relativeDay(r.date)}</span></div>
+          ${Icon.chevron}
+        </button>`).join('')}</section>` : ''}`;
+}
+
+// Rekord-Sätze der letzten Tage, je Übung der jüngste
+function recentRecords(days, limit) {
+  const unit = unitLabel(Store.getSettings().unit);
+  const from = Date.now() - days * 86400000;
+  const names = exerciseNames();
+  const seen = new Set();
+  const out = [];
+  for (const w of Store.getWorkouts()) {
+    if (!w.finishedAt || new Date(w.startedAt).getTime() < from) continue;
+    for (const e of w.entries) {
+      if (seen.has(e.exerciseId)) continue;
+      const prs = e.sets.filter((s) => s.done && s.pr);
+      if (!prs.length) continue;
+      seen.add(e.exerciseId);
+      out.push({ id: e.exerciseId, name: entryName(e, names), set: formatSet(bestSet(prs) || prs[0], unit), date: w.startedAt });
+    }
+  }
+  return out.slice(0, limit);
+}
+
+function renderPlansPage() {
+  const routines = Store.getRoutines();
+  const workouts = Store.getWorkouts();
+  const exercises = Store.getExercises();
+  const names = exerciseNames();
+  const next = nextPlanOf(routines, workouts);
+  const { lastDone } = planRotation(routines, workouts);
+  const ordered = next ? [next, ...routines.filter((r) => r !== next)] : routines;
+  const cards = ordered.map((r) => {
+    const groups = Object.keys(planGroups(r.exerciseIds, exercises));
+    const minutes = planMinutes(r);
+    const preview = r.exerciseIds.map((id) => names.get(id)).filter(Boolean).join(' · ');
+    return `
+      <article class="card g-plan ${r === next ? 'next' : ''}">
+        <div class="g-plan-head">
+          <div class="g-plan-title">
+            ${r === next ? '<span class="g-pill small">Als Nächstes</span>' : ''}
+            <h3>${escapeHtml(r.name)}</h3>
+            <span class="muted small">${plural(r.exerciseIds.length, 'Übung', 'Übungen')}${minutes ? ` · ca. ${minutes} Min` : ''} · ${lastDoneLabel(lastDone, r)}</span>
+          </div>
+          <div class="g-plan-map">${muscleMap(planGroups(r.exerciseIds, exercises), { labels: false })}</div>
+        </div>
+        ${groups.length ? `<div class="g-chips">${groups.map((g) => `<span>${g}</span>`).join('')}</div>` : ''}
+        ${preview ? `<p class="g-plan-preview">${escapeHtml(preview)}</p>` : ''}
+        <div class="g-plan-actions">
+          <button class="btn ${r === next ? 'btn-primary' : 'btn-secondary'} btn-small" data-action="start-routine" data-id="${r.id}" data-nosound>${Icon.play} Starten</button>
+          <button class="btn btn-ghost btn-small" data-action="edit-routine" data-id="${r.id}">${Icon.edit} Bearbeiten</button>
+        </div>
+      </article>`;
+  }).join('');
+  return `
+    ${routines.length ? cards : '<p class="empty">Noch keine Pläne. Tippe oben rechts auf + – oder lass sie dir unten per KI erstellen.</p>'}
+    <section class="card list">
+      <button class="list-item selectable start-blank-row" data-action="start-blank">
+        <span class="start-blank-icon">${Icon.plus}</span>
+        <div class="list-item-main"><strong>Leeres Training</strong><span class="muted">Übungen spontan zusammenstellen</span></div>
+        ${Icon.chevron}
+      </button>
+    </section>
+    <div class="g-sec"><h2>Pläne per KI</h2></div>
+    <section class="card">
+      <ol class="howto">
+        <li>Prompt kopieren und an eine KI schicken.</li>
+        <li>Plan beschreiben – per Sprachnachricht geht das am schnellsten.</li>
+        <li>Antwort der KI hier einfügen und einlesen.</li>
+      </ol>
+      <button class="btn btn-secondary full" data-action="copy-plan-prompt">${Icon.copy} Prompt kopieren</button>
+      <textarea id="plan-import-text" class="text-input import-area" rows="3"
+        placeholder="Antwort der KI hier einfügen…"></textarea>
+      <button class="btn btn-primary full" data-action="parse-plan-import">Pläne einlesen</button>
+    </section>`;
+}
+
+// Die wichtigsten Übungen: am häufigsten trainiert in den letzten Monaten
+function keyLifts(limit = 6) {
+  const from = Date.now() - 120 * 86400000;
+  const count = new Map();
+  Store.getWorkouts().forEach((w) => {
+    if (!w.finishedAt || new Date(w.startedAt).getTime() < from) return;
+    w.entries.forEach((e) => {
+      if (e.sets.some((s) => s.done && s.reps > 0)) count.set(e.exerciseId, (count.get(e.exerciseId) || 0) + 1);
+    });
+  });
+  return [...count.entries()]
+    .filter(([id, n]) => n >= 2 && Store.getExercise(id))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([id]) => {
+      const ex = Store.getExercise(id);
+      const { loaded, points } = progressSeries(id);
+      const last = points[points.length - 1];
+      const since = Date.now() - 56 * 86400000;
+      const base = points.find((p) => new Date(p.date).getTime() >= since) || points[0];
+      return { ex, loaded, points: points.slice(-12), value: last?.value || 0, delta: last && base ? last.value - base.value : 0, baseDate: base?.date };
+    });
+}
+
+function sparkline(points) {
+  if (points.length < 2) return '<svg class="g-spark" viewBox="0 0 100 34"></svg>';
+  const vals = points.map((p) => p.value);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const span = max - min || 1;
+  const xy = vals.map((v, i) => [(i / (vals.length - 1)) * 96 + 2, 30 - ((v - min) / span) * 26]);
+  const line = xy.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const [lx, ly] = xy[xy.length - 1];
+  return `<svg class="g-spark" viewBox="0 0 100 34" preserveAspectRatio="none">
+    <polygon points="2,34 ${line} 98,34" class="area"/><polyline points="${line}" class="line"/>
+    <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="2.6" class="dot"/></svg>`;
+}
+
+function renderProgressPage() {
+  const unit = unitLabel(Store.getSettings().unit);
+  const lifts = keyLifts();
+  const liftCards = lifts.map((l) => {
+    const d = Math.round(l.delta * 10) / 10;
+    const deltaTxt = !d ? '±0' : `${d > 0 ? '+' : '−'}${l.loaded ? formatNumber(Math.abs(d)) : Math.abs(d)}`;
+    return `
+      <button class="card g-lift" data-action="open-exercise" data-id="${l.ex.id}">
+        <span class="g-lift-name">${escapeHtml(l.ex.name)}</span>
+        <span class="g-lift-value">${l.loaded ? formatNumber(Math.round(l.value)) : l.value}<small>${l.loaded ? unit : 'Wdh'}</small></span>
+        <span class="g-lift-delta ${d > 0 ? 'up' : d < 0 ? 'down' : ''}">${deltaTxt} <span>in 8 Wo.</span></span>
+        ${sparkline(l.points)}
+      </button>`;
+  }).join('');
+  return `
+    ${lifts.length ? `
+      <div class="g-sec"><h2>Kraftentwicklung</h2><span>geschätztes 1RM</span></div>
+      <div class="g-lifts">${liftCards}</div>` : ''}
+    <div class="g-sec"><h2>Verlauf</h2></div>
+    ${renderCalendar()}
+    ${renderHistoryLog()}`;
+}
+
+function bindTrainingEvents() {
+  const view = qs('.view');
+  qsa('[data-action="goto-sub"]', view).forEach((b) => b.addEventListener('click', () => { state.trainingSub = b.dataset.sub; render(); }));
+  qsa('[data-action="open-exercise"]', view).forEach((b) => b.addEventListener('click', () => openExerciseSheet(b.dataset.id)));
+  if (state.trainingSub === 'plans') {
+    bindStarters(view);
+    qsa('[data-action="edit-routine"]', view).forEach((b) => b.addEventListener('click', () => openRoutineSheet(b.dataset.id)));
+    bindPlanImportEvents();
+  }
+  if (state.trainingSub === 'exercises') bindExerciseListEvents();
+  if (state.trainingSub === 'progress') {
+    qsa('.list-item[data-action="open-workout"]', view).forEach((btn) => btn.addEventListener('click', () => openWorkoutDetailSheet(btn.dataset.id)));
+    bindCalendarEvents();
+  }
+}
+
+function bindExerciseListEvents() {
+  const groups = qs('#exercise-groups');
+  if (!groups) return;
+  const bindRows = () => {
+    bindGroupToggles(groups, groupState.library.open);
+    qsa('[data-action="edit-exercise"]', groups).forEach((btn) =>
+      btn.addEventListener('click', () => openExerciseSheet(btn.dataset.id)));
+  };
+  bindRows();
+  // Nur die Liste neu aufbauen statt render(): sonst verlöre das Suchfeld
+  // bei jedem Tastendruck den Fokus.
+  qs('#exercise-search')?.addEventListener('input', (e) => {
+    groupState.library.query = e.target.value;
+    groups.innerHTML = renderExerciseGroups();
+    bindRows();
+  });
+}
+
+// ---------- Profil ----------
+// Alles über dich: Level und Serien, Challenges, Supplements, Einstellungen.
+function renderProfile() {
+  if (state.profilePage) return renderProfilePage(state.profilePage);
+  const settings = Store.getSettings();
+  const m = buildMotivation({
+    workouts: Store.getWorkouts(),
+    exercises: Store.getExercises(),
+    goal: settings.weeklyGoal,
+    unit: unitLabel(settings.unit),
+    stepFor: (ex) => overloadStep(ex.muscleGroup, settings.unit),
+  });
+  const mob = mobilityWeekStats();
+  const suppStreak = settings.supplements && Store.getActiveSupplements().length
+    ? streak(Store.getSupplements(), Store.getSupplementLog(), dayKey()) : null;
+  const series = `
+    <section class="g-series">
+      <div class="g-serie"><span class="g-serie-icon gym">${Icon.dumbbell}</span><b>${m.streak}</b><span>${m.streak === 1 ? 'Woche' : 'Wochen'} Training</span></div>
+      <div class="g-serie"><span class="g-serie-icon mob">${Icon.leaf}</span><b>${mob.streak}</b><span>${mob.streak === 1 ? 'Woche' : 'Wochen'} Mobility</span></div>
+      ${suppStreak !== null ? `<div class="g-serie"><span class="g-serie-icon supp">💊</span><b>${suppStreak}</b><span>${suppStreak === 1 ? 'Tag' : 'Tage'} Supplements</span></div>` : ''}
+    </section>`;
+  const lastBackup = settings.lastBackupAt ? `Zuletzt gesichert ${relativeDay(settings.lastBackupAt)}` : 'Noch nie gesichert';
+  const row = (page, icon, title, sub) => `
+    <button class="list-item selectable g-set-row" data-action="profile-page" data-page="${page}">
+      <span class="g-set-icon">${icon}</span>
+      <div class="list-item-main"><strong>${title}</strong><span class="muted">${sub}</span></div>
+      ${Icon.chevron}
+    </button>`;
+  return `
+    ${renderChallenges({ afterHero: series })}
     <section>
-      <div class="section-title">Training</div>
-      <div class="card settings-card">
+      <div class="section-title">Supplements</div>
+      <div class="card list">
+        <div class="list-item">
+          <div class="list-item-main"><strong>Auf „Heute“ abhaken</strong><span class="muted">Mit Serie und Kalender-Erinnerung</span></div>
+          <label class="toggle"><input type="checkbox" id="toggle-supplements" ${settings.supplements ? 'checked' : ''} /><span class="toggle-track"></span></label>
+        </div>
+        ${settings.supplements ? `
+          <button class="list-item selectable" data-action="open-supplements">
+            <div class="list-item-main"><strong>Supplements verwalten</strong><span class="muted">${plural(Store.getActiveSupplements().length, 'aktives Supplement', 'aktive Supplements')} · Verlauf & Erinnerung</span></div>
+            ${Icon.chevron}
+          </button>` : ''}
+      </div>
+    </section>
+    <section>
+      <div class="section-title">Einstellungen</div>
+      <div class="card list">
+        ${row('training', Icon.dumbbell, 'Training', `${unitLabel(settings.unit)} · Pause ${settings.restSeconds ? `${settings.restSeconds} s` : 'aus'} · Wochenziel ${settings.weeklyGoal}×`)}
+        ${row('look', Icon.volumeHigh, 'Darstellung & Töne', `Akzentfarbe · Töne ${settings.sound ? 'an' : 'aus'}`)}
+        ${row('data', Icon.share, 'Daten & Sicherung', lastBackup)}
+      </div>
+    </section>
+    <p class="empty small">Alle Daten bleiben ausschließlich lokal auf diesem Gerät gespeichert.</p>`;
+}
+
+function renderProfilePage(page) {
+  const settings = Store.getSettings();
+  if (page === 'training') {
+    return `
+      <section class="card settings-card">
         <div class="setting">
           <div class="setting-head"><strong>Einheit</strong></div>
           <div class="segmented">
@@ -2746,6 +3154,13 @@ function renderSettings() {
             <span class="segmented-thumb" aria-hidden="true"></span>
           </div>
           <p class="muted small">Ändert nur die Anzeige-Einheit für neue Einträge, bestehende Werte werden nicht umgerechnet.</p>
+        </div>
+        <div class="setting">
+          <div class="setting-head"><strong>Wochenziel</strong></div>
+          <div class="chip-row">
+            ${WEEKLY_GOALS.map((g) => `<button class="chip ${settings.weeklyGoal === g ? 'active' : ''}" data-action="set-goal" data-goal="${g}">${g}×</button>`).join('')}
+          </div>
+          <p class="muted small">Trainings pro Woche – für „Deine Woche“, die Serie und die Standortbestimmung.</p>
         </div>
         <div class="setting">
           <div class="setting-head"><strong>Pause zwischen Sätzen</strong></div>
@@ -2757,34 +3172,13 @@ function renderSettings() {
           </div>
           <p class="muted small">Startet automatisch, sobald du einen Satz abhakst.</p>
         </div>
-        ${toggleRow('toggle-overload', 'Progressive Overload', 'Schlägt vor, das Gewicht zu erhöhen, sobald du eine Übung in den letzten 2 Einheiten bei gleichem Gewicht mit durchweg 10+ Wiederholungen geschafft hast.', settings.progressiveOverload)}
+        ${toggleRow('toggle-overload', 'Gewichts-Empfehlung', 'Schlägt mehr Gewicht vor, sobald du eine Übung in den letzten 2 Einheiten bei gleichem Gewicht mit durchweg 10+ Wiederholungen geschafft hast.', settings.progressiveOverload)}
         ${toggleRow('toggle-awake', 'Bildschirm anlassen', 'Während des Trainings sperrt sich das iPhone nicht – kein Entsperren zwischen zwei Sätzen.', settings.keepAwake)}
-      </div>
-    </section>
-
-    <section>
-      <div class="section-title">Startseite</div>
-      <div class="card settings-card">
-        <div class="setting">
-          ${toggleRow('toggle-motivation', 'Standortbestimmung', 'Ein ehrliches Urteil zu Konstanz und Kraftentwicklung – samt dem nächsten konkreten Schritt.', settings.motivation).replace('class="setting toggle-row"', 'class="toggle-row"')}
-          ${settings.motivation ? `
-            <div class="setting-sub">
-              <div class="setting-head"><span class="muted small">Wochenziel</span></div>
-              <div class="chip-row">
-                ${WEEKLY_GOALS.map((g) => `
-                  <button class="chip ${settings.weeklyGoal === g ? 'active' : ''}" data-action="set-goal" data-goal="${g}">${g}×</button>
-                `).join('')}
-              </div>
-            </div>` : ''}
-        </div>
-        ${toggleRow('toggle-supplements', 'Supplements', 'Tägliches Abhaken auf der Startseite, mit Serie und Kalender-Erinnerung.', settings.supplements)}
-        ${toggleRow('toggle-mobility', 'Mobility', 'Eigener Bereich mit täglicher Routine, Zielen und 3D-Übungen – die Karte liegt unten auf der Startseite.', settings.mobility)}
-      </div>
-    </section>
-
-    <section>
-      <div class="section-title">Darstellung & Töne</div>
-      <div class="card settings-card">
+      </section>`;
+  }
+  if (page === 'look') {
+    return `
+      <section class="card settings-card">
         <div class="setting">
           <div class="setting-head"><strong>Akzentfarbe</strong></div>
           <div class="swatch-row">
@@ -2793,6 +3187,7 @@ function renderSettings() {
                 style="background:${c.value}" aria-label="${c.label}">${settings.accent === c.value ? Icon.check : ''}</button>
             `).join('')}
           </div>
+          <p class="muted small">Die Farbe für Training. Mobility bleibt grün.</p>
         </div>
         <div class="setting">
           ${toggleRow('toggle-sound', 'Töne', 'Kurze Rückmeldung beim Abhaken, bei Rekorden und am Ende der Pause.', settings.sound).replace('class="setting toggle-row"', 'class="toggle-row"')}
@@ -2813,38 +3208,22 @@ function renderSettings() {
               <p class="muted small">Zum Anhören antippen. Der Stummschalter des iPhones hat Vorrang.</p>
             </div>` : ''}
         </div>
-      </div>
+      </section>`;
+  }
+  const lastBackup = settings.lastBackupAt ? `Zuletzt gesichert ${relativeDay(settings.lastBackupAt)}` : 'Noch nie gesichert';
+  return `
+    <section class="card list">
+      <button class="list-item selectable" data-action="export-data">
+        <div class="list-item-main"><strong>Sicherung erstellen</strong><span class="muted">${lastBackup}</span></div>
+        ${Icon.share}
+      </button>
+      <label class="list-item selectable" for="import-file">
+        <div class="list-item-main"><strong>Sicherung wiederherstellen</strong><span class="muted">Überschreibt alle Daten auf diesem Gerät</span></div>
+        ${Icon.upload}
+      </label>
+      <input type="file" id="import-file" accept=".json,application/json" hidden />
     </section>
-
-    <section>
-      <div class="section-title">Pläne per KI anlegen</div>
-      <div class="card">
-        <ol class="howto">
-          <li>Prompt kopieren und an eine KI schicken.</li>
-          <li>Plan beschreiben – per Sprachnachricht geht das am schnellsten.</li>
-          <li>Antwort der KI hier einfügen und einlesen.</li>
-        </ol>
-        <button class="btn btn-secondary full" data-action="copy-plan-prompt">${Icon.copy} Prompt kopieren</button>
-        <textarea id="plan-import-text" class="text-input import-area" rows="3"
-          placeholder="Antwort der KI hier einfügen…"></textarea>
-        <button class="btn btn-primary full" data-action="parse-plan-import">Pläne einlesen</button>
-      </div>
-    </section>
-
-    <section>
-      <div class="section-title">Daten</div>
-      <div class="card list">
-        <button class="list-item selectable" data-action="export-data">
-          <div class="list-item-main"><strong>Sicherung erstellen</strong><span class="muted">${lastBackup}</span></div>
-          ${Icon.share}
-        </button>
-        <label class="list-item selectable" for="import-file">
-          <div class="list-item-main"><strong>Sicherung wiederherstellen</strong><span class="muted">Überschreibt alle Daten auf diesem Gerät</span></div>
-          ${Icon.upload}
-        </label>
-        <input type="file" id="import-file" accept=".json,application/json" hidden />
-      </div>
-    </section>
+    <p class="muted small g-note">Die Sicherung enthält alles: Training, Mobility, Fight, Challenges und Supplements.</p>
     <section class="card list">
       <button class="list-item selectable danger" data-action="wipe-data">
         <div class="list-item-main"><strong>Alle Daten löschen</strong><span class="muted">Setzt die App zurück</span></div>
@@ -2852,6 +3231,24 @@ function renderSettings() {
       </button>
     </section>
     <p class="empty small">Alle Daten bleiben ausschließlich lokal auf diesem Gerät gespeichert.</p>`;
+}
+
+function bindProfileEvents() {
+  const view = qs('.view');
+  if (!state.profilePage) {
+    bindChallenges(view);
+    qsa('[data-action="profile-page"]', view).forEach((b) => b.addEventListener('click', () => {
+      state.profilePage = b.dataset.page;
+      render();
+    }));
+    qs('[data-action="open-supplements"]', view)?.addEventListener('click', () => openSupplementSheet());
+    qs('#toggle-supplements', view)?.addEventListener('change', (e) => {
+      Store.saveSettings({ ...Store.getSettings(), supplements: e.target.checked });
+      render();
+    });
+    return;
+  }
+  bindSettingsEvents();
 }
 
 // ---- Pläne per KI importieren ----
@@ -2957,8 +3354,8 @@ function openImportPreview(text) {
         closeSheet();
         const area = qs('#plan-import-text');
         if (area) area.value = '';
-        state.tab = 'library';
-        state.librarySubTab = 'routines';
+        state.tab = 'training';
+        state.trainingSub = 'plans';
         go(render);
         toast(planCount === 1 ? 'Plan importiert' : `${planCount} Pläne importiert`);
       });
@@ -2997,7 +3394,7 @@ async function exportBackup() {
   const name = `gym-sicherung-${dayKey()}.json`;
   const markDone = () => {
     Store.saveSettings({ ...Store.getSettings(), lastBackupAt: new Date().toISOString() });
-    if (state.tab === 'settings') render();
+    if (state.tab === 'profile') render();
   };
   const file = typeof File === 'function' ? new File([json], name, { type: 'application/json' }) : null;
   if (file && navigator.canShare?.({ files: [file] })) {
@@ -3119,13 +3516,20 @@ function bindSettingsEvents() {
 
 // ---- Globale Events ----
 function bindGlobalEvents() {
-  qsa('[data-action="set-tab"]').forEach((btn) => btn.addEventListener('click', () => {
-    tabSwipe.selectWithSlide(btn.dataset.tab);
-  }));
-  qs('.tabbar')?.addEventListener('pointerdown', tabSwipe.onPointerDown);
-  qs('[data-action="add-exercise"]')?.addEventListener('click', () => openExerciseSheet(null));
-  qs('[data-action="add-routine"]')?.addEventListener('click', () => openRoutineSheet(null));
+  qsa('[data-gtab]').forEach((btn) => btn.addEventListener('click', () => goTab(btn.dataset.gtab)));
+  qs('.g-dock [data-action="open-start"]')?.addEventListener('click', () => { Sound.start(); openStartSheet(); });
+  qs('[data-action="live-resume"]')?.addEventListener('click', resumeWorkout);
+  qs('.g-top [data-action="add-exercise"]')?.addEventListener('click', () => openExerciseSheet(null));
+  qs('.g-top [data-action="add-routine"]')?.addEventListener('click', () => openRoutineSheet(null));
   qs('[data-action="mode-fight"]')?.addEventListener('click', () => switchMode('fight'));
+  qs('.g-top [data-action="goto-profile"]')?.addEventListener('click', () => goTab('profile'));
+  qs('[data-action="mobility-settings"]')?.addEventListener('click', openMobilitySettings);
+  qs('[data-action="profile-back"]')?.addEventListener('click', () => { state.profilePage = null; render(); });
+  [[qs('#g-seg-training'), trainingSwipe], [qs('#g-seg-mobility'), mobilitySwipe]].forEach(([seg, swipe]) => {
+    if (!seg) return;
+    qsa('[data-seg]', seg).forEach((b) => b.addEventListener('click', () => swipe.selectWithSlide(b.dataset.seg)));
+    seg.addEventListener('pointerdown', swipe.onPointerDown);
+  });
 }
 
 // ---- Fight-Modus (Kickboxen & Ausdauer) ----
@@ -3410,34 +3814,23 @@ window.addEventListener('pointermove', (e) => activeSwipeSelector?.onPointerMove
 window.addEventListener('pointerup', () => activeSwipeSelector?.onPointerUp());
 window.addEventListener('pointercancel', () => activeSwipeSelector?.onPointerUp());
 
-const TAB_IDS = ['start', 'challenges', 'history', 'library', 'settings'];
-const tabSwipe = createSwipeSelector({
-  barSelector: '.tabbar',
-  indicatorSelector: '.tab-indicator',
-  handleSelector: '.tab-btn',
-  ids: TAB_IDS,
-  getActive: () => state.tab,
-  setActive: (id) => { state.tab = id; },
+const trainingSwipe = createSwipeSelector({
+  barSelector: '#g-seg-training',
+  indicatorSelector: '#g-seg-training .g-seg-thumb',
+  handleSelector: 'button',
+  ids: TRAINING_SUBS.map((t) => t.id),
+  getActive: () => state.trainingSub,
+  setActive: (id) => { state.trainingSub = id; },
   onChange: render,
 });
 
-const historySwipe = createSwipeSelector({
-  barSelector: '#history-segmented',
-  indicatorSelector: '#history-segmented .segmented-thumb',
+const mobilitySwipe = createSwipeSelector({
+  barSelector: '#g-seg-mobility',
+  indicatorSelector: '#g-seg-mobility .g-seg-thumb',
   handleSelector: 'button',
-  ids: ['log', 'progress'],
-  getActive: () => state.historySubTab,
-  setActive: (id) => { state.historySubTab = id; },
-  onChange: render,
-});
-
-const librarySwipe = createSwipeSelector({
-  barSelector: '#library-segmented',
-  indicatorSelector: '#library-segmented .segmented-thumb',
-  handleSelector: 'button',
-  ids: ['exercises', 'routines'],
-  getActive: () => state.librarySubTab,
-  setActive: (id) => { state.librarySubTab = id; },
+  ids: AREA_TABS.map((t) => t.id),
+  getActive: () => state.mobilitySub,
+  setActive: (id) => { state.mobilitySub = id; },
   onChange: render,
 });
 
@@ -3461,6 +3854,15 @@ applySettings();
 initChallenges({ openSheet, closeSheet, toast, render, prefersReducedMotion });
 initMobility({
   openSheet, closeSheet, toast, render, enableDragReorder, dropIn, prefersReducedMotion,
+  // Mobility ist im Gym-Modus ein Tab: Wechsel der Ansicht und Sprünge von außen
+  setMobilityTab: (id) => { state.mobilitySub = id; render(); },
+  openMobilityTab: ({ tab = 'today' } = {}) => {
+    closeSheet();
+    state.workoutOpen = false;
+    state.tab = 'mobility';
+    state.mobilitySub = tab;
+    render();
+  },
 });
 calibrateSafeArea();
 window.addEventListener('resize', calibrateSafeArea);

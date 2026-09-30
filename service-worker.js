@@ -1,4 +1,4 @@
-const CACHE = 'gym-cache-v9';
+const CACHE = 'gym-cache-v10';
 const ASSETS = [
   './',
   './index.html',
@@ -6,6 +6,7 @@ const ASSETS = [
   './css/styles.css',
   './css/fight.css',
   './css/mobility.css',
+  './css/gym.css',
   './fonts/barlow-condensed-600.woff2',
   './fonts/barlow-condensed-700.woff2',
   './fonts/barlow-condensed-800.woff2',
@@ -29,6 +30,7 @@ const ASSETS = [
   './js/mobility/state.js',
   './js/mobility/figures.js',
   './js/mobility/area.js',
+  './js/gym/muscles.js',
   './js/mobility/player.js',
   // 3D für Mobility – vorab gespeichert, damit es auch ohne Netz im Gym läuft
   './js/vendor/three.module.min.js',
