@@ -9,7 +9,7 @@
 // Regionen zählen die Wochenminuten: Entscheidend für mehr Beweglichkeit ist
 // die Dehnzeit pro Region und Woche (ca. 5–10 Minuten, verteilt auf viele Tage).
 
-import { MOBILITY_EXERCISES as BASE_EXERCISES, BREATH } from '../mobility-data.js';
+import { MOBILITY_EXERCISES as BASE_EXERCISES, BREATH } from './data.js';
 
 const HOLD = { loop: BREATH.loop, breath: true };
 

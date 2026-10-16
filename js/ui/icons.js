@@ -1,0 +1,43 @@
+// Schlichte Linien-Icons (24×24, currentColor), einheitliche Strichstärke.
+const s = (body, { fill = false, width = 1.8 } = {}) => (fill
+  ? `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${body}</svg>`
+  : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`);
+
+export const Icon = {
+  home: s('<path d="M3.5 10.2 12 3.5l8.5 6.7"/><path d="M5.5 8.8V19.5a1 1 0 0 0 1 1H10v-5.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5.5h3.5a1 1 0 0 0 1-1V8.8"/>'),
+  dumbbell: s('<path d="M7.5 12h9"/><rect x="4.5" y="7" width="3" height="10" rx="1"/><rect x="16.5" y="7" width="3" height="10" rx="1"/><path d="M2.5 10v4M21.5 10v4"/>'),
+  pill: s('<rect x="2.4" y="8" width="19.2" height="8" rx="4" transform="rotate(-45 12 12)"/><path d="M9.2 9.2l5.6 5.6"/>'),
+  chart: s('<path d="M4 20h16"/><path d="M7 16.5v-5M12 16.5V6.5M17 16.5v-8"/>', { width: 2 }),
+  gear: s('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>'),
+  plus: s('<path d="M12 5v14M5 12h14"/>', { width: 2 }),
+  minus: s('<path d="M5 12h14"/>', { width: 2 }),
+  chevronRight: s('<path d="m9.5 6 6 6-6 6"/>', { width: 2 }),
+  chevronLeft: s('<path d="m14.5 6-6 6 6 6"/>', { width: 2.2 }),
+  chevronDown: s('<path d="m6 9.5 6 6 6-6"/>', { width: 2.2 }),
+  check: s('<path d="M19.5 7 10 16.5 5 11.5"/>', { width: 2.4 }),
+  close: s('<path d="M17.5 6.5l-11 11M6.5 6.5l11 11"/>', { width: 2 }),
+  trash: s('<path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l.9 12.1a1 1 0 0 0 1 .9h8.2a1 1 0 0 0 1-.9L18 7"/><path d="M9 7V4.5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1V7"/>'),
+  more: s('<circle cx="5.5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.5" cy="12" r="1.7"/>', { fill: true }),
+  play: s('<path d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l11-6.8a.8.8 0 0 0 0-1.4l-11-6.8a.8.8 0 0 0-1.2.7Z"/>', { fill: true }),
+  pause: s('<rect x="6.5" y="5" width="3.6" height="14" rx="1"/><rect x="13.9" y="5" width="3.6" height="14" rx="1"/>', { fill: true }),
+  timer: s('<circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 1.5"/><path d="M9.5 2.5h5"/>'),
+  pencil: s('<path d="M16.8 3.7a2.4 2.4 0 0 1 3.5 3.5L8 19.5l-4.5 1 1-4.5Z"/>'),
+  search: s('<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.3-4.3"/>', { width: 2 }),
+  reorder: s('<path d="M4.5 8h15M4.5 12h15M4.5 16h15"/>'),
+  toTop: s('<path d="M12 20V8"/><path d="m6.5 13.5 5.5-5.5 5.5 5.5"/><path d="M5 4h14"/>'),
+  calendar: s('<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17"/><path d="M8 3v4M16 3v4"/>'),
+  share: s('<path d="M12 3.5v11"/><path d="m8 7.5 4-4 4 4"/><path d="M8.5 10.5H6.5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-2"/>'),
+  download: s('<path d="M12 3.5v11"/><path d="m7.5 10 4.5 4.5 4.5-4.5"/><path d="M5 20.5h14"/>'),
+  doc: s('<path d="M14 3.5H7.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8Z"/><path d="M14 3.5V8h4.5"/><path d="M9 12.5h6M9 16.5h4"/>'),
+  copy: s('<rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M15.5 8.5V5.5a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/>'),
+  stretch: s('<circle cx="12" cy="4.6" r="1.9"/><path d="M12 7.5v6"/><path d="M4.5 10.5 12 8.5l7.5 2"/><path d="m12 13.5-4.5 7M12 13.5l4.5 7"/>'),
+  info: s('<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5"/><path d="M12 7.6v.1" stroke-width="2.4"/>'),
+  alert: s('<path d="M10.3 4.2 2.6 17.5A2 2 0 0 0 4.3 20.5h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0Z"/><path d="M12 9.5v4"/><path d="M12 16.8v.1" stroke-width="2.4"/>'),
+  archive: s('<rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v9.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V9"/><path d="M10 13h4"/>'),
+  skipBack: s('<path d="M18.5 18.2V5.8a.8.8 0 0 0-1.3-.6l-8 6.2a.8.8 0 0 0 0 1.2l8 6.2a.8.8 0 0 0 1.3-.6Z"/><rect x="5" y="5" width="2.4" height="14" rx="1"/>', { fill: true }),
+  skipForward: s('<path d="M5.5 5.8v12.4a.8.8 0 0 0 1.3.6l8-6.2a.8.8 0 0 0 0-1.2l-8-6.2a.8.8 0 0 0-1.3.6Z"/><rect x="16.6" y="5" width="2.4" height="14" rx="1"/>', { fill: true }),
+  voiceOn: s('<path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5Z"/><path d="M15.5 9a4.5 4.5 0 0 1 0 6"/><path d="M18.2 6.5a8 8 0 0 1 0 11"/>'),
+  voiceOff: s('<path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5Z"/><path d="m16 9.5 5 5M21 9.5l-5 5"/>'),
+  clock: s('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
+  flag: s('<path d="M5 21V4"/><path d="M5 4.5h11.5l-2 4 2 4H5"/>'),
+};

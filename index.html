@@ -1,46 +1,40 @@
 <!doctype html>
-<html lang="de">
+<html lang="de" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
   <title>Gym</title>
-  <meta name="description" content="Private Trainings-App für Workout-Logging, Routinen und Fortschritt." />
+  <meta name="description" content="Private Trainings-App: Pläne, Training, Supplements." />
 
   <!-- iOS Home-Screen / PWA -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <!-- Nicht "black-translucent": iOS macht die Web-Ansicht dann um die Höhe der
-       Statusleiste kürzer, hängt sie aber oben an – der fehlende Streifen
-       landet unten, wo die Navigationsleiste sitzt, und ist per CSS nicht
-       erreichbar. Mit "default" beginnt die Seite unter der Statusleiste und
-       reicht dafür bis zur echten Unterkante. -->
+  <meta name="mobile-web-app-capable" content="yes" />
+  <!-- Nicht "black-translucent": iOS macht die Web-Ansicht dann kürzer, hängt
+       sie aber oben an – der fehlende Streifen landet unten, wo die Tableiste
+       sitzt. Mit "default" beginnt die Seite unter der Statusleiste und reicht
+       bis zur echten Unterkante. -->
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Gym" />
-  <!-- Färbt den Streifen der Statusleiste wie die Kopfzeile darunter. -->
-  <meta name="theme-color" content="#1c1c1e" media="(prefers-color-scheme: dark)" />
-  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#f4f4f7" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="manifest" href="manifest.webmanifest" />
-
-  <link rel="stylesheet" href="css/styles.css" />
-  <link rel="stylesheet" href="css/gym.css" />
-  <link rel="stylesheet" href="css/fight.css" />
-  <link rel="stylesheet" href="css/mobility.css" />
-  <!-- Fight-Modus schon vor dem ersten Bild setzen, sonst blitzt beim Start
-       kurz die helle Gym-Optik auf. -->
+  <link rel="stylesheet" href="css/app.css" />
+  <!-- Hell/Dunkel schon vor dem ersten Bild setzen, sonst blitzt es kurz auf. -->
   <script>
     try {
-      if (JSON.parse(localStorage.getItem('gym.settings') || '{}').mode === 'fight') {
-        document.documentElement.dataset.mode = 'fight';
-      }
-    } catch (e) { /* ohne Einstellungen: Gym */ }
+      var s = JSON.parse(localStorage.getItem('gym.settings') || '{}');
+      var dark = s.v >= 2 && (s.theme === 'dark' || (s.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches));
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      document.querySelector('meta[name="theme-color"]').content = dark ? '#000000' : '#f4f4f7';
+    } catch (e) { /* ohne Einstellungen: hell */ }
   </script>
 </head>
 <body>
   <div id="app-root"></div>
+  <div id="workout-root"></div>
   <div id="sheet-root"></div>
   <div id="toast-root"></div>
-
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

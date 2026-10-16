@@ -1,15 +1,17 @@
-// 3D-Figuren des Mobility-Bereichs: eine Bühne für die Startkarte, eine für
-// Sheets und den Player, eine für Standbilder. three.js wird erst geladen,
-// wenn der Bereich geöffnet wird.
+// 3D-Figuren für Mobility: eine Bühne für den Player, eine für Vorschaubilder.
+// three.js wird erst geladen, wenn Mobility geöffnet wird.
 
 import { exercise } from './library.js';
 
 let mod = null;
-const load = () => { if (!mod) mod = import('../mobility-figure.js'); return mod; };
+const load = () => { if (!mod) mod = import('./figure.js'); return mod; };
 
+// Farben aus dem App-Thema: Hell/Dunkel und die gewählte Akzentfarbe
 export function mzTheme() {
-  const dark = document.documentElement.dataset.mode === 'fight' || window.matchMedia('(prefers-color-scheme: dark)').matches;
-  return { dark, accent: dark ? '#4cc3a3' : '#2f9e85' };
+  const docEl = document.documentElement;
+  const dark = docEl.dataset.theme === 'dark';
+  const accent = getComputedStyle(docEl).getPropertyValue('--accent').trim() || '#007aff';
+  return { dark, accent };
 }
 
 const stages = {};
@@ -38,7 +40,7 @@ export function stopFigure(name) { stages[name]?.stop(); }
 
 let thumbStage = null;
 const cache = new Map();
-export const thumb = (id, cls = '') => `<img class="mz-thumb ${cls}" data-thumb="${id}" alt="" />`;
+export const thumb = (id, cls = '') => `<img class="mob-thumb ${cls}" data-thumb="${id}" alt="" />`;
 export async function fillThumbs(root) {
   const imgs = [...root.querySelectorAll('img[data-thumb]')];
   if (!imgs.length) return;
@@ -49,7 +51,7 @@ export async function fillThumbs(root) {
   for (const img of imgs) {
     const ex = exercise(img.dataset.thumb);
     if (!ex) continue;
-    const key = `${ex.id}:${theme.dark}`;
+    const key = `${ex.id}:${theme.dark}:${theme.accent}`;
     if (!cache.has(key)) {
       // Ein Bild pro Frame – sonst stockt das Öffnen
       await new Promise((r) => requestAnimationFrame(r));
