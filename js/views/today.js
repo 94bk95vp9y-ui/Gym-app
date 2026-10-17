@@ -1,36 +1,36 @@
-// Tab „Heute“: das nächste Training, die Supplements des Tages, die Woche
-// und – bewusst klein – Mobility.
+// Tab „Heute“: oben das Training als Hauptkarte, darunter die Supplements des
+// Tages, dann Woche und Mobility als Kacheln. Ein Sicherungshinweis steht –
+// wenn fällig – ganz unten, damit er nicht vor dem Training im Weg ist.
 import { Store } from '../core/store.js';
 import {
-  nextPlan, lastDoneMap, planMinutes, plannedSets, workoutProgress, workoutDoneSets, workoutVolume, workoutDuration,
-  weekInfo, weekStreak, isSameDay, workoutPrs,
+  nextPlan, lastDoneMap, planMinutes, planMuscles, workoutProgress, workoutDoneSets, workoutVolume, workoutDuration,
+  weekInfo, isSameDay, workoutPrs,
 } from '../core/training.js';
 import {
-  formatLongDate, formatVolume, elapsedLabel, relativeDay, plural, unitLabel,
+  formatLongDate, formatVolume, formatTime, elapsedLabel, relativeDay, plural, unitLabel,
 } from '../core/format.js';
 import { esc, registerActions } from '../ui/dom.js';
 import { Icon } from '../ui/icons.js';
 import { registerPage, push, goTo, render } from '../ui/router.js';
 import { openSheet } from '../ui/sheet.js';
+import { chips, chev, iconTile, TINT } from '../ui/components.js';
 import { startRoutine, startBlank } from './workout.js';
 import { supplementsTodayHtml } from './supplements.js';
-import { mobilityRowHtml } from './mobility.js';
+import { mobilityTileHtml } from './mobility.js';
 import { backupDue, exportBackup } from './settings.js';
 import { openPlanEditor } from './training.js';
-
-const chev = `<span class="row-chev">${Icon.chevronRight}</span>`;
 
 function heroHtml() {
   const active = Store.getActive();
   if (active) {
     const p = workoutProgress(active);
     return `
-      <div class="card">
-        <div class="hero-label"><span class="pulse-dot"></span>Training läuft</div>
-        <h2 class="hero-title">${esc(active.routineName || 'Freies Training')}</h2>
-        <p class="hero-meta"><span id="live-time" class="num">${elapsedLabel(active.startedAt)}</span> · ${p.done} von ${plural(p.total, 'Satz', 'Sätzen')}</p>
+      <div class="hero">
+        <div class="hero-top"><span class="hero-label"><span class="live-dot"></span>Training läuft</span></div>
+        <div class="hero-time" id="live-time">${elapsedLabel(active.startedAt)}</div>
+        <div class="hero-meta">${esc(active.routineName || 'Freies Training')} · ${p.done} von ${plural(p.total, 'Satz', 'Sätzen')}</div>
         <div class="hero-progress"><i style="transform:scaleX(${p.ratio})"></i></div>
-        <button class="btn btn-primary btn-block" data-action="w-open">Fortsetzen</button>
+        <div class="hero-actions"><button class="btn btn-hero" data-action="w-open">Fortsetzen</button></div>
       </div>`;
   }
 
@@ -38,32 +38,34 @@ function heroHtml() {
   const doneToday = workouts.find((w) => isSameDay(w.startedAt));
   if (doneToday) {
     const prs = workoutPrs(doneToday);
+    const u = unitLabel(Store.getSettings().unit);
     return `
-      <div class="card">
-        <div class="hero-label success">${Icon.check}Heute erledigt</div>
+      <div class="hero calm">
+        <div class="hero-top">
+          <span class="hero-label">${Icon.check}Heute erledigt</span>
+          <button class="hero-switch" data-action="choose-workout">Noch eins ${Icon.chevronRight}</button>
+        </div>
         <h2 class="hero-title">${esc(doneToday.routineName || 'Freies Training')}</h2>
-        <div class="stats divided hero-stats">
-          <div class="stat"><b class="num">${Math.round(workoutDuration(doneToday) / 60000)}<small>Min</small></b><span>Dauer</span></div>
-          <div class="stat"><b class="num">${workoutDoneSets(doneToday)}</b><span>Sätze</span></div>
-          <div class="stat"><b class="num">${prs ? prs : formatVolume(workoutVolume(doneToday))}</b><span>${prs ? (prs === 1 ? 'Rekord' : 'Rekorde') : `Volumen (${unitLabel(Store.getSettings().unit)})`}</span></div>
+        <div class="hero-meta muted">${formatTime(doneToday.startedAt)} Uhr · ${Math.round(workoutDuration(doneToday) / 60000)} Min</div>
+        <div class="hero-stats">
+          <div><b>${workoutDoneSets(doneToday)}</b><span>Sätze</span></div>
+          <div><b>${formatVolume(workoutVolume(doneToday))}</b><span>${u} Volumen</span></div>
+          <div><b>${prs}</b><span>${prs === 1 ? 'Rekord' : 'Rekorde'}</span></div>
         </div>
-        <div class="hero-actions">
-          <button class="btn btn-secondary btn-block" data-action="open-workout-detail" data-id="${doneToday.id}">Details ansehen</button>
-          <button class="btn btn-plain" data-action="choose-workout">Weiteres Training starten</button>
-        </div>
+        <div class="hero-actions"><button class="btn btn-secondary" data-action="open-workout-detail" data-id="${doneToday.id}">Details ansehen</button></div>
       </div>`;
   }
 
   const routines = Store.getRoutines();
   if (!routines.length) {
     return `
-      <div class="card">
-        <div class="hero-label">Los geht’s</div>
+      <div class="hero">
+        <div class="hero-top"><span class="hero-label">Los geht’s</span></div>
         <h2 class="hero-title">Erstelle deinen ersten Plan</h2>
-        <p class="hero-meta">Selbst zusammenstellen oder mit einer KI aus einer Sprachnachricht.</p>
-        <div class="hero-actions" style="margin-top:16px">
-          <button class="btn btn-primary btn-block" data-action="today-new-plan">Plan erstellen</button>
-          <button class="btn btn-plain" data-action="start-blank">Leeres Training starten</button>
+        <div class="hero-meta">Selbst zusammenstellen oder mit einer KI aus einer Sprachnachricht.</div>
+        <div class="hero-actions">
+          <button class="btn btn-hero" data-action="today-new-plan">Plan erstellen</button>
+          <button class="btn btn-hero-soft" data-action="start-blank">Leeres Training</button>
         </div>
       </div>`;
   }
@@ -71,54 +73,49 @@ function heroHtml() {
   const plan = nextPlan(routines, workouts);
   const lastDone = lastDoneMap(workouts);
   const minutes = planMinutes(plan);
-  const items = plan.exerciseIds.map((id) => ({ ex: Store.getExercise(id), sets: plannedSets(plan, id) })).filter((x) => x.ex);
-  const shown = items.slice(0, 5);
+  const count = plan.exerciseIds.filter((id) => Store.getExercise(id)).length;
   return `
-    <div class="card">
-      <div class="hero-label">Nächstes Training</div>
+    <div class="hero">
+      <div class="hero-top">
+        <span class="hero-label">Nächstes Training</span>
+        <button class="hero-switch" data-action="choose-workout">Wechseln ${Icon.chevronDown}</button>
+      </div>
       <h2 class="hero-title">${esc(plan.name)}</h2>
-      <p class="hero-meta">${plural(items.length, 'Übung', 'Übungen')}${minutes ? ` · ca. ${minutes} Min` : ''} · ${lastDone.has(plan.id) ? `zuletzt ${relativeDay(lastDone.get(plan.id))}` : 'noch nicht trainiert'}</p>
-      <ul class="hero-list">
-        ${shown.map((x) => `<li><span>${esc(x.ex.name)}</span><span>${plural(x.sets, 'Satz', 'Sätze')}</span></li>`).join('')}
-        ${items.length > shown.length ? `<li class="more">+ ${items.length - shown.length} weitere</li>` : ''}
-      </ul>
+      <div class="hero-meta">${plural(count, 'Übung', 'Übungen')}${minutes ? ` · ca. ${minutes} Min` : ''} · ${lastDone.has(plan.id) ? `zuletzt ${relativeDay(lastDone.get(plan.id))}` : 'noch nicht trainiert'}</div>
+      ${chips(planMuscles(plan))}
       <div class="hero-actions">
-        <button class="btn btn-primary btn-block" data-action="start-routine" data-id="${plan.id}" ${items.length ? '' : 'disabled'}>${Icon.play} Training starten</button>
-        ${routines.length > 1 ? '<button class="btn btn-plain" data-action="choose-workout">Anderen Plan wählen</button>' : '<button class="btn btn-plain" data-action="start-blank">Leeres Training starten</button>'}
+        <button class="btn btn-hero" data-action="start-routine" data-id="${plan.id}" ${count ? '' : 'disabled'}>${Icon.play} Training starten</button>
       </div>
     </div>`;
 }
 
-function weekHtml() {
-  const settings = Store.getSettings();
+function weekTileHtml() {
+  const goal = Store.getSettings().weeklyGoal;
   const info = weekInfo();
-  const streak = weekStreak(settings.weeklyGoal);
   const letters = ['M', 'D', 'M', 'D', 'F', 'S', 'S'];
   return `
-    <div class="section">
-      <div class="section-head"><h2>Diese Woche</h2>${streak > 1 ? `<span class="muted small">${streak} Wochen in Folge</span>` : ''}</div>
-      <div class="card week">
-        <div class="week-days">
-          ${letters.map((l, i) => `
-            <div class="week-day ${info.days[i] ? 'on' : ''} ${i === info.todayIndex ? 'today' : ''}">
-              <i>${info.days[i] ? Icon.check : ''}</i>${l}
-            </div>`).join('')}
-        </div>
-        <div class="week-count"><b>${info.count}<small>/${settings.weeklyGoal}</small></b><span>Trainings</span></div>
+    <button class="tile" data-action="tab" data-tab="history">
+      <div class="tile-head"><span class="tile-label">Diese Woche</span>${info.count >= goal ? `<span class="tag success">${Icon.check}Ziel</span>` : ''}</div>
+      <div class="tile-value">${info.count}<small>/${goal} Trainings</small></div>
+      <div class="week-dots tile-foot">
+        ${letters.map((l, i) => `<span class="week-dot ${info.days[i] ? 'on' : ''} ${i === info.todayIndex ? 'today' : ''}"><i></i>${l}</span>`).join('')}
       </div>
-    </div>`;
+    </button>`;
 }
 
-function backupBannerHtml() {
+function backupHtml() {
   if (!backupDue()) return '';
   const last = Store.getSettings().lastBackupAt;
   return `
-    <div class="banner">
-      <span class="row-icon">${Icon.archive}</span>
-      <div class="banner-text"><strong>Sicherung empfohlen</strong>${last ? `Letzte Sicherung ${relativeDay(last)}.` : 'Deine Daten liegen nur auf diesem Gerät.'}</div>
-      <div class="banner-actions">
-        <button class="btn btn-plain btn-sm" data-action="backup-snooze">Später</button>
-        <button class="btn btn-tinted btn-sm" data-action="backup-now">Sichern</button>
+    <div class="section">
+      <div class="list icons">
+        <div class="row">
+          ${iconTile(Icon.archive, TINT.orange)}
+          <div class="row-main"><span class="row-title">Sicherung fällig</span>
+            <span class="row-sub">${last ? `Zuletzt ${relativeDay(last)}` : 'Daten nur auf diesem Gerät'}</span></div>
+          <button class="btn btn-tinted btn-sm" data-action="backup-now">Sichern</button>
+          <button class="icon-btn" data-action="backup-snooze" aria-label="Später erinnern" style="margin-right:-8px">${Icon.close}</button>
+        </div>
       </div>
     </div>`;
 }
@@ -126,13 +123,12 @@ function backupBannerHtml() {
 registerPage('today', {
   title: 'Heute',
   kicker: () => formatLongDate(),
-  right: () => `<button class="nav-btn icon-only" data-action="open-settings" aria-label="Einstellungen">${Icon.gear}</button>`,
+  right: () => `<button class="nav-btn icon-only neutral" data-action="open-settings" aria-label="Einstellungen">${Icon.gear}</button>`,
   render: () => `
     ${heroHtml()}
-    ${backupBannerHtml()}
     ${supplementsTodayHtml()}
-    ${weekHtml()}
-    ${mobilityRowHtml()}`,
+    <div class="section"><div class="tiles">${weekTileHtml()}${mobilityTileHtml()}</div></div>
+    ${backupHtml()}`,
 });
 
 function openWorkoutChooser() {
@@ -144,17 +140,18 @@ function openWorkoutChooser() {
     left: { label: 'Abbrechen' },
     right: null,
     body: `
-      <div class="list">
+      ${routines.length ? `<div class="list">
         ${routines.map((r) => `
-          <button class="row plan-row" data-pick-plan="${r.id}">
+          <button class="row" data-pick-plan="${r.id}">
             <div class="row-main">
-              <span class="row-title">${esc(r.name)}${r === next ? '<span class="tag">Als Nächstes</span>' : ''}</span>
-              <span class="row-sub">${plural(r.exerciseIds.length, 'Übung', 'Übungen')} · ${lastDone.has(r.id) ? `zuletzt ${relativeDay(lastDone.get(r.id))}` : 'noch nicht trainiert'}</span>
-            </div>${chev}
+              <span class="row-title strong">${esc(r.name)}</span>
+              <span class="row-sub">${esc(planMuscles(r).join(' · ') || plural(r.exerciseIds.length, 'Übung', 'Übungen'))} · ${lastDone.has(r.id) ? relativeDay(lastDone.get(r.id)) : 'neu'}</span>
+            </div>
+            ${r === next ? '<span class="tag">Als Nächstes</span>' : ''}${chev}
           </button>`).join('')}
-      </div>
-      <div class="section"><div class="list inset-icons">
-        <button class="row" data-pick-plan=""><span class="row-icon accent">${Icon.plus}</span><div class="row-main"><span class="row-title">Leeres Training</span></div>${chev}</button>
+      </div>` : ''}
+      <div class="section"><div class="list icons">
+        <button class="row" data-pick-plan="">${iconTile(Icon.plus, TINT.blue)}<div class="row-main"><span class="row-title">Leeres Training</span><span class="row-sub">Übungen spontan auswählen</span></div>${chev}</button>
       </div></div>`,
     onMount: (s) => s.body.addEventListener('click', (e) => {
       const b = e.target.closest('[data-pick-plan]');
@@ -179,4 +176,3 @@ registerActions({
     render();
   },
 });
-

@@ -9,10 +9,10 @@ import { registerPage, render } from '../ui/router.js';
 import { actionSheet, confirmAction, alertDialog } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
 import { applySettings } from '../ui/theme.js';
+import { chev, iconTile, TINT } from '../ui/components.js';
 
 const BACKUP_INTERVAL_DAYS = 14;
-const APP_VERSION = '2.0';
-const chev = `<span class="row-chev">${Icon.chevronRight}</span>`;
+const APP_VERSION = '2.1';
 
 // Sicherung fällig? Nur wenn es überhaupt etwas zu sichern gibt.
 export function backupDue() {
@@ -64,12 +64,21 @@ function seg(key, options, value, { wide = false } = {}) {
     </div>`;
 }
 
-function toggleRow(key, title, sub, checked) {
+function toggleRow(key, title, sub, checked, icon, color) {
   return `
     <label class="row">
+      ${iconTile(icon, color)}
       <div class="row-main"><span class="row-title">${title}</span>${sub ? `<span class="row-sub">${sub}</span>` : ''}</div>
       <span class="toggle"><input type="checkbox" data-change="set-toggle" data-key="${key}" ${checked ? 'checked' : ''} /><span class="toggle-track"></span></span>
     </label>`;
+}
+
+function stackedRow(icon, color, title, control) {
+  return `
+    <div class="row stacked">
+      <div class="stacked-head">${iconTile(icon, color)}<span class="row-title">${title}</span></div>
+      ${control}
+    </div>`;
 }
 
 registerPage('settings', {
@@ -81,49 +90,46 @@ registerPage('settings', {
       <div class="detail-head"><h1 class="detail-title">Einstellungen</h1></div>
 
       <div class="section-label">Training</div>
-      <div class="list">
-        <div class="row"><div class="row-main"><span class="row-title">Einheit</span></div>
+      <div class="list icons">
+        <div class="row"><span class="icon-tile text" style="--c:${TINT.blue}">kg</span><div class="row-main"><span class="row-title">Einheit</span></div>
           ${seg('unit', [{ value: 'kg', label: 'kg' }, { value: 'lb', label: 'lb' }], s.unit)}</div>
-        <div class="row"><div class="row-main"><span class="row-title">Wochenziel</span><span class="row-sub">Trainings pro Woche</span></div>
+        <div class="row">${iconTile(Icon.target, TINT.red)}<div class="row-main"><span class="row-title">Wochenziel</span><span class="row-sub">Trainings pro Woche</span></div>
           <span class="stepper"><button data-action="set-goal" data-delta="-1" aria-label="Weniger">${Icon.minus}</button><span>${s.weeklyGoal}</span><button data-action="set-goal" data-delta="1" aria-label="Mehr">${Icon.plus}</button></span></div>
-        <button class="row" data-action="set-rest"><div class="row-main"><span class="row-title">Pause zwischen Sätzen</span><span class="row-sub">Standard – pro Übung änderbar</span></div>
+        <button class="row" data-action="set-rest">${iconTile(Icon.timer, TINT.orange)}<div class="row-main"><span class="row-title">Satzpause</span><span class="row-sub">Standard – pro Übung änderbar</span></div>
           <span class="row-value">${formatRest(s.restSeconds)}</span>${chev}</button>
-        ${toggleRow('progressiveOverload', 'Gewichts-Empfehlung', 'Schlägt mehr Gewicht vor, wenn du zweimal in Folge alle Sätze mit 10+ Wdh geschafft hast.', s.progressiveOverload)}
-        ${toggleRow('keepAwake', 'Bildschirm anlassen', 'Während des Trainings sperrt sich das iPhone nicht.', s.keepAwake)}
+        ${toggleRow('progressiveOverload', 'Gewichts-Empfehlung', 'Mehr Gewicht, sobald du zweimal alle Sätze mit 10+ Wdh geschafft hast', s.progressiveOverload, Icon.trendUp, TINT.green)}
+        ${toggleRow('keepAwake', 'Bildschirm anlassen', 'Während des Trainings sperrt sich das iPhone nicht', s.keepAwake, Icon.phone, TINT.gray)}
       </div>
 
       <div class="section-label">Darstellung</div>
-      <div class="list">
-        <div class="row stacked"><span class="row-title">Erscheinungsbild</span>
-          ${seg('theme', [{ value: 'light', label: 'Hell' }, { value: 'dark', label: 'Dunkel' }, { value: 'system', label: 'Wie iPhone' }], s.theme, { wide: true })}</div>
-        <div class="row stacked"><span class="row-title">Akzentfarbe</span>
-          <div class="swatches">${ACCENTS.map((a) => `
+      <div class="list icons">
+        ${stackedRow(Icon.moon, TINT.indigo, 'Erscheinungsbild', seg('theme', [{ value: 'light', label: 'Hell' }, { value: 'dark', label: 'Dunkel' }, { value: 'system', label: 'Wie iPhone' }], s.theme, { wide: true }))}
+        ${stackedRow(Icon.palette, TINT.pink, 'Akzentfarbe', `<div class="swatches">${ACCENTS.map((a) => `
             <button class="swatch ${s.accent === a.id ? 'active' : ''}" data-action="set-accent" data-id="${a.id}" aria-label="${a.label}"
-              style="background:${dark ? a.dark : a.light};color:${dark ? a.dark : a.light}"><span style="color:${dark && a.id === 'graphite' ? '#000' : '#fff'}">${s.accent === a.id ? Icon.check : ''}</span></button>`).join('')}</div></div>
-        ${toggleRow('sound', 'Töne', 'Beim Abhaken, bei Rekorden und am Ende der Pause.', s.sound)}
-        ${s.sound ? `<div class="row"><div class="row-main"><span class="row-title">Lautstärke</span>
+              style="background:${dark ? a.dark : a.light};color:${dark ? a.dark : a.light}"><span style="color:${dark && a.id === 'graphite' ? '#000' : '#fff'}">${s.accent === a.id ? Icon.check : ''}</span></button>`).join('')}</div>`)}
+        ${toggleRow('sound', 'Töne', 'Beim Abhaken, bei Rekorden und am Ende der Pause', s.sound, Icon.voiceOn, TINT.red)}
+        ${s.sound ? `<div class="row"><span class="icon-tile" style="background:transparent"></span><div class="row-main">
           <input type="range" class="slider" min="0" max="100" step="5" value="${Math.round(s.soundVolume * 100)}" data-input="set-volume" data-change="set-volume" aria-label="Lautstärke" /></div></div>` : ''}
       </div>
 
       <div class="section-label">Mobility</div>
-      <div class="list">
-        <div class="row stacked"><span class="row-title">Dauer der täglichen Routine</span>
-          ${seg('mobilityBudget', [5, 10, 15, 20].map((v) => ({ value: v, label: `${v} Min` })), s.mobilityBudget, { wide: true })}</div>
-        ${toggleRow('mobilityVoice', 'Sprachansage', 'Übung, Seitenwechsel und Atmung werden angesagt.', s.mobilityVoice)}
+      <div class="list icons">
+        ${stackedRow(Icon.stretch, TINT.teal, 'Dauer der täglichen Routine', seg('mobilityBudget', [5, 10, 15, 20].map((v) => ({ value: v, label: `${v} Min` })), s.mobilityBudget, { wide: true }))}
+        ${toggleRow('mobilityVoice', 'Sprachansage', 'Übung, Seitenwechsel und Atmung', s.mobilityVoice, Icon.voiceOn, TINT.teal)}
       </div>
 
       <div class="section-label">Daten</div>
-      <div class="list">
-        <button class="row" data-action="backup-export"><div class="row-main"><span class="row-title">Sicherung erstellen</span>
+      <div class="list icons">
+        <button class="row" data-action="backup-export">${iconTile(Icon.archive, TINT.blue)}<div class="row-main"><span class="row-title">Sicherung erstellen</span>
           <span class="row-sub">${s.lastBackupAt ? `Zuletzt ${relativeDay(s.lastBackupAt)}` : 'Noch nie gesichert'}</span></div>${chev}</button>
-        <label class="row"><div class="row-main"><span class="row-title">Sicherung wiederherstellen</span><span class="row-sub">Ersetzt alle Daten auf diesem Gerät</span></div>${chev}
+        <label class="row">${iconTile(Icon.restore, TINT.gray)}<div class="row-main"><span class="row-title">Sicherung wiederherstellen</span><span class="row-sub">Ersetzt alle Daten auf diesem Gerät</span></div>${chev}
           <input type="file" accept=".json,application/json" data-change="backup-import" hidden /></label>
-        ${toggleRow('backupReminder', 'An Sicherung erinnern', `Hinweis auf „Heute“, wenn die letzte Sicherung über ${BACKUP_INTERVAL_DAYS} Tage her ist.`, s.backupReminder)}
+        ${toggleRow('backupReminder', 'An Sicherung erinnern', `Wenn die letzte über ${BACKUP_INTERVAL_DAYS} Tage her ist`, s.backupReminder, Icon.bell, TINT.orange)}
       </div>
       <div class="section"><div class="list">
-        <button class="row destructive" data-action="wipe-data"><div class="row-main"><span class="row-title">Alle Daten löschen</span></div></button>
+        <button class="row destructive center" data-action="wipe-data"><div class="row-main"><span class="row-title">Alle Daten löschen</span></div></button>
       </div>
-      <p class="section-foot">Alle Daten bleiben ausschließlich auf diesem Gerät. Gym ${APP_VERSION}</p></div>`;
+      <p class="section-foot" style="text-align:center">Alle Daten bleiben ausschließlich auf diesem Gerät.<br>Gym ${APP_VERSION}</p></div>`;
   },
 });
 

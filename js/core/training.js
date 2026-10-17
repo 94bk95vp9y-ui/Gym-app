@@ -219,6 +219,16 @@ export function nextPlan(routines = Store.getRoutines(), workouts = Store.getWor
   return [...routines].sort((a, b) => (lastDone.get(a.id) || '').localeCompare(lastDone.get(b.id) || ''))[0];
 }
 
+// Die Muskelgruppen eines Plans, häufigste zuerst – für die Chips
+export function planMuscles(routine, limit = 3) {
+  const count = new Map();
+  routine.exerciseIds.forEach((id) => {
+    const g = Store.getExercise(id)?.muscleGroup;
+    if (g && g !== 'Sonstiges') count.set(g, (count.get(g) || 0) + 1);
+  });
+  return [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([g]) => g);
+}
+
 // Dauer eines Plans: wie lange er zuletzt gedauert hat
 export function planMinutes(routine) {
   const w = Store.getWorkouts().find((x) => x.routineId === routine.id);

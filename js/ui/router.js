@@ -1,7 +1,7 @@
 // Navigation: vier Tabs, jeder mit eigenem Stapel an Unterseiten (wie bei
 // iOS). Seiten melden sich mit registerPage an und liefern HTML.
 import { esc, qs } from './dom.js';
-import { Icon } from './icons.js';
+import { Icon, IconFill } from './icons.js';
 
 export const TABS = [
   { id: 'today', label: 'Heute', icon: 'home' },
@@ -19,7 +19,10 @@ export const nav = {
 };
 
 // page: { title(params), render(params), right?(params), left?(params),
-//         kicker?(), large?: boolean, mount?(contentEl, params) }
+//         kicker?(), footer?(params), mount?(contentEl, params) }
+// Wurzelseiten zeigen den großen Titel mit den Aktionen in einer Zeile; die
+// kompakte Leiste erscheint erst beim Scrollen. Unterseiten haben eine
+// Zurück-Leiste. footer: feste Aktionsleiste unten (z. B. „Training starten“).
 export function registerPage(id, def) {
   pages[id] = def;
 }
@@ -58,37 +61,43 @@ export function render() {
   const title = titleOf(entry);
   const parent = stack.length > 1 ? stack[stack.length - 2] : { id: nav.tab, params: {} };
   const backLabel = titleOf(parent) || TABS.find((t) => t.id === nav.tab)?.label || 'Zurück';
-  const large = !pushed && page.large !== false;
-  const kicker = large && page.kicker ? page.kicker(params) : '';
+  const kicker = !pushed && page.kicker ? page.kicker(params) : '';
+  const right = page.right ? page.right(params) : '';
+  const footer = page.footer ? page.footer(params) : '';
   const anim = pendingAnim;
   pendingAnim = null;
 
   root.innerHTML = `
-    <div class="screen ${pushed ? 'is-pushed' : ''} ${anim || ''}" data-page="${entry.id}">
+    <div class="screen ${pushed ? 'is-pushed' : 'is-root'} ${anim || ''}" data-page="${entry.id}">
       <header class="navbar">
         <div class="nav-left">${pushed
     ? `<button class="nav-btn nav-back" data-action="nav-back" aria-label="Zurück">${Icon.chevronLeft}<span>${esc(backLabel)}</span></button>`
     : (page.left ? page.left(params) : '')}</div>
         <div class="nav-title">${esc(title)}</div>
-        <div class="nav-right">${page.right ? page.right(params) : ''}</div>
+        <div class="nav-right">${right}</div>
       </header>
       <main class="content" id="content">
-        ${large ? `<div class="page-head">${kicker ? `<div class="page-kicker">${esc(kicker)}</div>` : ''}<h1 class="large-title">${esc(title)}</h1></div>` : ''}
+        ${pushed ? '' : `
+        <div class="page-head">
+          <div class="page-head-text">${kicker ? `<div class="page-kicker">${esc(kicker)}</div>` : ''}<h1 class="large-title">${esc(title)}</h1></div>
+          ${right ? `<div class="page-head-actions">${right}</div>` : ''}
+        </div>`}
         ${page.render(params)}
       </main>
+      ${footer ? `<div class="screen-footer">${footer}</div>` : ''}
     </div>
     ${liveBarHtml()}
     <nav class="tabbar" aria-label="Navigation">
       ${TABS.map((t) => `
         <button class="tab ${t.id === nav.tab ? 'active' : ''}" data-action="tab" data-tab="${t.id}" aria-label="${t.label}" ${t.id === nav.tab ? 'aria-current="page"' : ''}>
-          ${Icon[t.icon]}<span>${t.label}</span>
+          ${t.id === nav.tab ? IconFill[t.icon] : Icon[t.icon]}<span>${t.label}</span>
         </button>`).join('')}
     </nav>`;
 
   const content = qs('#content');
   const screen = qs('.screen');
   content.scrollTop = scrollTop;
-  const threshold = 38;
+  const threshold = pushed ? 30 : 44;
   const onScroll = () => screen.classList.toggle('scrolled', content.scrollTop > threshold);
   onScroll();
   content.addEventListener('scroll', onScroll, { passive: true });

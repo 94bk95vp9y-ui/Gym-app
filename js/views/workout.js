@@ -9,7 +9,7 @@ import {
 import { fatigueOf, muscleGroupLookup } from '../core/fatigue.js';
 import {
   formatNumber, parseNumber, formatSet, formatSetList, formatWeight, formatDuration, formatClock, formatRest,
-  formatVolume, formatDate, elapsedLabel, plural, unitLabel, relativeDay,
+  formatVolume, formatDate, elapsedLabel, plural, unitLabel, relativeDay, bestSet,
 } from '../core/format.js';
 import { dayKey, dayStatus } from '../core/supplements.js';
 import { Sound } from '../core/sound.js';
@@ -19,10 +19,12 @@ import { render, setLiveBar, goTo, nav } from '../ui/router.js';
 import { openSheet, actionSheet, confirmAction, promptDialog } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
 import { enableReorder } from '../ui/reorder.js';
+import { emptyState, iconTile, chev, TINT } from '../ui/components.js';
 import { openExercisePicker } from './picker.js';
 
 const root = document.getElementById('workout-root');
-const W = { open: false, ticker: null, restShown: false };
+// expanded: fertige Übungen, die der Nutzer wieder aufgeklappt hat
+const W = { open: false, ticker: null, restShown: false, expanded: new Set() };
 
 const unit = () => unitLabel(Store.getSettings().unit);
 
@@ -49,6 +51,7 @@ export async function startRoutine(id) {
   if (active && active.routineId === id) { openWorkout(); return; }
   if (!(await confirmReplaceActive())) return;
   Store.clearActive();
+  W.expanded.clear();
   Store.setActive(workoutFromRoutine(routine));
   Sound.start();
   openWorkout();
@@ -57,6 +60,7 @@ export async function startRoutine(id) {
 export async function startBlank() {
   if (!(await confirmReplaceActive())) return;
   Store.clearActive();
+  W.expanded.clear();
   Store.setActive(blankWorkout());
   Sound.start();
   openWorkout();
@@ -140,6 +144,18 @@ function setRowHtml(set, ei, si, prev) {
     </div>`;
 }
 
+// Kurzfassung einer fertigen Übung: „3 Sätze · 100 kg × 8“
+function summaryText(entry, u) {
+  const done = entry.sets.filter((s) => s.done);
+  const top = bestSet(done);
+  return `${plural(done.length, 'Satz', 'Sätze')}${top ? ` · ${formatSet(top, u)}` : ''}`;
+}
+
+// Die erste Übung mit offenen Sätzen ist „dran“
+function currentIndex(w) {
+  return w.entries.findIndex((e) => !isEntryComplete(e));
+}
+
 function exerciseCardHtml(w, entry, ei, ctx) {
   const ex = Store.getExercise(entry.exerciseId);
   const last = lastSessionFor(entry.exerciseId, w.id);
@@ -148,20 +164,32 @@ function exerciseCardHtml(w, entry, ei, ctx) {
   const note = ex?.notes?.trim();
   const fatigue = fatigueNote(last, w, ei, ctx.groupOf);
   const showOverload = overload && entry.sets.some((s) => !s.done);
+  const complete = isEntryComplete(entry);
+  const collapsed = complete && !W.expanded.has(entry.exerciseId);
+  const cls = [complete ? 'complete' : '', collapsed ? 'collapsed' : '', ei === ctx.current ? 'current' : ''].join(' ');
   return `
-    <section class="ex-card ${isEntryComplete(entry) ? 'complete' : ''}" data-ei="${ei}">
+    <section class="ex-card ${cls}" data-ei="${ei}">
       <div class="ex-head">
-        <h3 class="ex-name"><span class="done-mark">${Icon.check}</span>${esc(entryName(entry, ctx.names))}</h3>
+        <button class="ex-head-main" data-action="w-ex-toggle" data-ei="${ei}" aria-expanded="${!collapsed}">
+          <span class="ex-state">${complete ? Icon.check : ei + 1}</span>
+          <span class="ex-titles">
+            <h3 class="ex-name">${esc(entryName(entry, ctx.names))}</h3>
+            <span class="ex-group">${esc([ex?.muscleGroup, plural(entry.sets.length, 'Satz', 'Sätze')].filter(Boolean).join(' · '))}</span>
+            <span class="ex-summary">${esc(summaryText(entry, ctx.unit))}</span>
+          </span>
+        </button>
         <button class="icon-btn" data-action="w-ex-menu" data-ei="${ei}" aria-label="Optionen">${Icon.more}</button>
       </div>
-      ${note ? `<button class="ex-note" data-action="w-note" data-ei="${ei}">${esc(note)}</button>` : ''}
-      ${showOverload ? `<p class="ex-hint up">Mehr Gewicht: ${esc(formatWeight(overload.to, ctx.unit))} statt ${esc(formatWeight(overload.from, ctx.unit))} – zweimal ${overload.threshold}+ Wdh geschafft.</p>` : ''}
-      ${fatigue ? `<p class="ex-hint">${esc(fatigue)}</p>` : ''}
-      <div class="set-table">
-        <div class="set-cols set-headrow"><span>Satz</span><span>Vorher</span><span>${ctx.unit}</span><span>Wdh</span><span></span></div>
-        ${entry.sets.map((s, si) => setRowHtml(s, ei, si, prevSets[si])).join('')}
+      <div class="ex-body">
+        ${note ? `<button class="ex-note" data-action="w-note" data-ei="${ei}">${esc(note)}</button>` : ''}
+        ${showOverload ? `<p class="ex-hint up">Mehr Gewicht: ${esc(formatWeight(overload.to, ctx.unit))} statt ${esc(formatWeight(overload.from, ctx.unit))} – zweimal ${overload.threshold}+ Wdh geschafft.</p>` : ''}
+        ${fatigue ? `<p class="ex-hint">${esc(fatigue)}</p>` : ''}
+        <div class="set-table">
+          <div class="set-cols set-headrow"><span>Satz</span><span>Vorher</span><span>${ctx.unit}</span><span>Wdh</span><span></span></div>
+          ${entry.sets.map((s, si) => setRowHtml(s, ei, si, prevSets[si])).join('')}
+        </div>
+        <button class="add-set" data-action="w-add-set" data-ei="${ei}">${Icon.plus} Satz</button>
       </div>
-      <button class="add-set" data-action="w-add-set" data-ei="${ei}">${Icon.plus} Satz</button>
     </section>`;
 }
 
@@ -169,7 +197,7 @@ function paint() {
   const w = Store.getActive();
   if (!w) return;
   const exercises = Store.getExercises();
-  const ctx = { names: exerciseNames(), groupOf: muscleGroupLookup(exercises), unit: unit() };
+  const ctx = { names: exerciseNames(), groupOf: muscleGroupLookup(exercises), unit: unit(), current: currentIndex(w) };
   const p = workoutProgress(w);
   const prev = qs('#w-content', root);
   const scroll = prev ? prev.scrollTop : 0;
@@ -177,17 +205,22 @@ function paint() {
   root.innerHTML = `
     <div class="workout ${wasOpen ? 'open instant' : ''}">
       <header class="w-bar">
-        <div class="nav-left"><button class="nav-btn icon-only" data-action="w-minimize" aria-label="Minimieren">${Icon.chevronDown}</button></div>
-        <div class="w-title"><strong>${esc(w.routineName || 'Freies Training')}</strong><span id="w-timer">${elapsedLabel(w.startedAt)}</span></div>
-        <div class="nav-right"><button class="nav-btn strong" data-action="w-finish">Beenden</button></div>
+        <div class="nav-left"><button class="w-min" data-action="w-minimize" aria-label="Minimieren">${Icon.chevronDown}</button></div>
+        <div class="w-title"><strong>${esc(w.routineName || 'Freies Training')}</strong><span><span id="w-timer">${elapsedLabel(w.startedAt)}</span> · <span id="w-count">${p.done}/${p.total}</span> Sätze</span></div>
+        <div class="nav-right"><button class="w-finish" data-action="w-finish">Beenden</button></div>
         <div class="w-progress"><i id="w-progress" style="transform:scaleX(${p.ratio})"></i></div>
       </header>
       <main class="content w-content" id="w-content">
-        ${w.entries.length ? w.entries.map((e, ei) => exerciseCardHtml(w, e, ei, ctx)).join('') : `
-          <div class="card empty"><strong>Noch keine Übungen</strong>Füge die erste Übung hinzu, um loszulegen.</div>`}
+        ${w.entries.length ? w.entries.map((e, ei) => exerciseCardHtml(w, e, ei, ctx)).join('') : emptyState({
+    icon: Icon.dumbbell,
+    title: 'Noch keine Übungen',
+    text: 'Füge die erste Übung hinzu, um loszulegen.',
+  })}
         <div class="w-actions">
-          <button class="btn btn-tinted btn-block" data-action="w-add-exercise">${Icon.plus} Übung hinzufügen</button>
-          ${w.entries.length > 1 ? `<button class="btn btn-secondary btn-block" data-action="w-reorder">${Icon.reorder} Reihenfolge ändern</button>` : ''}
+          <div class="btn-row">
+            <button class="btn btn-tinted" data-action="w-add-exercise">${Icon.plus} Übung</button>
+            ${w.entries.length > 1 ? `<button class="btn btn-secondary" data-action="w-reorder">${Icon.reorder} Reihenfolge</button>` : ''}
+          </div>
           <button class="btn btn-destructive btn-block" data-action="w-discard">Training verwerfen</button>
         </div>
       </main>
@@ -203,19 +236,53 @@ function updateProgress(w) {
   const p = workoutProgress(w);
   const bar = qs('#w-progress', root);
   if (bar) bar.style.transform = `scaleX(${p.ratio})`;
+  const count = qs('#w-count', root);
+  if (count) count.textContent = `${p.done}/${p.total}`;
 }
 
+// Zustand einer Karte nachziehen, ohne neu zu zeichnen (sonst liefe die
+// Animation am Haken nicht).
 function updateCard(w, ei) {
   const entry = w.entries[ei];
   const card = qs(`.ex-card[data-ei="${ei}"]`, root);
   if (!card) return;
-  card.classList.toggle('complete', isEntryComplete(entry));
+  const complete = isEntryComplete(entry);
+  card.classList.toggle('complete', complete);
+  qs('.ex-state', card).innerHTML = complete ? Icon.check : String(ei + 1);
+  qs('.ex-summary', card).textContent = summaryText(entry, unit());
+  if (!complete) card.classList.remove('collapsed');
   entry.sets.forEach((s, si) => {
     const num = qs(`.set-row[data-si="${si}"] .set-num`, card);
     if (!num) return;
     num.classList.toggle('pr', !!s.pr);
     num.textContent = s.pr ? 'PR' : String(si + 1);
   });
+}
+
+// Fertige Übung zuklappen und die nächste offene ins Bild holen
+function advanceFocus(w, finishedIndex) {
+  const next = currentIndex(w);
+  qsa('.ex-card', root).forEach((c) => c.classList.toggle('current', +c.dataset.ei === next));
+  if (finishedIndex === undefined) return;
+  const done = qs(`.ex-card[data-ei="${finishedIndex}"]`, root);
+  setTimeout(() => {
+    const cur = Store.getActive();
+    if (!done || !cur || !isEntryComplete(cur.entries[finishedIndex])) return;
+    W.expanded.delete(cur.entries[finishedIndex].exerciseId);
+    done.classList.add('collapsed');
+    qs('.ex-head-main', done)?.setAttribute('aria-expanded', 'false');
+    const target = next >= 0 ? qs(`.ex-card[data-ei="${next}"]`, root) : null;
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 650);
+}
+
+// Der nächste offene Satz – für die Pausenleiste
+function nextSetInfo(w) {
+  for (const entry of w.entries) {
+    const si = entry.sets.findIndex((s) => !s.done);
+    if (si >= 0) return { name: entryName(entry), si, set: entry.sets[si] };
+  }
+  return null;
 }
 
 // ---------- Ticker: Uhr, Pause ----------
@@ -268,7 +335,7 @@ setLiveBar(() => {
       <span class="live-dot"></span>
       <span class="live-text"><strong>${esc(w.routineName || 'Freies Training')}</strong>
         <span><span id="live-time" class="num">${liveText(w)}</span> · ${p.done} von ${plural(p.total, 'Satz', 'Sätzen')}</span></span>
-      <span class="live-go">Fortsetzen${Icon.chevronRight}</span>
+      <span class="live-go">Fortsetzen</span>
     </button>`;
 });
 
@@ -304,12 +371,18 @@ function syncRest() {
   }
   const remaining = Math.max(0, (rest.endsAt - Date.now()) / 1000);
   if (!bar) {
+    const w = Store.getActive();
+    const next = w ? nextSetInfo(w) : null;
+    const nextText = next ? `${esc(next.name)} · Satz ${next.si + 1}${next.set.reps > 0 ? ` · ${esc(formatSet(next.set, unit()))}` : ''}` : '';
     slot.innerHTML = `
       <div class="rest">
-        <div class="rest-label"><span>Pause</span><b class="num" id="rest-time">${formatClock(remaining)}</b></div>
-        <button class="rest-btn" data-action="rest-adjust" data-delta="-15">−15</button>
-        <button class="rest-btn" data-action="rest-adjust" data-delta="15">+15</button>
-        <button class="rest-btn primary" data-action="rest-skip">Weiter</button>
+        <div class="rest-main">
+          <div class="rest-label"><span>Pause</span><b class="num" id="rest-time">${formatClock(remaining)}</b></div>
+          <button class="rest-btn" data-action="rest-adjust" data-delta="-15">−15</button>
+          <button class="rest-btn" data-action="rest-adjust" data-delta="15">+15</button>
+          <button class="rest-btn primary" data-action="rest-skip">Weiter</button>
+        </div>
+        ${nextText ? `<div class="rest-next">Als Nächstes: <strong>${nextText}</strong></div>` : ''}
         <span class="rest-fill" id="rest-fill"></span>
       </div>`;
     W.restShown = true;
@@ -465,7 +538,7 @@ function openExerciseHistory(ei) {
         <div class="stat"><b class="num">${esc(formatSet(h.best.top, u))}</b><span>Bestleistung</span></div>
         <div class="stat"><b class="num">${h.sessions.length}</b><span>Einheiten</span></div>
       </div></div>` : ''}
-      <div class="section"><div class="card tight">${h.sessions.slice(0, 8).map((s) => `
+      <div class="section"><div class="list">${h.sessions.slice(0, 8).map((s) => `
         <div class="history-row"><span>${esc(formatDate(s.date))}</span><span>${esc(formatSetList(s.sets, u))}</span></div>`).join('')}</div></div>`
       : '<p class="empty">Noch kein Verlauf für diese Übung.</p>',
   });
@@ -540,18 +613,24 @@ function openSummary(id) {
   const lines = [];
   if (prevVolume > 0 && volume > 0) {
     const pct = Math.round((volume / prevVolume - 1) * 100);
-    lines.push(pct > 0 ? `${pct} % mehr Volumen als beim letzten Mal (${relativeDay(previous.startedAt)}).`
-      : pct < 0 ? `${-pct} % weniger Volumen als beim letzten Mal (${relativeDay(previous.startedAt)}).`
-        : 'Gleiches Volumen wie beim letzten Mal.');
+    lines.push({
+      icon: Icon.trendUp,
+      text: pct > 0 ? `${pct} % mehr Volumen als beim letzten Mal (${relativeDay(previous.startedAt)}).`
+        : pct < 0 ? `${-pct} % weniger Volumen als beim letzten Mal (${relativeDay(previous.startedAt)}).`
+          : 'Gleiches Volumen wie beim letzten Mal.',
+    });
   }
   const settings = Store.getSettings();
   const monday = new Date();
   monday.setHours(0, 0, 0, 0);
   monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
   const week = Store.getWorkouts().filter((x) => new Date(x.startedAt) >= monday).length;
-  lines.push(week >= settings.weeklyGoal
-    ? `Wochenziel erreicht: ${week} von ${settings.weeklyGoal} Trainings.`
-    : `${week} von ${settings.weeklyGoal} Trainings diese Woche.`);
+  lines.push({
+    icon: Icon.target,
+    text: week >= settings.weeklyGoal
+      ? `Wochenziel erreicht: ${week} von ${settings.weeklyGoal} Trainings.`
+      : `${week} von ${settings.weeklyGoal} Trainings diese Woche.`,
+  });
   const diffText = diff ? [
     diff.added ? `${plural(diff.added, 'Übung', 'Übungen')} hinzugefügt` : '',
     diff.removed ? `${plural(diff.removed, 'Übung', 'Übungen')} weggelassen` : '',
@@ -567,7 +646,7 @@ function openSummary(id) {
     right: { label: 'Fertig', style: 'primary' },
     body: `
       <div class="finish-head">
-        <div class="finish-icon pop">${Icon.check}</div>
+        <div class="finish-icon pop ${prs.length ? 'gold' : ''}">${prs.length ? Icon.trendUp : Icon.check}</div>
         <h3>${prs.length ? (prs.length === 1 ? 'Neuer Rekord' : `${prs.length} neue Rekorde`) : 'Training gespeichert'}</h3>
         <p>${esc(w.routineName || 'Freies Training')} · ${formatDuration(workoutDuration(w))}</p>
       </div>
@@ -576,7 +655,7 @@ function openSummary(id) {
         <div class="stat"><b class="num">${formatVolume(volume)}</b><span>Volumen (${u})</span></div>
         <div class="stat"><b class="num">${prs.length}</b><span>Rekorde</span></div>
       </div></div>
-      <div class="card">${lines.map((l) => `<p class="note-line">${esc(l)}</p>`).join('')}</div>
+      <div class="card">${lines.map((l) => `<p class="note-line">${l.icon}<span>${esc(l.text)}</span></p>`).join('')}</div>
       ${prs.length ? `
         <div class="section"><div class="section-head"><h2>Rekorde</h2></div>
           <div class="list">${prs.map((p) => `
@@ -584,21 +663,21 @@ function openSummary(id) {
           </div></div>` : ''}
       ${diff ? `
         <div class="section"><div class="card">
-          <strong style="font-size:16px">Plan anpassen?</strong>
-          <p class="muted small" style="margin:4px 0 12px">${esc(diffText)}. Soll „${esc(routine.name)}“ beim nächsten Mal so aussehen wie heute?</p>
-          <button class="btn btn-tinted btn-block" data-sum="update-plan">Änderungen in Plan übernehmen</button>
+          <div class="card-title">Plan anpassen?</div>
+          <p class="card-text">${esc(diffText)}. Soll „${esc(routine.name)}“ beim nächsten Mal so aussehen wie heute?</p>
+          <button class="btn btn-tinted btn-block" data-sum="update-plan" style="margin-top:14px">Änderungen übernehmen</button>
         </div></div>` : ''}
       ${!w.routineId && w.entries.length ? `
         <div class="section"><div class="card">
-          <strong style="font-size:16px">Als Plan speichern?</strong>
-          <p class="muted small" style="margin:4px 0 12px">Dieses Training mit ${plural(w.entries.length, 'Übung', 'Übungen')} als festen Plan anlegen.</p>
-          <button class="btn btn-tinted btn-block" data-sum="save-plan">Als Plan speichern</button>
+          <div class="card-title">Als Plan speichern?</div>
+          <p class="card-text">Dieses Training mit ${plural(w.entries.length, 'Übung', 'Übungen')} als festen Plan anlegen.</p>
+          <button class="btn btn-tinted btn-block" data-sum="save-plan" style="margin-top:14px">Als Plan speichern</button>
         </div></div>` : ''}
       ${supplementsOpen ? `
-        <div class="section"><div class="list inset-icons">
-          <button class="row" data-sum="supps"><span class="row-icon accent">${Icon.pill}</span>
+        <div class="section"><div class="list icons">
+          <button class="row" data-sum="supps">${iconTile(Icon.pill, TINT.pink)}
             <div class="row-main"><span class="row-title">Supplements noch offen</span><span class="row-sub">Jetzt abhaken, solange du dran denkst</span></div>
-            <span class="row-chev">${Icon.chevronRight}</span></button>
+            ${chev}</button>
         </div></div>` : ''}`,
     onMount: (s) => {
       s.body.addEventListener('click', async (e) => {
@@ -606,7 +685,7 @@ function openSummary(id) {
         if (!b) return;
         if (b.dataset.sum === 'update-plan') {
           Store.saveRoutine(routineFromWorkout(w, Store.getRoutine(w.routineId)));
-          b.outerHTML = '<p class="muted small">Plan aktualisiert.</p>';
+          b.outerHTML = '<p class="card-text" style="color:var(--success);margin-top:12px">Plan aktualisiert.</p>';
           toast('Plan aktualisiert');
           render();
         } else if (b.dataset.sum === 'save-plan') {
@@ -614,7 +693,7 @@ function openSummary(id) {
           if (!name) return;
           const routine2 = routineFromWorkout({ ...w, routineName: name });
           Store.saveRoutine(routine2);
-          b.outerHTML = '<p class="muted small">Als Plan gespeichert.</p>';
+          b.outerHTML = '<p class="card-text" style="color:var(--success);margin-top:12px">Als Plan gespeichert.</p>';
           toast(`Plan „${name}“ gespeichert`);
           render();
         } else if (b.dataset.sum === 'supps') {
@@ -661,6 +740,7 @@ registerActions({
     el.classList.add('bump');
     updateCard(w, ei);
     updateProgress(w);
+    advanceFocus(w, set.done && isEntryComplete(w.entries[ei]) ? ei : undefined);
     if (set.done) {
       document.activeElement?.blur?.();
       startRest(w.entries[ei].exerciseId);
@@ -668,6 +748,17 @@ registerActions({
     } else {
       Sound.setUndone();
     }
+  },
+
+  'w-ex-toggle': (el) => {
+    const ei = +el.dataset.ei;
+    const entry = Store.getActive()?.entries[ei];
+    if (!entry || !isEntryComplete(entry)) return;
+    const card = el.closest('.ex-card');
+    const willOpen = card.classList.contains('collapsed');
+    if (willOpen) W.expanded.add(entry.exerciseId); else W.expanded.delete(entry.exerciseId);
+    card.classList.toggle('collapsed', !willOpen);
+    el.setAttribute('aria-expanded', String(willOpen));
   },
 
   'w-add-set': (el) => {

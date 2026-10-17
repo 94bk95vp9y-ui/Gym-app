@@ -1,4 +1,4 @@
-// Mobility – bewusst klein: eine Zeile auf „Heute“, dahinter die tägliche
+// Mobility – bewusst klein: eine Kachel auf „Heute“, dahinter die tägliche
 // Routine und die zwei tiefen Einheiten für die Beine.
 import { esc, registerActions } from '../ui/dom.js';
 import { Icon } from '../ui/icons.js';
@@ -12,22 +12,22 @@ import {
 } from '../mobility/routines.js';
 import { thumb, fillThumbs } from '../mobility/figures.js';
 import { startRoutine } from '../mobility/player.js';
+import { iconTile, TINT } from '../ui/components.js';
 
-const chev = `<span class="row-chev">${Icon.chevronRight}</span>`;
-
-export function mobilityRowHtml() {
+// Kachel für „Heute“: Antippen öffnet die Auswahl, Play startet die tägliche Routine
+export function mobilityTileHtml() {
   const daily = dailyRoutine();
   const last = lastSession();
-  const sub = doneToday()
-    ? `Heute erledigt · ${esc(last?.name || 'Routine')}`
-    : `Tägliche Routine · ${mins(routineTotal(daily))}${last ? ` · zuletzt ${relativeDay(last.startedAt)}` : ''}`;
+  const done = doneToday();
   return `
-    <div class="section">
-      <div class="list inset-icons">
-        <button class="row mob-row" data-action="mobility-open">
-          <span class="row-icon">${Icon.stretch}</span>
-          <div class="row-main"><span class="row-title">Mobility</span><span class="row-sub">${sub}</span></div>${chev}
-        </button>
+    <div class="tile" data-action="mobility-open" role="button" tabindex="0">
+      <div class="tile-head">
+        ${iconTile(Icon.stretch, TINT.teal)}
+        ${done ? `<span class="tag success">${Icon.check}Heute</span>` : `<button class="play-btn sm" data-action="mobility-daily" aria-label="Tägliche Routine starten">${Icon.play}</button>`}
+      </div>
+      <div class="tile-foot">
+        <div class="tile-title">Mobility</div>
+        <div class="tile-sub">${done ? 'Heute erledigt' : 'Tägliche Routine'}<br>${mins(routineTotal(daily))}${last ? ` · ${relativeDay(last.startedAt)}` : ''}</div>
       </div>
     </div>`;
 }
@@ -44,7 +44,7 @@ function routineRow(r) {
           <span class="row-sub">${mins(routineTotal(r))} · ${plural(r.items.length, 'Übung', 'Übungen')}${last ? ` · ${relativeDay(last.startedAt)}` : ''}</span>
         </span>
       </button>
-      <button class="mob-play" data-mob-start="${r.id}" aria-label="${esc(r.name)} starten">${Icon.play}</button>
+      <button class="play-btn sm" data-mob-start="${r.id}" aria-label="${esc(r.name)} starten">${Icon.play}</button>
     </div>`;
 }
 
@@ -57,7 +57,7 @@ function openMobility() {
     body: `
       <div class="list">${routineRow(daily)}</div>
       <p class="section-foot">${esc(daily.description)}</p>
-      <div class="section-label" style="margin-top:22px">Tiefe Einheiten für die Beine</div>
+      <div class="section-label">Tiefe Einheiten für die Beine</div>
       <div class="list">${deep.map(routineRow).join('')}</div>
       <p class="section-foot">Etwa 30 Minuten mit Anspannen-Loslassen und langem Halten – ein- bis zweimal pro Woche statt der täglichen Routine.</p>
       <p class="section-foot" style="margin-top:18px">Diese Woche an ${week} ${week === 1 ? 'Tag' : 'Tagen'}. Dauer der täglichen Routine in den Einstellungen.</p>`,
@@ -121,4 +121,5 @@ function openPreview(id) {
 
 registerActions({
   'mobility-open': () => openMobility(),
+  'mobility-daily': () => play('daily'),
 });

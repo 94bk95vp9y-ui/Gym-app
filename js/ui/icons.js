@@ -40,4 +40,24 @@ export const Icon = {
   voiceOff: s('<path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5Z"/><path d="m16 9.5 5 5M21 9.5l-5 5"/>'),
   clock: s('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
   flag: s('<path d="M5 21V4"/><path d="M5 4.5h11.5l-2 4 2 4H5"/>'),
+  target: s('<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/>'),
+  trendUp: s('<path d="M3.5 16.5 9.5 10.5l4 4 7-7"/><path d="M15 7.5h5.5V13"/>', { width: 2 }),
+  sun: s('<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/>'),
+  moon: s('<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/>'),
+  palette: s('<path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.2 0 1.8-.9 1.8-1.8 0-1.2-1-1.6-1-2.6 0-.9.7-1.6 1.6-1.6h2.1a4 4 0 0 0 4-4C20.5 6.6 16.7 3.5 12 3.5Z"/><circle cx="7.6" cy="11.2" r="1.1" fill="currentColor"/><circle cx="10.2" cy="7.4" r="1.1" fill="currentColor"/><circle cx="14.6" cy="7.4" r="1.1" fill="currentColor"/>'),
+  bell: s('<path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 2h-15Z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>'),
+  kettlebell: s('<path d="M8.5 9.5V8a3.5 3.5 0 0 1 7 0v1.5"/><path d="M6.5 13.5a5.5 5.5 0 1 1 11 0c0 2.4-1.2 4.4-2.1 6h-6.8c-.9-1.6-2.1-3.6-2.1-6Z"/>'),
+  swap: s('<path d="M6.5 7.5h13M16 4l3.5 3.5L16 11"/><path d="M17.5 16.5h-13M8 13l-3.5 3.5L8 20"/>'),
+  restore: s('<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4.5 9"/><path d="M4.5 4.5V9H9"/>'),
+  phone: s('<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>'),
+  chat: s('<path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 19 16h-7l-4.5 3.5V16H5a1.5 1.5 0 0 1-1.5-1.5v-8A1.5 1.5 0 0 1 5 5Z"/><path d="M8 9.5h8M8 12.5h5"/>'),
+  flame: s('<path d="M12 21c-3.6 0-6-2.4-6-5.7 0-3.4 2.8-5.2 3.6-8.8.1-.5.7-.7 1.1-.3 2.8 2.6 3.1 4.6 3 6.3 1-.6 1.6-1.7 1.8-2.6.1-.5.8-.6 1.1-.2 1.2 1.7 1.4 3.4 1.4 5.6C18 18.6 15.6 21 12 21Z"/>'),
+};
+
+// Gefüllte Varianten für den aktiven Tab (wie bei iOS)
+export const IconFill = {
+  home: s('<path d="M11.4 3.2a1 1 0 0 1 1.2 0l8.2 6.4a1 1 0 0 1-.6 1.8h-.7v8.1a1.5 1.5 0 0 1-1.5 1.5H14.5v-5a1 1 0 0 0-1-1h-3a1 1 0 0 0-1 1v5H6a1.5 1.5 0 0 1-1.5-1.5v-8.1h-.7a1 1 0 0 1-.6-1.8Z"/>', { fill: true }),
+  dumbbell: s('<rect x="4" y="6.5" width="4" height="11" rx="1.4"/><rect x="16" y="6.5" width="4" height="11" rx="1.4"/><rect x="7.5" y="10.8" width="9" height="2.4" rx="1"/><rect x="1.4" y="9.2" width="2.7" height="5.6" rx="1.1"/><rect x="19.9" y="9.2" width="2.7" height="5.6" rx="1.1"/>', { fill: true }),
+  pill: s('<g transform="rotate(-45 12 12)"><path d="M6.4 8H12v8H6.4a4 4 0 0 1 0-8Z"/><path d="M12 8h5.6a4 4 0 0 1 0 8H12Z" opacity=".5"/></g>', { fill: true }),
+  chart: s('<rect x="5.3" y="11" width="3.2" height="7.5" rx="1.2"/><rect x="10.4" y="5.5" width="3.2" height="13" rx="1.2"/><rect x="15.5" y="8.5" width="3.2" height="10" rx="1.2"/><rect x="3.5" y="19.4" width="17" height="1.7" rx=".85"/>', { fill: true }),
 };

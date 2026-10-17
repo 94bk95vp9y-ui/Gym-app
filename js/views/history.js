@@ -6,7 +6,7 @@ import {
   SET_TARGET_MIN, SET_TARGET_MAX,
 } from '../core/training.js';
 import {
-  formatDate, formatDuration, formatVolume, formatNumber, formatSet, formatTime, relativeDay, plural, unitLabel,
+  formatDuration, formatVolume, formatNumber, formatSet, formatTime, relativeDay, plural, unitLabel,
 } from '../core/format.js';
 import { esc, qs, registerActions } from '../ui/dom.js';
 import { Icon } from '../ui/icons.js';
@@ -14,10 +14,15 @@ import { registerPage, push, pop, render } from '../ui/router.js';
 import { confirmAction, promptDialog } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
 import { sparkline } from '../ui/chart.js';
+import { chev, dateBadge, emptyState } from '../ui/components.js';
 
 const ui = { seg: 'workouts', month: null };
-const chev = `<span class="row-chev">${Icon.chevronRight}</span>`;
 const unit = () => unitLabel(Store.getSettings().unit);
+
+function volumeText(volume, u) {
+  if (u === 'kg' && volume >= 1000) return `${formatNumber(Math.round(volume / 100) / 10)} t`;
+  return `${formatVolume(volume)} ${u}`;
+}
 
 // Volumen kompakt: ab einer Tonne in t mit einer Nachkommastelle
 function volumeShort(volume, u) {
@@ -84,7 +89,7 @@ function calendarHtml() {
 function workoutsHtml() {
   const workouts = Store.getWorkouts();
   if (!workouts.length) {
-    return '<div class="section"><div class="card empty"><strong>Noch keine Trainings</strong>Nach deinem ersten Training steht es hier – mit allen Sätzen und Rekorden.</div></div>';
+    return emptyState({ icon: Icon.calendar, title: 'Noch keine Trainings', text: 'Nach deinem ersten Training steht es hier – mit allen Sätzen und Rekorden.' });
   }
   const months = [];
   workouts.forEach((w) => {
@@ -99,14 +104,15 @@ function workoutsHtml() {
     <div class="section">${calendarHtml()}</div>
     ${months.map((m) => `
       <div class="section">
-        <div class="section-head"><h2>${esc(m.label)}</h2><span class="muted small">${m.items.length}</span></div>
+        <div class="section-head"><h2>${esc(m.label)}</h2><span class="meta">${plural(m.items.length, 'Training', 'Trainings')}</span></div>
         <div class="list">${m.items.map((w) => {
     const prs = workoutPrs(w);
     return `
-          <button class="row" data-action="open-workout" data-id="${w.id}">
+          <button class="row hist-row" data-action="open-workout" data-id="${w.id}">
+            ${dateBadge(w.startedAt)}
             <div class="row-main">
-              <span class="row-title">${esc(w.routineName || 'Freies Training')}${prs ? `<span class="pr-mark">${prs > 1 ? `${prs} PR` : 'PR'}</span>` : ''}</span>
-              <span class="row-sub">${esc(formatDate(w.startedAt))} · ${formatDuration(workoutDuration(w))} · ${plural(workoutDoneSets(w), 'Satz', 'Sätze')}</span>
+              <span class="row-title strong">${esc(w.routineName || 'Freies Training')}${prs ? `<span class="pr-mark">${prs > 1 ? `${prs} PR` : 'PR'}</span>` : ''}</span>
+              <span class="row-sub">${formatDuration(workoutDuration(w))} · ${plural(workoutDoneSets(w), 'Satz', 'Sätze')} · ${volumeText(workoutVolume(w), unit())}</span>
             </div>${chev}
           </button>`;
   }).join('')}</div>
@@ -117,7 +123,7 @@ function workoutsHtml() {
 function statsHtml() {
   const workouts = Store.getWorkouts();
   if (!workouts.length) {
-    return '<div class="section"><div class="card empty"><strong>Noch keine Daten</strong>Nach ein paar Trainings siehst du hier deine Woche, deine Kraftentwicklung und deine Rekorde.</div></div>';
+    return emptyState({ icon: Icon.chart, title: 'Noch keine Daten', text: 'Nach ein paar Trainings siehst du hier deine Woche, deine Kraftentwicklung und deine Rekorde.' });
   }
   const settings = Store.getSettings();
   const u = unit();
@@ -131,28 +137,28 @@ function statsHtml() {
   const records = recentRecords(30, 6);
   return `
     <div class="section">
-      <div class="section-head"><h2>Diese Woche</h2>${streak ? `<span class="muted small">Ziel ${streak}× in Folge erreicht</span>` : ''}</div>
-      <div class="card"><div class="stats divided" style="--cols:4">
-        <div class="stat"><b class="num">${info.count}<small>/${settings.weeklyGoal}</small></b><span>Trainings</span></div>
-        <div class="stat"><b class="num">${info.sets}</b><span>Sätze</span></div>
-        <div class="stat"><b class="num">${volumeShort(info.volume, u)}</b><span>Volumen</span></div>
-        <div class="stat"><b class="num">${info.minutes}</b><span>Minuten</span></div>
-      </div></div>
+      <div class="section-head"><h2>Diese Woche</h2>${streak ? `<span class="meta">Ziel ${streak}× in Folge</span>` : ''}</div>
+      <div class="tiles">
+        <div class="tile"><span class="tile-label">Trainings</span><div class="tile-value">${info.count}<small>/${settings.weeklyGoal}</small></div></div>
+        <div class="tile"><span class="tile-label">Sätze</span><div class="tile-value">${info.sets}</div></div>
+        <div class="tile"><span class="tile-label">Volumen</span><div class="tile-value">${volumeShort(info.volume, u)}</div></div>
+        <div class="tile"><span class="tile-label">Trainingszeit</span><div class="tile-value">${info.minutes >= 60 ? `${Math.floor(info.minutes / 60)}<small>h</small> ${info.minutes % 60}<small>min</small>` : `${info.minutes}<small>min</small>`}</div></div>
+      </div>
     </div>
     <div class="section">
-      <div class="section-head"><h2>Trainings pro Woche</h2><span class="muted small">8 Wochen</span></div>
+      <div class="section-head"><h2>Trainings pro Woche</h2><span class="meta">8 Wochen</span></div>
       <div class="card">
-        <div class="weeks">${weeks.map((w) => `
-          <div class="weeks-col ${w.count >= settings.weeklyGoal ? 'hit' : ''}">
-            <i style="height:${Math.max(4, (w.count / maxWeek) * 70)}px"></i>
+        <div class="weeks">${weeks.map((w, i) => `
+          <div class="weeks-col ${w.count >= settings.weeklyGoal ? 'hit' : ''} ${i === weeks.length - 1 ? 'now' : ''}">
+            <i style="height:${Math.max(4, (w.count / maxWeek) * 76)}px"></i>
             <span>${w.count}</span>
           </div>`).join('')}</div>
-        <p class="weeks-goal">Farbig: Wochenziel von ${settings.weeklyGoal} erreicht</p>
+        <div class="weeks-foot"><span>vor 8 Wochen</span><span>Ziel: ${settings.weeklyGoal}× pro Woche</span><span>jetzt</span></div>
       </div>
     </div>
     ${lifts.length ? `
       <div class="section">
-        <div class="section-head"><h2>Kraftentwicklung</h2><span class="muted small">letzte 8 Wochen</span></div>
+        <div class="section-head"><h2>Kraftentwicklung</h2><span class="meta">8 Wochen</span></div>
         <div class="lifts">${lifts.map((l) => {
     const d = Math.round(l.delta * 10) / 10;
     const deltaText = !d ? '± 0' : `${d > 0 ? '+' : '−'} ${l.loaded ? formatNumber(Math.abs(d)) : Math.abs(d)}`;
@@ -167,7 +173,7 @@ function statsHtml() {
         <p class="section-foot">Geschätztes 1RM aus deinem besten Satz je Training.</p>
       </div>` : ''}
     <div class="section">
-      <div class="section-head"><h2>Sätze pro Muskel</h2><span class="muted small">7 Tage</span></div>
+      <div class="section-head"><h2>Sätze pro Muskel</h2><span class="meta">7 Tage</span></div>
       <div class="card">
         ${groups.length ? `<div class="bars">${groups.map(([g, n]) => {
     const status = n < SET_TARGET_MIN ? 'low' : n > SET_TARGET_MAX ? 'high' : 'ok';
@@ -184,7 +190,7 @@ function statsHtml() {
     </div>
     ${records.length ? `
       <div class="section">
-        <div class="section-head"><h2>Rekorde</h2><span class="muted small">30 Tage</span></div>
+        <div class="section-head"><h2>Rekorde</h2><span class="meta">30 Tage</span></div>
         <div class="list">${records.map((r) => `
           <button class="row" data-action="open-exercise-stat" data-id="${r.id}">
             <div class="row-main"><span class="row-title">${esc(r.name)}</span><span class="row-sub">${relativeDay(r.date)}</span></div>
@@ -212,33 +218,28 @@ registerPage('workout', {
         <h1 class="detail-title">${esc(w.routineName || 'Freies Training')}</h1>
         <p class="detail-meta">${new Date(w.startedAt).toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · ${formatTime(w.startedAt)} Uhr</p>
       </div>
-      <div class="card"><div class="stats divided" style="--cols:4">
-        <div class="stat"><b class="num">${Math.round(workoutDuration(w) / 60000)}<small>Min</small></b><span>Dauer</span></div>
+      <div class="card"><div class="stats divided" style="--cols:3">
+        <div class="stat"><b class="num">${Math.round(workoutDuration(w) / 60000)}<small>min</small></b><span>Dauer</span></div>
         <div class="stat"><b class="num">${workoutDoneSets(w)}</b><span>Sätze</span></div>
-        <div class="stat"><b class="num">${formatVolume(workoutVolume(w))}</b><span>${u}</span></div>
-        <div class="stat"><b class="num">${prs}</b><span>Rekorde</span></div>
+        <div class="stat"><b class="num">${volumeShort(workoutVolume(w), u)}</b><span>Volumen${prs ? ` · ${prs} PR` : ''}</span></div>
       </div></div>
       ${w.entries.map((e) => {
     const done = e.sets.filter((s) => s.done);
     return `
         <div class="section">
           <div class="list">
-            <button class="row" data-action="open-exercise-stat" data-id="${e.exerciseId}" style="min-height:44px">
+            <button class="row" data-action="open-exercise-stat" data-id="${e.exerciseId}">
               <div class="row-main"><span class="row-title strong">${esc(entryName(e, names))}</span></div>${chev}
             </button>
             ${done.length ? done.map((s, i) => `
-              <div class="row" style="min-height:40px;padding-top:8px;padding-bottom:8px">
-                <span class="faint num" style="width:22px;font-weight:600">${i + 1}</span>
-                <div class="row-main"><span class="row-title num" style="font-size:16px">${esc(formatSet(s, u))}</span></div>
-                ${s.pr ? '<span class="pr-mark">PR</span>' : ''}
-              </div>`).join('') : '<div class="row"><span class="row-sub">Keine Sätze abgehakt</span></div>'}
+              <div class="set-line"><span>${i + 1}</span><span>${esc(formatSet(s, u))}</span>${s.pr ? '<span class="pr-mark">PR</span>' : '<span></span>'}</div>`).join('') : '<div class="set-line"><span></span><span class="muted">Keine Sätze abgehakt</span><span></span></div>'}
           </div>
         </div>`;
   }).join('')}
       <div class="section">
         <div class="list">
-          ${!w.routineId && w.entries.length ? `<button class="row accent" data-action="workout-save-plan" data-id="${w.id}"><div class="row-main"><span class="row-title">Als Plan speichern</span></div></button>` : ''}
-          <button class="row destructive" data-action="workout-delete" data-id="${w.id}"><div class="row-main"><span class="row-title">Training löschen</span></div></button>
+          ${!w.routineId && w.entries.length ? `<button class="row accent center" data-action="workout-save-plan" data-id="${w.id}"><div class="row-main"><span class="row-title">Als Plan speichern</span></div></button>` : ''}
+          <button class="row destructive center" data-action="workout-delete" data-id="${w.id}"><div class="row-main"><span class="row-title">Training löschen</span></div></button>
         </div>
       </div>`;
   },

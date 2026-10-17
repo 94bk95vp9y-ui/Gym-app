@@ -1,7 +1,7 @@
 // Tab „Training“: Pläne und Übungen, Detailseiten, Plan-Editor, KI-Import.
 import { Store, MUSCLE_GROUPS, REST_OPTIONS, DEFAULT_PLAN_SETS, uid } from '../core/store.js';
 import {
-  nextPlan, lastDoneMap, planMinutes, plannedSets, lastPerformanceMap, exerciseHistory,
+  nextPlan, lastDoneMap, planMinutes, planMuscles, plannedSets, lastPerformanceMap, exerciseHistory,
 } from '../core/training.js';
 import {
   formatSet, formatSetList, formatNumber, formatRest, formatDate, relativeDay, plural, unitLabel,
@@ -14,11 +14,11 @@ import { openSheet, actionSheet, confirmAction, alertDialog } from '../ui/sheet.
 import { toast } from '../ui/toast.js';
 import { lineChart } from '../ui/chart.js';
 import { enableReorder } from '../ui/reorder.js';
+import { chev, chips, iconTile, emptyState, TINT } from '../ui/components.js';
 import { openExercisePicker, openExerciseEditor, filterExercises, groupedHtml } from './picker.js';
 import { startRoutine, startBlank } from './workout.js';
 
-const ui = { seg: 'plans', query: '' };
-const chev = `<span class="row-chev">${Icon.chevronRight}</span>`;
+const ui = { seg: 'plans', query: '', group: 'all' };
 
 function unit() { return unitLabel(Store.getSettings().unit); }
 
@@ -39,45 +39,52 @@ function lastLabel(lastDone, r) {
   return lastDone.has(r.id) ? `zuletzt ${relativeDay(lastDone.get(r.id))}` : 'noch nicht trainiert';
 }
 
-function plansHtml() {
-  const routines = Store.getRoutines();
-  const extra = `
+function quickTilesHtml() {
+  return `
     <div class="section">
-      <div class="list inset-icons">
-        <button class="row" data-action="start-blank">
-          <span class="row-icon accent">${Icon.plus}</span>
-          <div class="row-main"><span class="row-title">Leeres Training</span><span class="row-sub">Übungen spontan auswählen</span></div>${chev}
+      <div class="tiles quick-tiles">
+        <button class="tile" data-action="start-blank">
+          ${iconTile(Icon.plus, TINT.blue, 'lg')}
+          <div><div class="tile-title">Leeres Training</div><div class="tile-sub">Übungen spontan wählen</div></div>
         </button>
-        <button class="row" data-action="plan-import">
-          <span class="row-icon accent">${Icon.doc}</span>
-          <div class="row-main"><span class="row-title">Pläne mit KI erstellen</span><span class="row-sub">Prompt kopieren, Antwort einfügen</span></div>${chev}
+        <button class="tile" data-action="plan-import">
+          ${iconTile(Icon.chat, TINT.purple, 'lg')}
+          <div><div class="tile-title">Plan mit KI</div><div class="tile-sub">Aus einer Sprachnachricht</div></div>
         </button>
       </div>
     </div>`;
+}
+
+function plansHtml() {
+  const routines = Store.getRoutines();
   if (!routines.length) {
     return `
-      <div class="section">
-        <div class="card empty">
-          <strong>Noch keine Pläne</strong>
-          Lege deinen ersten Trainingsplan an – selbst oder mit einer KI aus einer Sprachnachricht.
-          <button class="btn btn-primary btn-block" data-action="plan-new">Plan erstellen</button>
-        </div>
-      </div>${extra}`;
+      ${emptyState({
+    icon: Icon.dumbbell,
+    title: 'Noch keine Pläne',
+    text: 'Lege deinen ersten Trainingsplan an – selbst oder mit einer KI.',
+    action: '<button class="btn btn-primary" data-action="plan-new">Plan erstellen</button>',
+  })}
+      ${quickTilesHtml()}`;
   }
   const next = nextPlan(routines);
   const lastDone = lastDoneMap();
   return `
-    <div class="section">
-      <div class="list">
-        ${routines.map((r) => `
-          <button class="row plan-row" data-action="open-plan" data-id="${r.id}">
-            <div class="row-main">
-              <span class="row-title">${esc(r.name)}${r === next && routines.length > 1 ? '<span class="tag">Als Nächstes</span>' : ''}</span>
-              <span class="row-sub">${plural(r.exerciseIds.length, 'Übung', 'Übungen')} · ${lastLabel(lastDone, r)}</span>
-            </div>${chev}
-          </button>`).join('')}
-      </div>
-    </div>${extra}`;
+    <div class="plan-cards">
+      ${routines.map((r) => {
+    const isNext = r === next && routines.length > 1;
+    return `
+        <div class="plan-card ${isNext ? 'next' : ''}" data-action="open-plan" data-id="${r.id}" role="button" tabindex="0">
+          <div class="plan-card-main">
+            <div class="plan-card-title"><span>${esc(r.name)}</span>${isNext ? '<span class="tag">Als Nächstes</span>' : ''}</div>
+            <div class="plan-card-meta">${plural(r.exerciseIds.length, 'Übung', 'Übungen')} · ${lastLabel(lastDone, r)}</div>
+            ${chips(planMuscles(r))}
+          </div>
+          <button class="play-btn" data-action="start-routine" data-id="${r.id}" aria-label="${esc(r.name)} starten" ${r.exerciseIds.length ? '' : 'disabled'}>${Icon.play}</button>
+        </div>`;
+  }).join('')}
+    </div>
+    ${quickTilesHtml()}`;
 }
 
 function exerciseRow(last) {
@@ -94,12 +101,22 @@ function exerciseRow(last) {
 }
 
 function exerciseListHtml() {
-  return groupedHtml(filterExercises(Store.getExercises(), ui.query), exerciseRow(lastPerformanceMap()));
+  const all = Store.getExercises();
+  const list = ui.group === 'all' ? all : all.filter((e) => e.muscleGroup === ui.group);
+  return groupedHtml(filterExercises(list, ui.query), exerciseRow(lastPerformanceMap()));
+}
+
+function filterChipsHtml() {
+  const used = new Set(Store.getExercises().map((e) => e.muscleGroup));
+  const groups = ['all', ...MUSCLE_GROUPS.filter((g) => used.has(g))];
+  return `<div class="filter-chips" id="ex-filters">${groups.map((g) => `
+    <button class="filter-chip ${ui.group === g ? 'active' : ''}" data-action="ex-filter" data-group="${esc(g)}">${g === 'all' ? 'Alle' : esc(g)}</button>`).join('')}</div>`;
 }
 
 function exercisesHtml() {
   return `
     <label class="search">${Icon.search}<input class="input" type="search" placeholder="Übung suchen" value="${esc(ui.query)}" data-input="ex-search" autocomplete="off" /></label>
+    ${filterChipsHtml()}
     <div id="ex-list">${exerciseListHtml()}</div>`;
 }
 
@@ -113,18 +130,23 @@ registerPage('training', {
 registerPage('plan', {
   title: ({ id }) => Store.getRoutine(id)?.name || 'Plan',
   right: ({ id }) => `<button class="nav-btn" data-action="plan-edit" data-id="${id}">Bearbeiten</button>`,
+  footer: ({ id }) => {
+    const r = Store.getRoutine(id);
+    if (!r) return '';
+    return `<button class="btn btn-primary btn-block" data-action="start-routine" data-id="${r.id}" ${r.exerciseIds.length ? '' : 'disabled'}>${Icon.play} Training starten</button>`;
+  },
   render: ({ id }) => {
     const r = Store.getRoutine(id);
     if (!r) return '<p class="empty">Dieser Plan existiert nicht mehr.</p>';
     const minutes = planMinutes(r);
     const lastDone = lastDoneMap();
     const last = lastPerformanceMap();
-    const rows = r.exerciseIds.map((eid) => {
+    const rows = r.exerciseIds.filter((eid) => Store.getExercise(eid)).map((eid, i) => {
       const ex = Store.getExercise(eid);
-      if (!ex) return '';
       const info = last.get(eid);
       return `
         <button class="row plan-ex" data-action="open-exercise" data-id="${eid}">
+          <span class="num-badge">${i + 1}</span>
           <div class="row-main">
             <span class="row-title">${esc(ex.name)}</span>
             <span class="row-sub">${info ? `Zuletzt ${esc(formatSet(info.best, unit()))}` : esc(ex.muscleGroup)}</span>
@@ -136,12 +158,9 @@ registerPage('plan', {
       <div class="detail-head">
         <h1 class="detail-title">${esc(r.name)}</h1>
         <p class="detail-meta">${plural(r.exerciseIds.length, 'Übung', 'Übungen')}${minutes ? ` · ca. ${minutes} Min` : ''} · ${lastLabel(lastDone, r)}</p>
+        ${chips(planMuscles(r, 5))}
       </div>
-      <button class="btn btn-primary btn-block" data-action="start-routine" data-id="${r.id}" ${r.exerciseIds.length ? '' : 'disabled'}>${Icon.play} Training starten</button>
-      <div class="section">
-        <div class="section-head"><h2>Übungen</h2></div>
-        ${rows ? `<div class="list">${rows}</div>` : '<div class="card empty">Noch keine Übungen. Tippe auf „Bearbeiten“.</div>'}
-      </div>`;
+      ${rows ? `<div class="list">${rows}</div>` : emptyState({ icon: Icon.dumbbell, title: 'Noch keine Übungen', text: 'Tippe oben auf „Bearbeiten“, um Übungen hinzuzufügen.' })}`;
   },
 });
 
@@ -149,18 +168,16 @@ registerPage('plan', {
 function exerciseStatsHtml(ex) {
   const h = exerciseHistory(ex.id);
   if (!h.sessions.length) {
-    return '<div class="card muted small">Noch nicht trainiert. Nach dem ersten Training siehst du hier Bestleistung und Verlauf.</div>';
+    return emptyState({ icon: Icon.chart, title: 'Noch nicht trainiert', text: 'Nach dem ersten Training siehst du hier Bestleistung, Verlauf und Entwicklung.' });
   }
   const u = unit();
   const best = h.best;
-  const stats = h.loaded ? `
-      <div class="stat"><b class="num">${formatNumber(best.top.weight)}<small>${u}</small></b><span>Bestleistung · ${best.top.reps} Wdh</span></div>
-      <div class="stat"><b class="num">${formatNumber(Math.round(h.bestValue))}<small>${u}</small></b><span>1RM geschätzt</span></div>
-      <div class="stat"><b class="num">${h.sessions.length}</b><span>Einheiten</span></div>`
-    : `
-      <div class="stat"><b class="num">${best.top.reps}</b><span>Meiste Wdh</span></div>
-      <div class="stat"><b class="num">${h.sessions.length}</b><span>Einheiten</span></div>
-      <div class="stat"><b>${esc(relativeDay(h.sessions[0].date))}</b><span>Zuletzt</span></div>`;
+  const tile = (label, value, sub) => `<div class="tile"><span class="tile-label">${label}</span><div class="tile-value">${value}</div><span class="tile-sub">${sub}</span></div>`;
+  const stats = h.loaded
+    ? tile('Bestleistung', `${formatNumber(best.top.weight)}<small>${u}</small>`, `× ${best.top.reps} Wdh · ${esc(formatDate(best.date))}`)
+      + tile('1RM geschätzt', `${formatNumber(Math.round(h.bestValue))}<small>${u}</small>`, `${plural(h.sessions.length, 'Einheit', 'Einheiten')} · zuletzt ${relativeDay(h.sessions[0].date)}`)
+    : tile('Meiste Wdh', `${best.top.reps}`, esc(formatDate(best.date)))
+      + tile('Einheiten', `${h.sessions.length}`, `zuletzt ${relativeDay(h.sessions[0].date)}`);
   const chart = h.points.length >= 2 ? `
     <div class="section">
       <div class="section-head"><h2>${h.loaded ? 'Geschätztes 1RM' : 'Wiederholungen'}</h2></div>
@@ -169,11 +186,11 @@ function exerciseStatsHtml(ex) {
   const history = `
     <div class="section">
       <div class="section-head"><h2>Verlauf</h2></div>
-      <div class="card tight">${h.sessions.slice(0, 10).map((s) => `
+      <div class="list">${h.sessions.slice(0, 10).map((s) => `
         <div class="history-row"><span>${esc(formatDate(s.date))}</span><span>${esc(formatSetList(s.sets, u))}${s.sets.some((x) => x.pr) ? '<span class="pr-mark">PR</span>' : ''}</span></div>`).join('')}
       </div>
     </div>`;
-  return `<div class="card"><div class="stats ex-stats divided">${stats}</div></div>${chart}${history}`;
+  return `<div class="tiles">${stats}</div>${chart}${history}`;
 }
 
 registerPage('exercise', {
@@ -187,25 +204,25 @@ registerPage('exercise', {
     return `
       <div class="detail-head">
         <h1 class="detail-title">${esc(ex.name)}</h1>
-        <p class="detail-meta">${esc(ex.muscleGroup)}</p>
+        ${chips([ex.muscleGroup])}
       </div>
       ${exerciseStatsHtml(ex)}
       <div class="section">
-        <div class="section-head"><h2>Notiz</h2></div>
+        <div class="section-head"><h2>Notiz zur Ausführung</h2></div>
         <textarea class="input" rows="3" data-input="ex-note" data-id="${ex.id}" placeholder="z. B. Ellbogen nah am Körper, Rücken gerade">${esc(ex.notes || '')}</textarea>
-        <p class="field-hint">Erscheint im Training klein unter der Übung.</p>
+        <p class="field-hint">Steht im Training klein unter der Übung.</p>
       </div>
       <div class="section">
-        <div class="list">
+        <div class="list icons">
           <button class="row" data-action="ex-rest" data-id="${ex.id}">
+            ${iconTile(Icon.timer, TINT.orange)}
             <div class="row-main"><span class="row-title">Satzpause</span></div>
-            <span class="row-value">${rest === null ? `Standard (${formatRest(s.restSeconds)})` : formatRest(rest)}</span>${chev}
+            <span class="row-value">${rest === null ? `Standard · ${formatRest(s.restSeconds)}` : formatRest(rest)}</span>${chev}
           </button>
         </div>
-        <p class="section-foot">Zum Beispiel länger bei Kniebeugen, kürzer bei Curls.</p>
       </div>
       <div class="section">
-        <div class="list"><button class="row destructive" data-action="exercise-delete" data-id="${ex.id}"><div class="row-main"><span class="row-title">Übung löschen</span></div></button></div>
+        <div class="list"><button class="row destructive center" data-action="exercise-delete" data-id="${ex.id}"><div class="row-main"><span class="row-title">Übung löschen</span></div></button></div>
       </div>`;
   },
 });
@@ -233,7 +250,7 @@ export function openPlanEditor(id = null, { onSaved = null } = {}) {
         </span>
         <button class="icon-btn remove-btn" data-remove="${i}" aria-label="Entfernen">${Icon.close}</button>
       </div>`;
-  }).join('') : '<div class="row"><div class="row-main"><span class="row-sub">Noch keine Übungen</span></div></div>');
+  }).join('') : '<div class="row center"><div class="row-main"><span class="row-sub">Noch keine Übungen</span></div></div>');
 
   const body = () => `
     <div class="field">
@@ -242,10 +259,9 @@ export function openPlanEditor(id = null, { onSaved = null } = {}) {
     </div>
     <label class="field-label">Übungen und Sätze</label>
     <div class="list" data-rows>${rowsHtml()}</div>
-    <button class="row accent" data-add style="border-radius:var(--r-card);margin-top:10px">
-      <span class="row-icon accent">${Icon.plus}</span><div class="row-main"><span class="row-title">Übungen hinzufügen</span></div>
-    </button>
-    ${existing ? `<div class="section"><div class="list"><button class="row destructive" data-delete><div class="row-main"><span class="row-title">Plan löschen</span></div></button></div></div>` : ''}`;
+    <button class="btn btn-tinted btn-block" data-add style="margin-top:12px">${Icon.plus} Übungen hinzufügen</button>
+    ${draft.exerciseIds.length > 1 ? '<p class="field-hint">Zum Sortieren die Zeile am Griff links ziehen.</p>' : ''}
+    ${existing ? `<div class="section"><div class="list"><button class="row destructive center" data-delete><div class="row-main"><span class="row-title">Plan löschen</span></div></button></div></div>` : ''}`;
 
   const save = (s) => {
     const nameEl = qs('[data-f="name"]', s.body);
@@ -390,10 +406,10 @@ function openImportSheet() {
     left: { label: 'Abbrechen' },
     right: null,
     body: `
-      <div class="list inset-icons">
-        <div class="row"><span class="row-icon">1</span><div class="row-main"><span class="row-title">Prompt kopieren</span><span class="row-sub">Er enthält deine Übungsliste, damit die KI die richtigen Namen nutzt.</span></div></div>
-        <div class="row"><span class="row-icon">2</span><div class="row-main"><span class="row-title">In ChatGPT o. ä. einfügen</span><span class="row-sub">Dann deinen Plan beschreiben – per Sprachnachricht geht es am schnellsten.</span></div></div>
-        <div class="row"><span class="row-icon">3</span><div class="row-main"><span class="row-title">Antwort hier einfügen</span><span class="row-sub">Und auf „Einlesen“ tippen.</span></div></div>
+      <div class="list" style="--sep-inset:54px">
+        <div class="row"><span class="num-badge">1</span><div class="row-main"><span class="row-title">Prompt kopieren</span><span class="row-sub">Er enthält deine Übungsliste, damit die KI die richtigen Namen nutzt.</span></div></div>
+        <div class="row"><span class="num-badge">2</span><div class="row-main"><span class="row-title">In ChatGPT o. ä. einfügen</span><span class="row-sub">Dann deinen Plan beschreiben – per Sprachnachricht geht es am schnellsten.</span></div></div>
+        <div class="row"><span class="num-badge">3</span><div class="row-main"><span class="row-title">Antwort hier einfügen</span><span class="row-sub">Und auf „Einlesen“ tippen.</span></div></div>
       </div>
       <button class="btn btn-tinted btn-block" data-copy style="margin-top:14px">${Icon.copy} Prompt kopieren</button>
       <div class="field" style="margin-top:18px">
@@ -474,6 +490,11 @@ registerActions({
     seg.style.setProperty('--i', ui.seg === 'plans' ? 0 : 1);
     seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === el));
     qs('#training-body').innerHTML = ui.seg === 'plans' ? plansHtml() : exercisesHtml();
+  },
+  'ex-filter': (el) => {
+    ui.group = el.dataset.group;
+    document.querySelectorAll('#ex-filters .filter-chip').forEach((b) => b.classList.toggle('active', b === el));
+    qs('#ex-list').innerHTML = exerciseListHtml();
   },
   'training-add': () => {
     if (ui.seg === 'plans') openPlanEditor(null, { onSaved: (id) => push('plan', { id }) });

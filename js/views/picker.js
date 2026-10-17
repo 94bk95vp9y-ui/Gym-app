@@ -57,10 +57,7 @@ export function openExercisePicker({ title = 'Übungen hinzufügen', fixed = [],
     right: { label: rightLabel(), style: 'primary', action: (s) => { s.close(); if (chosen.length) onDone(chosen); } },
     body: `
       <label class="search">${Icon.search}<input class="input" type="search" placeholder="Suchen" autocomplete="off" data-picker-search /></label>
-      <button class="row accent" data-picker-new style="border-radius:14px;margin-bottom:6px">
-        <span class="row-icon accent">${Icon.plus}</span>
-        <div class="row-main"><span class="row-title">Neue Übung anlegen</span></div>
-      </button>
+      <button class="btn btn-tinted btn-block btn-sm" data-picker-new style="height:42px;margin-bottom:4px">${Icon.plus} Neue Übung anlegen</button>
       <div data-picker-list>${listHtml()}</div>`,
   });
   const body = sheet.body;

@@ -23,8 +23,10 @@ danach auch offline.
   eigene Satzpause
 
 **Training läuft**
+- Die aktuelle Übung ist hervorgehoben, fertige Übungen klappen zu und die
+  nächste rückt ins Bild
 - Spalte „Vorher“ und vorausgefüllte Werte vom letzten Mal
-- Pausentimer nach jedem Satz (Standard oder pro Übung)
+- Pausentimer nach jedem Satz (Standard oder pro Übung), zeigt den nächsten Satz
 - Rekord-Erkennung, Gewichts-Empfehlung, Hinweis bei anderer Vorbelastung
 - Notiz pro Übung, Übung ersetzen, Reihenfolge ändern, Sätze löschen mit
   „Rückgängig“
@@ -80,7 +82,7 @@ js/core/                Daten und Logik ohne Oberfläche
   supplements.js        Tage, Serie, Vorrat, Erinnerungen
   plan-import.js        KI-Prompt und Parser
   catalog.js            Übungskatalog
-js/ui/                  Router, Sheets, Dialoge, Icons, Diagramme
+js/ui/                  Router, Bausteine, Sheets, Dialoge, Icons, Diagramme
 js/views/               Heute, Training, Workout, Supplements, Verlauf,
                         Einstellungen, Mobility
 js/mobility/            Routinen, Player, 3D-Figur (three.js)
