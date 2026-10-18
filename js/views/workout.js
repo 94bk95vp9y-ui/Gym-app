@@ -297,10 +297,9 @@ function paint() {
   if (wasOpen) requestAnimationFrame(() => qs('.workout', root)?.classList.remove('instant'));
   W.restShown = false;
   syncRest();
-  if (W.field) {
-    if (fieldEl(W.field.ei, W.field.si, W.field.field)) markEditing(false);
-    else closeKeypad();
-  }
+  // Neu gezeichnet wird nach Löschen, Rückgängig, Hinzufügen – danach kann
+  // an derselben Stelle ein anderer Satz stehen. Zahlenfeld lieber schließen.
+  if (W.field) closeKeypad();
 }
 
 function updateProgress(w) {

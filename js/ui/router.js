@@ -167,9 +167,14 @@ function updateChrome() {
     if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
   const live = liveBarHtml();
-  if (liveSlot.dataset.html !== live) {
+  // Die laufende Uhr ändert sich jede Sekunde – sie zählt nicht als Änderung,
+  // sonst würde die Leiste bei jedem Seitenwechsel neu einfliegen.
+  const key = live.replace(/<span id="live-time"[^>]*>[^<]*<\/span>/, '');
+  if (liveSlot.dataset.key !== key) {
+    const appearing = !liveSlot.dataset.key;
     liveSlot.innerHTML = live;
-    liveSlot.dataset.html = live;
+    liveSlot.dataset.key = key;
+    qs('.live-bar', liveSlot)?.classList.toggle('enter', appearing);
   }
   chrome.classList.toggle('has-live', !!live);
 }
@@ -212,7 +217,9 @@ function dimLayer(el) {
 // Laufenden Übergang sofort abschließen (z. B. wenn während der Animation ein
 // Tab angetippt wird) – sonst ginge der Tipp verloren.
 let running = null;
+let abortSwipe = null; // bricht ein laufendes Wischen ab (siehe enableSwipeBack)
 function settle() {
+  abortSwipe?.();
   running?.done();
 }
 
@@ -330,6 +337,17 @@ export function isNavigating() { return busy; }
 // liegt dabei schon darunter und zieht mit.
 function enableSwipeBack() {
   let s = null;
+  // Wird während des Wischens neu gezeichnet (z. B. Daten-Aktualisierung),
+  // bricht das Wischen ab – sonst bliebe die Bühne gesperrt.
+  abortSwipe = () => {
+    if (!s?.active) return;
+    const g = s;
+    s = null;
+    g.under?.remove();
+    if (g.top) { g.top.style.transform = ''; g.top.classList.remove('is-top'); }
+    busy = false;
+    stage.classList.remove('animating');
+  };
   stage.addEventListener('touchstart', (e) => {
     const t = e.touches[0];
     if (busy || e.touches.length !== 1 || t.clientX > 24 || !nav.stacks[nav.tab].length) return;
@@ -389,19 +407,27 @@ function enableSwipeBack() {
       g.under.animate([{ transform: g.under.style.transform }, { transform: `translateX(${underTo}px)` }], opts),
       g.dim.animate([{ opacity: g.dim.style.opacity }, { opacity: done ? 0 : 1 }], opts),
     ];
-    Promise.all(anims.map((a) => a.finished.catch(() => {}))).then(() => {
+    // Als laufender Übergang anmelden: ein Tab-Tipp währenddessen schließt
+    // ihn sofort ab, statt verloren zu gehen.
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      if (running?.done === finish) running = null;
+      anims.forEach((a) => a.cancel());
       busy = false;
       stage.classList.remove('animating');
       if (done) {
         nav.stacks[nav.tab].pop();
         render();
       } else {
-        anims.forEach((a) => a.cancel());
         g.top.style.transform = '';
         g.top.classList.remove('is-top');
         g.under.remove();
       }
-    });
+    };
+    running = { done: finish };
+    Promise.all(anims.map((a) => a.finished.catch(() => {}))).then(finish);
   };
   stage.addEventListener('touchend', end);
   stage.addEventListener('touchcancel', end);

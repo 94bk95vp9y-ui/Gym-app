@@ -163,6 +163,7 @@ h1, h2, h3, h4, p { margin: 0; }
   margin: 0;
   border-radius: inherit;
   cursor: pointer;
+  touch-action: manipulation;
 }
 .hap-switch { position: fixed; left: 0; top: 0; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
 html:not(.ios) .hap, html.no-haptics .hap { display: none; }
@@ -392,8 +393,8 @@ html:not(.ios) .hap, html.no-haptics .hap { display: none; }
   padding: 0 8px 0 18px;
   border-radius: 29px;
   text-align: left;
-  animation: live-in 0.5s var(--spring) both;
 }
+.live-bar.enter { animation: live-in 0.5s var(--spring) both; }
 @keyframes live-in { from { transform: translateY(16px) scale(0.96); opacity: 0; } }
 .live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--success-strong); flex: none; box-shadow: 0 0 0 4px var(--success-tint); animation: pulse 1.8s ease-in-out infinite; }
 .live-text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
