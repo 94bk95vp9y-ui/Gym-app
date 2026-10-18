@@ -12,8 +12,8 @@ import {
 import { esc, registerActions } from '../ui/dom.js';
 import { Icon } from '../ui/icons.js';
 import { registerPage, push, goTo, render } from '../ui/router.js';
-import { openSheet } from '../ui/sheet.js';
-import { chips, chev, iconTile, TINT } from '../ui/components.js';
+import { openMenu } from '../ui/sheet.js';
+import { iconTile, TINT } from '../ui/components.js';
 import { startRoutine, startBlank } from './workout.js';
 import { supplementsTodayHtml } from './supplements.js';
 import { mobilityTileHtml } from './mobility.js';
@@ -73,7 +73,8 @@ function heroHtml() {
   const plan = nextPlan(routines, workouts);
   const lastDone = lastDoneMap(workouts);
   const minutes = planMinutes(plan);
-  const count = plan.exerciseIds.filter((id) => Store.getExercise(id)).length;
+  const names = plan.exerciseIds.map((id) => Store.getExercise(id)?.name).filter(Boolean);
+  const count = names.length;
   return `
     <div class="hero">
       <div class="hero-top">
@@ -82,7 +83,7 @@ function heroHtml() {
       </div>
       <h2 class="hero-title">${esc(plan.name)}</h2>
       <div class="hero-meta">${plural(count, 'Übung', 'Übungen')}${minutes ? ` · ca. ${minutes} Min` : ''} · ${lastDone.has(plan.id) ? `zuletzt ${relativeDay(lastDone.get(plan.id))}` : 'noch nicht trainiert'}</div>
-      ${chips(planMuscles(plan))}
+      ${count ? `<p class="hero-preview">${names.map(esc).join('<i>·</i>')}</p>` : ''}
       <div class="hero-actions">
         <button class="btn btn-hero" data-action="start-routine" data-id="${plan.id}" ${count ? '' : 'disabled'}>${Icon.play} Training starten</button>
       </div>
@@ -131,40 +132,28 @@ registerPage('today', {
     ${backupHtml()}`,
 });
 
-function openWorkoutChooser() {
+// „Wechseln“ / „Noch eins“: Menü am Knopf mit allen Plänen – Antippen startet
+function openWorkoutChooser(anchor) {
   const routines = Store.getRoutines();
   const next = nextPlan(routines);
   const lastDone = lastDoneMap();
-  openSheet({
-    title: 'Training wählen',
-    left: { label: 'Abbrechen' },
-    right: null,
-    body: `
-      ${routines.length ? `<div class="list">
-        ${routines.map((r) => `
-          <button class="row" data-pick-plan="${r.id}">
-            <div class="row-main">
-              <span class="row-title strong">${esc(r.name)}</span>
-              <span class="row-sub">${esc(planMuscles(r).join(' · ') || plural(r.exerciseIds.length, 'Übung', 'Übungen'))} · ${lastDone.has(r.id) ? relativeDay(lastDone.get(r.id)) : 'neu'}</span>
-            </div>
-            ${r === next ? '<span class="tag">Als Nächstes</span>' : ''}${chev}
-          </button>`).join('')}
-      </div>` : ''}
-      <div class="section"><div class="list icons">
-        <button class="row" data-pick-plan="">${iconTile(Icon.plus, TINT.blue)}<div class="row-main"><span class="row-title">Leeres Training</span><span class="row-sub">Übungen spontan auswählen</span></div>${chev}</button>
-      </div></div>`,
-    onMount: (s) => s.body.addEventListener('click', (e) => {
-      const b = e.target.closest('[data-pick-plan]');
-      if (!b) return;
-      s.close();
-      if (b.dataset.pickPlan) startRoutine(b.dataset.pickPlan); else startBlank();
-    }),
-  });
+  const hero = anchor.closest('.hero');
+  openMenu(anchor, [
+    ...routines.map((r) => ({
+      label: r.name,
+      sub: `${planMuscles(r, 2).join(' · ') || plural(r.exerciseIds.length, 'Übung', 'Übungen')} · ${lastDone.has(r.id) ? relativeDay(lastDone.get(r.id)) : 'neu'}`,
+      checked: r === next,
+      disabled: !r.exerciseIds.length,
+      handler: () => startRoutine(r.id, { from: hero }),
+    })),
+    ...(routines.length ? ['-'] : []),
+    { label: 'Leeres Training', icon: Icon.plus, handler: () => startBlank() },
+  ], { title: 'Training wählen' });
 }
 
 registerActions({
   'open-settings': () => push('settings'),
-  'choose-workout': () => openWorkoutChooser(),
+  'choose-workout': (el) => openWorkoutChooser(el),
   'today-new-plan': () => {
     goTo('training');
     openPlanEditor(null, { onSaved: (id) => push('plan', { id }) });

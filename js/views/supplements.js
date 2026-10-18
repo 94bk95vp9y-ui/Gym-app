@@ -11,8 +11,11 @@ import { Sound } from '../core/sound.js';
 import { esc, qs, qsa, registerActions, registerInputs } from '../ui/dom.js';
 import { Icon } from '../ui/icons.js';
 import { registerPage, render, goTo } from '../ui/router.js';
-import { openSheet, topSheet, confirmAction } from '../ui/sheet.js';
+import {
+  openSheet, topSheet, confirmAction, registerContextMenu,
+} from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
+import { haptic, HAP } from '../ui/haptics.js';
 import { chev, iconTile, ring, emptyState, TINT } from '../ui/components.js';
 
 const ui = { month: null };
@@ -30,7 +33,8 @@ const isLow = (s) => hasStock(s) && s.stock <= LOW_STOCK_DAYS;
 function stockText(s) {
   if (!hasStock(s)) return '';
   if (s.stock <= 0) return 'Vorrat leer';
-  return isLow(s) ? `noch ${plural(s.stock, 'Portion', 'Portionen')}` : `${plural(s.stock, 'Portion', 'Portionen')} übrig`;
+  // Eine Portion pro Tag: der Vorrat reicht so viele Tage
+  return isLow(s) ? `reicht noch ${plural(s.stock, 'Tag', 'Tage')}` : `${plural(s.stock, 'Portion', 'Portionen')} übrig`;
 }
 
 // Eine Zeile zum Abhaken: Kreis links wie in einer Erinnerungsliste
@@ -38,7 +42,7 @@ function checkRow(s, day, taken, { slot = true } = {}) {
   const sub = [s.dose, isLow(s) ? stockText(s) : ''].filter(Boolean).join(' · ');
   return `
     <button class="row check-row ${taken ? 'taken' : ''}" data-action="supp-toggle" data-id="${s.id}" data-day="${day}" aria-pressed="${taken}">
-      <span class="check">${Icon.check}</span>
+      ${HAP}<span class="check">${Icon.check}</span>
       <div class="row-main">
         <span class="row-title">${esc(s.name)}</span>
         ${sub ? `<span class="row-sub ${isLow(s) ? 'warn' : ''}">${esc(sub)}</span>` : ''}
@@ -127,6 +131,21 @@ function dayClass(st, key, today) {
   return '';
 }
 
+// Jeder Tag ein kleiner Ring wie bei den Aktivitätsringen: geschlossen =
+// alles genommen, teilweise gefüllt = einiges, nur die Spur = vergessen.
+function dayRing(st, d, cls) {
+  const size = 36;
+  const stroke = 3;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const ratio = st.expected ? Math.min(1, st.done / st.expected) : 0;
+  return `
+    <svg viewBox="0 0 ${size} ${size}" class="day-ring" aria-hidden="true">
+      <circle class="day-ring-track" cx="${size / 2}" cy="${size / 2}" r="${r}" stroke-width="${stroke}"/>
+      ${ratio > 0 ? `<circle class="day-ring-fill" cx="${size / 2}" cy="${size / 2}" r="${r}" stroke-width="${stroke}" stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${(c * (1 - ratio)).toFixed(2)}"/>` : ''}
+    </svg><span>${d}</span>`;
+}
+
 function calendarHtml() {
   const today = dayKey();
   const ref = ui.month || (() => { const d = dateOfKey(today); return { y: d.getFullYear(), m: d.getMonth() }; })();
@@ -143,11 +162,12 @@ function calendarHtml() {
     const st = dayStatus(supplements, log, key);
     const cls = dayClass(st, key, today);
     const pickable = key <= today && st.expected;
-    cells += `<button class="cal-day ${cls} ${key === today ? 'today' : ''}" ${pickable ? `data-action="supp-day" data-day="${key}"` : 'disabled'}><span>${d}</span></button>`;
+    const label = `${d}. – ${st.expected ? `${st.done} von ${st.expected}` : 'nichts geplant'}`;
+    cells += `<button class="cal-day ring-day ${cls} ${key === today ? 'today' : ''}" ${pickable ? `data-action="supp-day" data-day="${key}"` : 'disabled'} aria-label="${label}">${pickable ? dayRing(st, d, cls) : `<span>${d}</span>`}</button>`;
   }
   const canForward = new Date(ref.y, ref.m + 1, 1) <= dateOfKey(today);
   return `
-    <div class="card" id="supp-cal">
+    <div class="card cal-card" id="supp-cal">
       <div class="cal-head">
         <strong>${first.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}</strong>
         <div class="cal-nav">
@@ -191,7 +211,7 @@ function myListHtml(active) {
     const bar = hasStock(s) && s.packSize
       ? `<span class="stock-bar ${isLow(s) ? 'low' : ''}"><i style="width:${Math.min(100, (s.stock / s.packSize) * 100)}%"></i></span>` : '';
     return `
-      <button class="row" data-action="supp-edit" data-id="${s.id}">
+      <button class="row" data-action="supp-edit" data-menu="supp" data-id="${s.id}">
         <div class="row-main">
           <span class="row-title">${esc(s.name)}</span>
           <span class="row-sub">${esc([slot.label, s.dose].filter(Boolean).join(' · '))}</span>
@@ -267,7 +287,7 @@ export function openSupplementEditor(id = null) {
   const presets = SUPPLEMENT_PRESETS.filter((p) => !takenNames.has(p.name.toLowerCase()));
   const slotSeg = () => `
     <div class="seg" style="--n:4;--i:${SLOTS.findIndex((s) => s.id === draft.slot)}" data-slot-seg>
-      ${SLOTS.map((s) => `<button type="button" class="${s.id === draft.slot ? 'active' : ''}" data-slot="${s.id}">${s.short}</button>`).join('')}
+      ${SLOTS.map((s) => `<button type="button" class="${s.id === draft.slot ? 'active' : ''}" data-slot="${s.id}">${HAP}${s.short}</button>`).join('')}
       <span class="seg-thumb"></span>
     </div>`;
   const sheet = openSheet({
@@ -333,10 +353,7 @@ export function openSupplementEditor(id = null) {
       return;
     }
     if (e.target.closest('[data-remove]')) {
-      if (!(await confirmAction({ title: `„${existing.name}“ entfernen?`, message: 'Bisherige Einnahmen bleiben im Kalender.', confirmLabel: 'Entfernen' }))) return;
-      Store.removeSupplement(existing.id, dayKey());
-      sheet.close();
-      render();
+      if (await removeSupplement(existing)) sheet.close();
     }
   });
   return sheet;
@@ -383,7 +400,33 @@ function setTaken(ids, day, taken) {
   ringFill('[data-supp-ring]');
   qsa('[data-supp-ring] .ring-label').forEach((l) => { l.textContent = `${st.done}/${st.expected}`; });
   if (taken) Sound.setDone(); else Sound.setUndone();
+  haptic();
   scheduleRefresh();
+}
+
+registerContextMenu('supp', (el) => {
+  const s = Store.getSupplements().find((x) => x.id === el.dataset.id);
+  if (!s) return null;
+  return [
+    { label: 'Bearbeiten', icon: Icon.pencil, handler: () => openSupplementEditor(s.id) },
+    ...(s.packSize ? [{ label: `Neue Packung (+${s.packSize})`, icon: Icon.plus, handler: () => restock(s) }] : []),
+    '-',
+    { label: 'Entfernen', icon: Icon.trash, destructive: true, handler: () => removeSupplement(s) },
+  ];
+});
+
+function restock(s) {
+  Store.saveSupplement({ ...s, stock: (hasStock(s) ? s.stock : 0) + s.packSize });
+  haptic();
+  render();
+  toast(`${s.name}: +${s.packSize} Portionen`);
+}
+
+async function removeSupplement(s) {
+  if (!(await confirmAction({ title: `„${s.name}“ entfernen?`, message: 'Bisherige Einnahmen bleiben im Kalender.', confirmLabel: 'Entfernen' }))) return false;
+  Store.removeSupplement(s.id, dayKey());
+  render();
+  return true;
 }
 
 registerActions({

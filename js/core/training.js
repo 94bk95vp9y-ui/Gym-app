@@ -29,6 +29,32 @@ export function lastSessionFor(exerciseId, excludeWorkoutId) {
   return null;
 }
 
+// Die Einheit dieser Übung vor einem bestimmten Training (für Vergleiche im
+// Verlauf – dort ist „das letzte Mal“ nicht unbedingt das neueste Training).
+export function previousSessionFor(exerciseId, workout) {
+  for (const w of Store.getWorkouts()) {
+    if (w.id === workout.id || w.startedAt >= workout.startedAt) continue;
+    const entry = w.entries.find((e) => e.exerciseId === exerciseId && e.sets.some((s) => s.done && s.reps > 0));
+    if (entry) return { workout: w, entry };
+  }
+  return null;
+}
+
+// Bester Satz heute gegen den besten Satz der vorigen Einheit. Gewicht zählt
+// vor Wiederholungen: 82,5 × 6 nach 80 × 8 ist ein Plus von 2,5 kg.
+export function compareToPrevious(entry, workout) {
+  const today = bestSet(entry.sets);
+  if (!today) return null;
+  const prev = previousSessionFor(entry.exerciseId, workout);
+  const before = prev ? bestSet(prev.entry.sets) : null;
+  if (!before) return { kind: 'new', delta: 0 };
+  if ((today.weight || 0) !== (before.weight || 0)) {
+    return { kind: 'weight', delta: Math.round(((today.weight || 0) - (before.weight || 0)) * 100) / 100 };
+  }
+  if (today.reps !== before.reps) return { kind: 'reps', delta: today.reps - before.reps };
+  return { kind: 'same', delta: 0 };
+}
+
 export function overloadSuggestion(exercise, excludeWorkoutId) {
   if (!exercise) return null;
   const settings = Store.getSettings();

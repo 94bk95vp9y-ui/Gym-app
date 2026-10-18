@@ -4,27 +4,40 @@ import { Store, REST_OPTIONS } from '../core/store.js';
 import {
   workoutFromRoutine, blankWorkout, newEntry, lastSessionFor, overloadSuggestion, refreshPrFlags,
   isEntryComplete, workoutProgress, workoutDoneSets, workoutVolume, workoutDuration, exerciseNames, entryName,
-  planDiff, routineFromWorkout, exerciseHistory,
+  planDiff, routineFromWorkout, exerciseHistory, compareToPrevious,
 } from '../core/training.js';
 import { fatigueOf, muscleGroupLookup } from '../core/fatigue.js';
 import {
-  formatNumber, parseNumber, formatSet, formatSetList, formatWeight, formatDuration, formatClock, formatRest,
+  formatNumber, parseNumber, formatSet, formatSetList, formatWeight, formatClock, formatRest,
   formatVolume, formatDate, elapsedLabel, plural, unitLabel, relativeDay, bestSet,
 } from '../core/format.js';
 import { dayKey, dayStatus } from '../core/supplements.js';
 import { Sound } from '../core/sound.js';
-import { esc, qs, qsa, registerActions, registerInputs, collapseAway, popIn } from '../ui/dom.js';
+import {
+  esc, qs, qsa, registerActions, registerInputs, collapseAway, popIn, countUp, prefersReducedMotion, rollText,
+} from '../ui/dom.js';
+import { EASE } from '../ui/motion.js';
 import { Icon } from '../ui/icons.js';
 import { render, setLiveBar, goTo, nav } from '../ui/router.js';
-import { openSheet, actionSheet, confirmAction, promptDialog } from '../ui/sheet.js';
+import { openSheet, actionSheet, confirmAction, promptDialog, openMenu } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
 import { enableReorder } from '../ui/reorder.js';
-import { emptyState, iconTile, chev, TINT } from '../ui/components.js';
+import { openKeypad, closeKeypad, isKeypadOpen, setKeypadPrimary, keypadHeight } from '../ui/keypad.js';
+import { haptic, HAP } from '../ui/haptics.js';
+import { enableSwipeDelete } from '../ui/swipe.js';
+import {
+  emptyState, iconTile, chev, deltaPill, TINT,
+} from '../ui/components.js';
 import { openExercisePicker } from './picker.js';
 
 const root = document.getElementById('workout-root');
 // expanded: fertige Übungen, die der Nutzer wieder aufgeklappt hat
-const W = { open: false, ticker: null, restShown: false, expanded: new Set() };
+// field: Feld, das gerade über das Zahlenfeld bearbeitet wird ({ ei, si, field })
+const W = { open: false, ticker: null, restShown: false, expanded: new Set(), field: null };
+
+// Eigenes Zahlenfeld statt iPhone-Tastatur (abschaltbar in den Einstellungen)
+const useKeypad = () => Store.getSettings().appKeypad !== false;
+const WEIGHT_STEP = { kg: 2.5, lb: 5 };
 
 const unit = () => unitLabel(Store.getSettings().unit);
 
@@ -44,17 +57,18 @@ async function confirmReplaceActive() {
   return choice === 1;
 }
 
-export async function startRoutine(id) {
+// from: Element, aus dem das Training herauswächst (Karte, Live-Leiste)
+export async function startRoutine(id, { from = null } = {}) {
   const routine = Store.getRoutine(id);
   if (!routine) return;
   const active = Store.getActive();
-  if (active && active.routineId === id) { openWorkout(); return; }
-  if (!(await confirmReplaceActive())) return;
+  if (active && active.routineId === id) { openWorkout({ from }); return; }
+  if (active && !(await confirmReplaceActive())) return;
   Store.clearActive();
   W.expanded.clear();
   Store.setActive(workoutFromRoutine(routine));
   Sound.start();
-  openWorkout();
+  openWorkout({ from: active ? null : from });
 }
 
 export async function startBlank() {
@@ -67,17 +81,49 @@ export async function startBlank() {
   setTimeout(addExercises, 380);
 }
 
-export function openWorkout({ instant = false } = {}) {
+// Das Training wächst aus der angetippten Karte bzw. der Live-Leiste heraus
+// und schrumpft beim Minimieren wieder hinein – nur über transform und
+// opacity, damit es auch auf dem iPhone flüssig bleibt.
+const ZOOM_MS = 520;
+
+function zoomFrames(rect, radius) {
+  const vw = window.innerWidth;
+  const s = Math.max(0.2, rect.width / vw);
+  const tx = rect.left + rect.width / 2 - vw / 2;
+  return {
+    small: { transform: `translate(${tx}px, ${rect.top}px) scale(${s})`, borderRadius: `${radius / s}px`, opacity: 0 },
+    big: { transform: 'translate(0, 0) scale(1)', borderRadius: '0px', opacity: 1 },
+  };
+}
+
+function zoomSource(el) {
+  if (!el || !el.isConnected) return null;
+  const card = el.closest('.hero, .plan-card, .live-bar') || el;
+  const r = card.getBoundingClientRect();
+  if (!r.width || r.bottom < 0 || r.top > window.innerHeight) return null;
+  const radius = parseFloat(getComputedStyle(card).borderTopLeftRadius) || 24;
+  return { rect: r, radius };
+}
+
+export function openWorkout({ instant = false, from = null } = {}) {
   if (!Store.getActive()) return;
+  const src = !instant && !prefersReducedMotion() ? zoomSource(from) : null;
   W.open = true;
   document.documentElement.classList.add('workout-open');
   paint();
   const el = qs('.workout', root);
-  if (instant) {
+  if (instant || src) {
     el.classList.add('instant', 'open');
     requestAnimationFrame(() => el.classList.remove('instant'));
   } else {
     requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('open')));
+  }
+  if (src) {
+    const { small, big } = zoomFrames(src.rect, src.radius);
+    el.style.transformOrigin = 'top center';
+    el.style.overflow = 'hidden';
+    const anim = el.animate([small, { opacity: 1, offset: 0.3 }, big], { duration: ZOOM_MS, easing: EASE.nav });
+    anim.finished.catch(() => {}).then(() => { el.style.overflow = ''; });
   }
   startTicker();
   requestWakeLock();
@@ -85,6 +131,7 @@ export function openWorkout({ instant = false } = {}) {
 }
 
 export function minimizeWorkout() {
+  closeKeypad();
   const el = qs('.workout', root);
   W.open = false;
   document.documentElement.classList.remove('workout-open');
@@ -93,6 +140,17 @@ export function minimizeWorkout() {
   render();
   startLiveTicker();
   if (!el) return;
+  // Ziel: die Live-Leiste bzw. die Karte auf „Heute“
+  const target = prefersReducedMotion() ? null : zoomSource(document.querySelector('#live-slot .live-bar') || document.querySelector('#content .hero'));
+  if (target) {
+    const { small, big } = zoomFrames(target.rect, target.radius);
+    el.style.transformOrigin = 'top center';
+    el.style.overflow = 'hidden';
+    el.classList.add('instant');
+    const anim = el.animate([big, { opacity: 1, offset: 0.7 }, small], { duration: ZOOM_MS - 60, easing: EASE.nav, fill: 'forwards' });
+    anim.finished.catch(() => {}).then(() => { if (!W.open) root.innerHTML = ''; });
+    return;
+  }
   el.classList.remove('open');
   setTimeout(() => { if (!W.open) root.innerHTML = ''; }, 450);
 }
@@ -128,19 +186,28 @@ function fatigueNote(lastSession, workout, ei, groupOf) {
   return `Heute ${plural(now.priorSets, 'Satz', 'Sätze')} ${group} davor, letztes Mal ${then.priorSets} – ${tail}`;
 }
 
-function setRowHtml(set, ei, si, prev) {
-  const weight = set.weight > 0 ? formatNumber(set.weight) : '';
-  const reps = set.reps > 0 ? String(set.reps) : '';
+function fieldHtml(set, ei, si, field) {
+  const value = field === 'weight' ? (set.weight > 0 ? formatNumber(set.weight) : '') : (set.reps > 0 ? String(set.reps) : '');
   const sug = set.suggested && !set.done ? 'suggested' : '';
+  const label = `${field === 'weight' ? 'Gewicht' : 'Wiederholungen'} Satz ${si + 1}`;
+  if (useKeypad()) {
+    return `<button class="set-field ${sug}" data-action="w-field" data-field="${field}" data-ei="${ei}" data-si="${si}" aria-label="${label}"><span class="sf-val">${value || '<span class="sf-ph">0</span>'}</span></button>`;
+  }
+  return `<input class="set-in ${sug}" type="text" inputmode="${field === 'weight' ? 'decimal' : 'numeric'}" ${field === 'reps' ? 'pattern="[0-9]*"' : ''} autocomplete="off" placeholder="0" value="${value}"
+    data-input="w-set" data-field="${field}" data-ei="${ei}" data-si="${si}" aria-label="${label}" />`;
+}
+
+function setRowHtml(set, ei, si, prev) {
   return `
-    <div class="set-cols set-row ${set.done ? 'done' : ''}" data-ei="${ei}" data-si="${si}">
+    <div class="swipe-row" data-ei="${ei}" data-si="${si}">
+    <button class="swipe-del" tabindex="-1" aria-label="Satz ${si + 1} löschen">${HAP}${Icon.trash}<span>Löschen</span></button>
+    <div class="swipe-body set-cols set-row ${set.done ? 'done' : ''}" data-ei="${ei}" data-si="${si}">
       <button class="set-num ${set.pr ? 'pr' : ''}" data-action="w-set-menu" data-ei="${ei}" data-si="${si}" aria-label="Satz ${si + 1}">${set.pr ? 'PR' : si + 1}</button>
-      <span class="set-prev">${esc(prevSetText(prev))}</span>
-      <input class="set-in ${sug}" type="text" inputmode="decimal" autocomplete="off" placeholder="0" value="${weight}"
-        data-input="w-set" data-field="weight" data-ei="${ei}" data-si="${si}" aria-label="Gewicht Satz ${si + 1}" />
-      <input class="set-in ${sug}" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="0" value="${reps}"
-        data-input="w-set" data-field="reps" data-ei="${ei}" data-si="${si}" aria-label="Wiederholungen Satz ${si + 1}" />
-      <button class="set-check" data-action="w-toggle" data-ei="${ei}" data-si="${si}" aria-label="Satz ${si + 1} abhaken">${Icon.check}</button>
+      ${prev ? `<button class="set-prev" data-action="w-prev" data-ei="${ei}" data-si="${si}" aria-label="Werte vom letzten Mal übernehmen">${HAP}${esc(prevSetText(prev))}</button>` : '<span class="set-prev">—</span>'}
+      ${fieldHtml(set, ei, si, 'weight')}
+      ${fieldHtml(set, ei, si, 'reps')}
+      <button class="set-check" data-action="w-toggle" data-ei="${ei}" data-si="${si}" aria-label="Satz ${si + 1} abhaken">${HAP}${Icon.check}</button>
+    </div>
     </div>`;
 }
 
@@ -180,7 +247,7 @@ function exerciseCardHtml(w, entry, ei, ctx) {
         </button>
         <button class="icon-btn" data-action="w-ex-menu" data-ei="${ei}" aria-label="Optionen">${Icon.more}</button>
       </div>
-      <div class="ex-body">
+      <div class="ex-body"><div class="ex-body-in">
         ${note ? `<button class="ex-note" data-action="w-note" data-ei="${ei}">${esc(note)}</button>` : ''}
         ${showOverload ? `<p class="ex-hint up">Mehr Gewicht: ${esc(formatWeight(overload.to, ctx.unit))} statt ${esc(formatWeight(overload.from, ctx.unit))} – zweimal ${overload.threshold}+ Wdh geschafft.</p>` : ''}
         ${fatigue ? `<p class="ex-hint">${esc(fatigue)}</p>` : ''}
@@ -189,7 +256,7 @@ function exerciseCardHtml(w, entry, ei, ctx) {
           ${entry.sets.map((s, si) => setRowHtml(s, ei, si, prevSets[si])).join('')}
         </div>
         <button class="add-set" data-action="w-add-set" data-ei="${ei}">${Icon.plus} Satz</button>
-      </div>
+      </div></div>
     </section>`;
 }
 
@@ -230,6 +297,10 @@ function paint() {
   if (wasOpen) requestAnimationFrame(() => qs('.workout', root)?.classList.remove('instant'));
   W.restShown = false;
   syncRest();
+  if (W.field) {
+    if (fieldEl(W.field.ei, W.field.si, W.field.field)) markEditing(false);
+    else closeKeypad();
+  }
 }
 
 function updateProgress(w) {
@@ -315,7 +386,10 @@ function startLiveTicker() {
     const w = Store.getActive();
     if (!w || W.open) { clearInterval(liveTicker); return; }
     const el = qs('#live-time');
-    if (el) el.textContent = liveText(w);
+    if (el) {
+      if (el.classList.contains('hero-time')) rollText(el, liveText(w));
+      else el.textContent = liveText(w);
+    }
     const now = !!Store.getRest();
     if (resting && !now && document.visibilityState === 'visible') {
       Sound.restOver();
@@ -331,7 +405,7 @@ setLiveBar(() => {
   if (nav.tab === 'today' && !nav.stacks.today.length) return '';
   const p = workoutProgress(w);
   return `
-    <button class="live-bar" data-action="w-open">
+    <button class="live-bar glass" data-action="w-open">
       <span class="live-dot"></span>
       <span class="live-text"><strong>${esc(w.routineName || 'Freies Training')}</strong>
         <span><span id="live-time" class="num">${liveText(w)}</span> · ${p.done} von ${plural(p.total, 'Satz', 'Sätzen')}</span></span>
@@ -375,20 +449,20 @@ function syncRest() {
     const next = w ? nextSetInfo(w) : null;
     const nextText = next ? `${esc(next.name)} · Satz ${next.si + 1}${next.set.reps > 0 ? ` · ${esc(formatSet(next.set, unit()))}` : ''}` : '';
     slot.innerHTML = `
-      <div class="rest">
+      <div class="rest glass">
         <div class="rest-main">
           <div class="rest-label"><span>Pause</span><b class="num" id="rest-time">${formatClock(remaining)}</b></div>
-          <button class="rest-btn" data-action="rest-adjust" data-delta="-15">−15</button>
-          <button class="rest-btn" data-action="rest-adjust" data-delta="15">+15</button>
-          <button class="rest-btn primary" data-action="rest-skip">Weiter</button>
+          <button class="rest-btn" data-action="rest-adjust" data-delta="-15" aria-label="15 Sekunden weniger">${HAP}−15</button>
+          <button class="rest-btn" data-action="rest-adjust" data-delta="15" aria-label="15 Sekunden mehr">${HAP}+15</button>
+          <button class="rest-btn primary" data-action="rest-skip">${HAP}Weiter</button>
         </div>
         ${nextText ? `<div class="rest-next">Als Nächstes: <strong>${nextText}</strong></div>` : ''}
         <span class="rest-fill" id="rest-fill"></span>
       </div>`;
     W.restShown = true;
   }
-  const time = qs('#rest-time', slot);
-  if (time) time.textContent = formatClock(Math.ceil(remaining));
+  rollText(qs('#rest-time', slot), formatClock(Math.ceil(remaining)));
+  qs('.rest', slot)?.classList.toggle('ending', remaining <= 5);
   const fill = qs('#rest-fill', slot);
   if (fill) fill.style.width = `${Math.min(100, (remaining / rest.duration) * 100)}%`;
 }
@@ -470,7 +544,7 @@ function openReorder() {
     title: 'Reihenfolge',
     left: { label: 'Abbrechen' },
     right: {
-      label: 'Übernehmen',
+      label: 'Fertig',
       style: 'primary',
       action: (s) => {
         const cur = Store.getActive();
@@ -544,18 +618,20 @@ function openExerciseHistory(ei) {
   });
 }
 
-function chooseRest(ei) {
+function chooseRest(ei, anchor) {
   const w = Store.getActive();
   const id = w.entries[ei].exerciseId;
   const ex = Store.getExercise(id);
   if (!ex) return;
   const def = Store.getSettings().restSeconds;
-  const options = [{ value: null, label: `Standard (${formatRest(def)})` }, ...REST_OPTIONS.map((v) => ({ value: v, label: formatRest(v) }))];
-  actionSheet({
-    title: `Pause bei ${ex.name}`,
-    message: `Aktuell: ${formatRest(ex.restSeconds ?? def)}`,
-    actions: options.map((o) => ({ label: o.label, handler: () => { Store.updateExercise(id, { restSeconds: o.value }); toast('Pause gespeichert'); } })),
-  });
+  const current = ex.restSeconds ?? null;
+  const options = [{ value: null, label: 'Standard', sub: formatRest(def) }, ...REST_OPTIONS.map((v) => ({ value: v, label: formatRest(v) }))];
+  openMenu(anchor || qs(`.ex-card[data-ei="${ei}"] [data-action="w-ex-menu"]`, root), options.map((o) => ({
+    label: o.label,
+    sub: o.sub,
+    checked: o.value === current,
+    handler: () => { Store.updateExercise(id, { restSeconds: o.value }); toast('Pause gespeichert'); },
+  })), { title: `Pause bei ${ex.name}` });
 }
 
 // ---------- Beenden ----------
@@ -610,26 +686,28 @@ function openSummary(id) {
     ? Store.getWorkouts().find((x) => x.id !== w.id && x.routineId === w.routineId && x.startedAt < w.startedAt)
     : null;
   const prevVolume = previous ? workoutVolume(previous) : 0;
-  const lines = [];
-  if (prevVolume > 0 && volume > 0) {
-    const pct = Math.round((volume / prevVolume - 1) * 100);
-    lines.push({
-      icon: Icon.trendUp,
-      text: pct > 0 ? `${pct} % mehr Volumen als beim letzten Mal (${relativeDay(previous.startedAt)}).`
-        : pct < 0 ? `${-pct} % weniger Volumen als beim letzten Mal (${relativeDay(previous.startedAt)}).`
-          : 'Gleiches Volumen wie beim letzten Mal.',
-    });
-  }
   const settings = Store.getSettings();
   const monday = new Date();
   monday.setHours(0, 0, 0, 0);
   monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
   const week = Store.getWorkouts().filter((x) => new Date(x.startedAt) >= monday).length;
-  lines.push({
+  const minutes = Math.max(1, Math.round(workoutDuration(w) / 60000));
+  const done = w.entries.filter((e) => e.sets.some((s) => s.done && s.reps > 0));
+
+  const facts = [];
+  if (prevVolume > 0 && volume > 0) {
+    const pct = Math.round((volume / prevVolume - 1) * 100);
+    facts.push({
+      icon: Icon.trendUp,
+      text: pct > 0 ? `${pct} % mehr Volumen als beim letzten Mal`
+        : pct < 0 ? `${-pct} % weniger Volumen als beim letzten Mal` : 'Gleiches Volumen wie beim letzten Mal',
+      sub: relativeDay(previous.startedAt),
+    });
+  }
+  facts.push({
     icon: Icon.target,
-    text: week >= settings.weeklyGoal
-      ? `Wochenziel erreicht: ${week} von ${settings.weeklyGoal} Trainings.`
-      : `${week} von ${settings.weeklyGoal} Trainings diese Woche.`,
+    text: week >= settings.weeklyGoal ? 'Wochenziel erreicht' : `${week} von ${settings.weeklyGoal} Trainings diese Woche`,
+    sub: week >= settings.weeklyGoal ? `${week} von ${settings.weeklyGoal} Trainings` : `noch ${settings.weeklyGoal - week}`,
   });
   const diffText = diff ? [
     diff.added ? `${plural(diff.added, 'Übung', 'Übungen')} hinzugefügt` : '',
@@ -640,27 +718,47 @@ function openSummary(id) {
   const supplementsOpen = Store.getActiveSupplements().length
     && !dayStatus(Store.getSupplements(), Store.getSupplementLog(), dayKey()).complete;
 
+  const exerciseRows = done.map((e) => {
+    const hasPr = e.sets.some((s) => s.done && s.pr);
+    return `
+      <div class="sum-ex">
+        <div class="row-main">
+          <span class="row-title">${esc(entryName(e, names))}${hasPr ? `<span class="pr-mark">${Icon.medal}PR</span>` : ''}</span>
+          <span class="row-sub num">${esc(formatSetList(e.sets, u))}</span>
+        </div>
+        ${deltaPill(compareToPrevious(e, w), u)}
+      </div>`;
+  }).join('');
+
   openSheet({
     title: '',
-    full: false,
+    full: true,
+    className: 'summary-sheet',
+    left: null,
     right: { label: 'Fertig', style: 'primary' },
     body: `
       <div class="finish-head">
-        <div class="finish-icon pop ${prs.length ? 'gold' : ''}">${prs.length ? Icon.trendUp : Icon.check}</div>
+        <div class="finish-badge ${prs.length ? 'gold' : ''}">${prs.length ? Icon.trophy : Icon.check}</div>
         <h3>${prs.length ? (prs.length === 1 ? 'Neuer Rekord' : `${prs.length} neue Rekorde`) : 'Training gespeichert'}</h3>
-        <p>${esc(w.routineName || 'Freies Training')} · ${formatDuration(workoutDuration(w))}</p>
+        <p>${esc(w.routineName || 'Freies Training')} · ${esc(new Date(w.startedAt).toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
       </div>
-      <div class="card"><div class="stats divided">
-        <div class="stat"><b class="num">${workoutDoneSets(w)}</b><span>Sätze</span></div>
-        <div class="stat"><b class="num">${formatVolume(volume)}</b><span>Volumen (${u})</span></div>
-        <div class="stat"><b class="num">${prs.length}</b><span>Rekorde</span></div>
-      </div></div>
-      <div class="card">${lines.map((l) => `<p class="note-line">${l.icon}<span>${esc(l.text)}</span></p>`).join('')}</div>
+      <div class="sum-stats">
+        <div><b class="num" data-count="${minutes}">${minutes}</b><span>Minuten</span></div>
+        <div><b class="num" data-count="${workoutDoneSets(w)}">${workoutDoneSets(w)}</b><span>Sätze</span></div>
+        <div><b class="num">${volume >= 1000 && u === 'kg' ? `${formatNumber(Math.round(volume / 100) / 10)}<small>t</small>` : `${formatVolume(volume)}<small>${u}</small>`}</b><span>Volumen</span></div>
+      </div>
       ${prs.length ? `
         <div class="section"><div class="section-head"><h2>Rekorde</h2></div>
-          <div class="list">${prs.map((p) => `
-            <div class="row"><div class="row-main"><span class="row-title">${esc(p.name)}</span></div><span class="row-value num">${esc(formatSet(p.set, u))}</span></div>`).join('')}
+          <div class="list pr-list">${prs.map((p) => `
+            <div class="row">${Icon.medal}<div class="row-main"><span class="row-title">${esc(p.name)}</span></div><span class="row-value num">${esc(formatSet(p.set, u))}</span></div>`).join('')}
           </div></div>` : ''}
+      ${exerciseRows ? `
+        <div class="section"><div class="section-head"><h2>Übungen</h2><span class="meta">im Vergleich zum letzten Mal</span></div>
+          <div class="list">${exerciseRows}</div></div>` : ''}
+      <div class="section"><div class="list icons">${facts.map((f) => `
+        <div class="row">${iconTile(f.icon, f.icon === Icon.target ? TINT.red : TINT.green, 'soft')}
+          <div class="row-main"><span class="row-title">${esc(f.text)}</span>${f.sub ? `<span class="row-sub">${esc(f.sub)}</span>` : ''}</div></div>`).join('')}
+      </div></div>
       ${diff ? `
         <div class="section"><div class="card">
           <div class="card-title">Plan anpassen?</div>
@@ -680,20 +778,20 @@ function openSummary(id) {
             ${chev}</button>
         </div></div>` : ''}`,
     onMount: (s) => {
+      countUp(s.body);
       s.body.addEventListener('click', async (e) => {
         const b = e.target.closest('[data-sum]');
         if (!b) return;
         if (b.dataset.sum === 'update-plan') {
           Store.saveRoutine(routineFromWorkout(w, Store.getRoutine(w.routineId)));
-          b.outerHTML = '<p class="card-text" style="color:var(--success);margin-top:12px">Plan aktualisiert.</p>';
-          toast('Plan aktualisiert');
+          b.outerHTML = '<p class="card-text done-text">Plan aktualisiert.</p>';
+          haptic();
           render();
         } else if (b.dataset.sum === 'save-plan') {
           const name = await promptDialog({ title: 'Plan speichern', message: 'Wie soll der Plan heißen?', placeholder: 'z. B. Oberkörper', confirmLabel: 'Sichern' });
           if (!name) return;
-          const routine2 = routineFromWorkout({ ...w, routineName: name });
-          Store.saveRoutine(routine2);
-          b.outerHTML = '<p class="card-text" style="color:var(--success);margin-top:12px">Als Plan gespeichert.</p>';
+          Store.saveRoutine(routineFromWorkout({ ...w, routineName: name }));
+          b.outerHTML = '<p class="card-text done-text">Als Plan gespeichert.</p>';
           toast(`Plan „${name}“ gespeichert`);
           render();
         } else if (b.dataset.sum === 'supps') {
@@ -705,9 +803,250 @@ function openSummary(id) {
   });
 }
 
+// ---------- Satz abhaken ----------
+function rowEl(ei, si) {
+  return qs(`.ex-card[data-ei="${ei}"] .set-row[data-si="${si}"]`, root);
+}
+
+// Gibt false zurück, wenn der Satz nicht abgehakt werden kann (keine Wdh)
+function toggleSet(ei, si) {
+  const w = Store.getActive();
+  const set = w?.entries[ei]?.sets[si];
+  if (!set) return false;
+  const row = rowEl(ei, si);
+  if (!set.done && !(set.reps > 0)) {
+    if (row) {
+      row.classList.remove('shake');
+      void row.offsetWidth;
+      row.classList.add('shake');
+    }
+    if (useKeypad()) openField(ei, si, 'reps');
+    else qs('[data-field="reps"]', row)?.focus();
+    return false;
+  }
+  set.done = !set.done;
+  if (set.done) set.suggested = false;
+  const prIndex = refreshPrFlags(w, ei);
+  Store.setActive(w);
+  if (row) {
+    row.classList.toggle('done', set.done);
+    qsa('.set-in, .set-field', row).forEach((i) => i.classList.remove('suggested'));
+    const check = qs('.set-check', row);
+    check.classList.remove('bump');
+    void check.offsetWidth;
+    check.classList.add('bump');
+  }
+  updateCard(w, ei);
+  updateProgress(w);
+  advanceFocus(w, set.done && isEntryComplete(w.entries[ei]) ? ei : undefined);
+  if (set.done) {
+    document.activeElement?.blur?.();
+    startRest(w.entries[ei].exerciseId);
+    if (prIndex === si) {
+      Sound.record();
+      haptic(2);
+      celebratePr(row);
+    } else {
+      Sound.setDone();
+      haptic();
+    }
+  } else {
+    Sound.setUndone();
+    haptic();
+  }
+  return true;
+}
+
+function celebratePr(row) {
+  const num = row && qs('.set-num', row);
+  if (num) {
+    num.classList.remove('pr-pop');
+    void num.offsetWidth;
+    num.classList.add('pr-pop');
+  }
+  toast('Neuer Rekord');
+}
+
+// ---------- Zahlenfeld ----------
+function fieldEl(ei, si, field) {
+  return qs(`.set-row[data-ei="${ei}"][data-si="${si}"] .set-field[data-field="${field}"]`, root);
+}
+
+function markEditing(fresh = true) {
+  qsa('.set-field.editing', root).forEach((x) => x.classList.remove('editing', 'fresh'));
+  qsa('.set-row.editing', root).forEach((x) => x.classList.remove('editing'));
+  if (!W.field) return;
+  const { ei, si, field } = W.field;
+  const el = fieldEl(ei, si, field);
+  if (!el) return;
+  el.classList.add('editing');
+  el.classList.toggle('fresh', fresh);
+  el.closest('.set-row')?.classList.add('editing');
+}
+
+function primaryFor(ei, si, field) {
+  const set = Store.getActive()?.entries[ei]?.sets[si];
+  if (field === 'reps' && set && !set.done) return { label: 'Abhaken', icon: Icon.check };
+  return { label: 'Weiter', icon: '' };
+}
+
+// Nächster offener Satz nach (ei, si) – erst in derselben Übung, dann danach
+function nextOpenSet(w, ei, si) {
+  for (let e = ei; e < w.entries.length; e += 1) {
+    const sets = w.entries[e].sets;
+    for (let i = e === ei ? si + 1 : 0; i < sets.length; i += 1) {
+      if (!sets[i].done) return { ei: e, si: i };
+    }
+  }
+  return null;
+}
+
+function revealRow(ei, si) {
+  const row = rowEl(ei, si);
+  const content = qs('#w-content', root);
+  if (!row || !content) return;
+  const bar = qs('.w-bar', root);
+  const rest = qs('.rest', root);
+  const bottomLimit = window.innerHeight - keypadHeight() - (rest ? rest.offsetHeight + 12 : 0) - 14;
+  const topLimit = (bar ? bar.getBoundingClientRect().bottom : 0) + 10;
+  const rect = row.getBoundingClientRect();
+  if (rect.bottom > bottomLimit) content.scrollBy({ top: rect.bottom - bottomLimit, behavior: 'smooth' });
+  else if (rect.top < topLimit) content.scrollBy({ top: rect.top - topLimit, behavior: 'smooth' });
+}
+
+function openField(ei, si, field) {
+  const w = Store.getActive();
+  const set = w?.entries[ei]?.sets[si];
+  if (!set) return;
+  // Zugeklappte Übung zum Bearbeiten öffnen
+  const card = qs(`.ex-card[data-ei="${ei}"]`, root);
+  if (card?.classList.contains('collapsed')) {
+    W.expanded.add(w.entries[ei].exerciseId);
+    card.classList.remove('collapsed');
+  }
+  W.field = { ei, si, field };
+  const value = field === 'weight' ? set.weight : set.reps;
+  openKeypad({
+    host: document.body,
+    value: value > 0 ? (field === 'weight' ? formatNumber(value) : String(value)) : '',
+    decimal: field === 'weight',
+    step: field === 'weight' ? WEIGHT_STEP[unit()] : 1,
+    primary: primaryFor(ei, si, field),
+    onChange: (text, fresh) => applyFieldText(text, fresh),
+    onPrimary: () => keypadPrimary(),
+    onClose: () => {
+      W.field = null;
+      markEditing();
+      document.documentElement.classList.remove('kp-open');
+    },
+  });
+  document.documentElement.classList.add('kp-open');
+  requestAnimationFrame(() => {
+    document.documentElement.style.setProperty('--kp-h', `${Math.round(keypadHeight())}px`);
+    revealRow(ei, si);
+  });
+  markEditing(true);
+}
+
+function applyFieldText(text, fresh) {
+  if (!W.field) return;
+  const { ei, si, field } = W.field;
+  const w = Store.getActive();
+  const set = w?.entries[ei]?.sets[si];
+  if (!set) return;
+  const value = parseNumber(text);
+  set[field] = field === 'reps' ? Math.floor(value) : value;
+  const row = rowEl(ei, si);
+  if (set.suggested) {
+    set.suggested = false;
+    qsa('.set-field', row).forEach((i) => i.classList.remove('suggested'));
+  }
+  if (set.done) {
+    refreshPrFlags(w, ei);
+    updateCard(w, ei);
+  }
+  Store.setActive(w);
+  const el = fieldEl(ei, si, field);
+  if (el) qs('.sf-val', el).innerHTML = text ? esc(text) : '<span class="sf-ph">0</span>';
+  markEditing(fresh);
+  setKeypadPrimary(primaryFor(ei, si, field));
+}
+
+function keypadPrimary() {
+  if (!W.field) return;
+  const { ei, si, field } = W.field;
+  if (field === 'weight') { openField(ei, si, 'reps'); return; }
+  const w = Store.getActive();
+  const set = w?.entries[ei]?.sets[si];
+  if (!set) { closeKeypad(); return; }
+  if (!set.done) {
+    if (toggleSet(ei, si)) closeKeypad();
+    return;
+  }
+  const next = nextOpenSet(w, ei, si);
+  if (next) openField(next.ei, next.si, 'weight'); else closeKeypad();
+}
+
+function deleteSet(ei, si) {
+  closeKeypad();
+  const row = rowEl(ei, si)?.closest('.swipe-row');
+  Sound.remove();
+  collapseAway(row, () => {
+    const w = Store.getActive();
+    const entry = w?.entries[ei];
+    if (!entry) return;
+    const [removed] = entry.sets.splice(si, 1);
+    refreshPrFlags(w, ei);
+    Store.setActive(w);
+    paint();
+    toast(`Satz ${si + 1} gelöscht`, {
+      action: 'Rückgängig',
+      onAction: () => {
+        const cur = Store.getActive();
+        const index = cur?.entries.findIndex((x) => x.exerciseId === entry.exerciseId) ?? -1;
+        if (index < 0) return;
+        cur.entries[index].sets.splice(Math.min(si, cur.entries[index].sets.length), 0, removed);
+        refreshPrFlags(cur, index);
+        Store.setActive(cur);
+        paint();
+      },
+    });
+  });
+}
+
+function removeExercise(ei) {
+  closeKeypad();
+  const card = qs(`.ex-card[data-ei="${ei}"]`, root);
+  Sound.remove();
+  collapseAway(card, () => {
+    const cur = Store.getActive();
+    const [removed] = cur.entries.splice(ei, 1);
+    Store.setActive(cur);
+    paint();
+    toast(`${entryName(removed)} entfernt`, {
+      action: 'Rückgängig',
+      onAction: () => {
+        const again = Store.getActive();
+        if (!again) return;
+        again.entries.splice(Math.min(ei, again.entries.length), 0, removed);
+        Store.setActive(again);
+        paint();
+      },
+    });
+  });
+}
+
+enableSwipeDelete(root, { onDelete: (row) => deleteSet(+row.dataset.ei, +row.dataset.si) });
+
+// Tippen neben die Felder schließt das Zahlenfeld
+root.addEventListener('pointerdown', (e) => {
+  if (!isKeypadOpen() || e.target.closest('.set-field, .set-check, .rest')) return;
+  closeKeypad();
+});
+
 // ---------- Aktionen ----------
 registerActions({
-  'w-open': () => openWorkout(),
+  'w-open': (el) => openWorkout({ from: el }),
   'w-minimize': () => minimizeWorkout(),
   'w-finish': () => finish(),
   'w-discard': () => discard(),
@@ -716,38 +1055,42 @@ registerActions({
   'w-note': (el) => openNoteEditor(+el.dataset.ei),
 
   'w-toggle': (el) => {
-    const w = Store.getActive();
     const ei = +el.dataset.ei;
     const si = +el.dataset.si;
-    const set = w?.entries[ei]?.sets[si];
-    if (!set) return;
-    const row = el.closest('.set-row');
-    if (!set.done && !(set.reps > 0)) {
-      row.classList.remove('shake');
-      void row.offsetWidth;
-      row.classList.add('shake');
-      qs('[data-field="reps"]', row)?.focus();
-      return;
-    }
-    set.done = !set.done;
-    if (set.done) set.suggested = false;
-    const prIndex = refreshPrFlags(w, ei);
+    if (isKeypadOpen()) closeKeypad();
+    toggleSet(ei, si);
+  },
+
+  'w-field': (el) => openField(+el.dataset.ei, +el.dataset.si, el.dataset.field),
+
+  // Antippen von „Vorher“ übernimmt Gewicht und Wiederholungen vom letzten Mal
+  'w-prev': (el) => {
+    const ei = +el.dataset.ei;
+    const si = +el.dataset.si;
+    const w = Store.getActive();
+    const entry = w?.entries[ei];
+    const set = entry?.sets[si];
+    const last = entry ? lastSessionFor(entry.exerciseId, w.id) : null;
+    const prev = last ? last.entry.sets.filter((s) => s.done && s.reps > 0)[si] : null;
+    if (!set || !prev) return;
+    set.weight = prev.weight || 0;
+    set.reps = prev.reps;
+    set.suggested = false;
+    if (set.done) refreshPrFlags(w, ei);
     Store.setActive(w);
-    row.classList.toggle('done', set.done);
-    qsa('.set-in', row).forEach((i) => i.classList.remove('suggested'));
-    el.classList.remove('bump');
-    void el.offsetWidth;
-    el.classList.add('bump');
-    updateCard(w, ei);
-    updateProgress(w);
-    advanceFocus(w, set.done && isEntryComplete(w.entries[ei]) ? ei : undefined);
-    if (set.done) {
-      document.activeElement?.blur?.();
-      startRest(w.entries[ei].exerciseId);
-      if (prIndex === si) { Sound.record(); toast('Neuer Rekord'); } else Sound.setDone();
-    } else {
-      Sound.setUndone();
-    }
+    if (isKeypadOpen()) closeKeypad();
+    const row = rowEl(ei, si);
+    ['weight', 'reps'].forEach((field) => {
+      const f = qs(`[data-field="${field}"]`, row);
+      if (!f) return;
+      const text = field === 'weight' ? (set.weight > 0 ? formatNumber(set.weight) : '') : String(set.reps);
+      if (f.tagName === 'INPUT') f.value = text;
+      else qs('.sf-val', f).innerHTML = text ? esc(text) : '<span class="sf-ph">0</span>';
+      f.classList.remove('suggested');
+      popIn(f);
+    });
+    if (set.done) updateCard(w, ei);
+    haptic();
   },
 
   'w-ex-toggle': (el) => {
@@ -769,81 +1112,40 @@ registerActions({
     sets.push({ weight: last ? last.weight : 0, reps: last ? last.reps : 0, done: false, suggested: !!last });
     Store.setActive(w);
     paint();
-    popIn(qs(`.ex-card[data-ei="${ei}"] .set-row[data-si="${sets.length - 1}"]`, root));
+    popIn(qs(`.ex-card[data-ei="${ei}"] .swipe-row[data-si="${sets.length - 1}"]`, root));
   },
 
   'w-set-menu': async (el) => {
     const ei = +el.dataset.ei;
     const si = +el.dataset.si;
-    const choice = await actionSheet({ title: `Satz ${si + 1}`, actions: [{ label: 'Satz löschen', style: 'destructive' }] });
-    if (choice !== 0) return;
-    const row = qs(`.ex-card[data-ei="${ei}"] .set-row[data-si="${si}"]`, root);
-    Sound.remove();
-    collapseAway(row, () => {
-      const w = Store.getActive();
-      const entry = w?.entries[ei];
-      if (!entry) return;
-      const [removed] = entry.sets.splice(si, 1);
-      refreshPrFlags(w, ei);
-      Store.setActive(w);
-      paint();
-      toast(`Satz ${si + 1} gelöscht`, {
-        action: 'Rückgängig',
-        onAction: () => {
-          const cur = Store.getActive();
-          const index = cur?.entries.findIndex((x) => x.exerciseId === entry.exerciseId) ?? -1;
-          if (index < 0) return;
-          cur.entries[index].sets.splice(Math.min(si, cur.entries[index].sets.length), 0, removed);
-          refreshPrFlags(cur, index);
-          Store.setActive(cur);
-          paint();
-        },
-      });
-    });
+    await openMenu(el, [{ label: 'Satz löschen', icon: Icon.trash, destructive: true, handler: () => deleteSet(ei, si) }], { title: `Satz ${si + 1}` });
   },
 
-  'w-ex-menu': async (el) => {
+  'w-ex-menu': (el) => {
     const ei = +el.dataset.ei;
     const w = Store.getActive();
     const entry = w.entries[ei];
     const ex = Store.getExercise(entry.exerciseId);
-    const actions = [
-      { label: ex?.notes ? 'Notiz bearbeiten' : 'Notiz hinzufügen', handler: () => openNoteEditor(ei) },
-      { label: `Pause: ${formatRest(restFor(entry.exerciseId))}`, handler: () => chooseRest(ei) },
-      { label: 'Verlauf ansehen', handler: () => openExerciseHistory(ei) },
-      { label: 'Übung ersetzen', handler: () => replaceExercise(ei) },
-      {
-        label: 'Übung entfernen',
-        style: 'destructive',
-        handler: () => {
-          const card = qs(`.ex-card[data-ei="${ei}"]`, root);
-          Sound.remove();
-          collapseAway(card, () => {
-            const cur = Store.getActive();
-            const [removed] = cur.entries.splice(ei, 1);
-            Store.setActive(cur);
-            paint();
-            toast(`${entryName(removed)} entfernt`, {
-              action: 'Rückgängig',
-              onAction: () => {
-                const again = Store.getActive();
-                if (!again) return;
-                again.entries.splice(Math.min(ei, again.entries.length), 0, removed);
-                Store.setActive(again);
-                paint();
-              },
-            });
-          });
-        },
-      },
-    ];
-    if (!ex) actions.splice(0, 2);
-    actionSheet({ title: entryName(entry), actions });
+    const items = [];
+    if (ex) {
+      items.push(
+        { label: ex.notes ? 'Notiz bearbeiten' : 'Notiz hinzufügen', icon: Icon.pencil, handler: () => openNoteEditor(ei) },
+        { label: 'Satzpause', sub: formatRest(restFor(entry.exerciseId)), icon: Icon.timer, handler: () => chooseRest(ei, el) },
+      );
+    }
+    items.push(
+      { label: 'Verlauf', icon: Icon.clock, handler: () => openExerciseHistory(ei) },
+      { label: 'Übung ersetzen', icon: Icon.swap, handler: () => replaceExercise(ei) },
+      '-',
+      { label: 'Übung entfernen', icon: Icon.trash, destructive: true, handler: () => removeExercise(ei) },
+    );
+    openMenu(el, items, { title: entryName(entry) });
   },
 
   'rest-adjust': (el) => {
     const rest = Store.getRest();
     if (!rest) return;
+    haptic();
     const delta = +el.dataset.delta;
     const endsAt = Math.max(Date.now() + 1000, rest.endsAt + delta * 1000);
     const duration = Math.max(rest.duration + delta, Math.round((endsAt - Date.now()) / 1000));
@@ -851,6 +1153,7 @@ registerActions({
     syncRest();
   },
   'rest-skip': () => {
+    haptic();
     const bar = qs('.rest', root);
     if (bar) bar.dataset.skipped = '1';
     Store.setRest(null);

@@ -4,6 +4,7 @@ import { dayKey } from './core/supplements.js';
 import { registerActions, runAction, runInput } from './ui/dom.js';
 import { render, pop, switchTab } from './ui/router.js';
 import { topSheet } from './ui/sheet.js';
+import { enableChartScrub } from './ui/chart.js';
 import './views/today.js';
 import './views/training.js';
 import './views/supplements.js';
@@ -57,6 +58,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 applySettings();
+enableChartScrub();
 calibrateSafeArea();
 window.addEventListener('resize', calibrateSafeArea);
 window.addEventListener('orientationchange', () => setTimeout(calibrateSafeArea, 150));

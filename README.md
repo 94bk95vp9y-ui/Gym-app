@@ -9,39 +9,46 @@ danach auch offline.
 ## Funktionen
 
 **Heute**
-- Nächstes Training (Plan-Rotation) mit Start-Knopf, laufendes oder heute
-  erledigtes Training
+- Nächstes Training (Plan-Rotation) mit Übungsvorschau und Start-Knopf;
+  „Wechseln“ öffnet die Planauswahl direkt am Knopf
+- Laufendes oder heute erledigtes Training
 - Supplements des Tages zum Abhaken, Hinweis bei knappem Vorrat
-- Wochenstreifen mit Wochenziel und Serie
-- Mobility als kleine Zeile, Hinweis auf eine fällige Sicherung
+- Wochenstreifen mit Wochenziel, Mobility als kleine Kachel, Hinweis auf
+  eine fällige Sicherung
 
 **Training**
 - Pläne anlegen und bearbeiten (Reihenfolge per Ziehen, Satzzahl pro Übung)
 - Pläne per KI erstellen: Prompt kopieren, Antwort der KI einfügen
 - Übungsbibliothek mit 138 Übungen nach Muskelgruppe, eigene Übungen
-- Übungsdetail: Bestleistung, geschätztes 1RM, Verlauf, Notiz zur Ausführung,
-  eigene Satzpause
+- Übungsdetail: Bestleistung, geschätztes 1RM als Verlauf (mit dem Finger
+  abfahren), Notiz zur Ausführung, eigene Satzpause
+- Lange drücken auf einen Plan: starten, bearbeiten, duplizieren, löschen
 
 **Training läuft**
-- Die aktuelle Übung ist hervorgehoben, fertige Übungen klappen zu und die
-  nächste rückt ins Bild
-- Spalte „Vorher“ und vorausgefüllte Werte vom letzten Mal
+- Wächst aus der angetippten Karte heraus, minimiert schrumpft es in die
+  Leiste über den Tabs
+- Eigenes Zahlenfeld für Gewicht und Wiederholungen: große Tasten, ± in
+  2,5-kg- bzw. 1-Wdh-Schritten, „Weiter“ springt zum nächsten Feld,
+  „Abhaken“ schließt den Satz ab (in den Einstellungen abschaltbar)
+- Die aktuelle Übung ist hervorgehoben, fertige Übungen klappen zu
+- Spalte „Vorher“ – antippen übernimmt die Werte vom letzten Mal
+- Satz nach links wischen zum Löschen, mit „Rückgängig“
 - Pausentimer nach jedem Satz (Standard oder pro Übung), zeigt den nächsten Satz
 - Rekord-Erkennung, Gewichts-Empfehlung, Hinweis bei anderer Vorbelastung
-- Notiz pro Übung, Übung ersetzen, Reihenfolge ändern, Sätze löschen mit
-  „Rückgängig“
-- Zusammenfassung: Rekorde, Vergleich mit dem letzten Mal, Plan-Änderungen
-  übernehmen bzw. freies Training als Plan speichern
+- Zusammenfassung: Kennzahlen, Rekorde, jede Übung im Vergleich zum letzten
+  Mal, Plan-Änderungen übernehmen bzw. freies Training als Plan speichern
 
 **Supplements**
-- Abhaken nach Tageszeit, Kalender zum Nachtragen, Serie und Quote
+- Abhaken nach Tageszeit, Kalender mit einem Ring pro Tag zum Nachtragen,
+  Serie und Quote
 - Vorrat: zählt beim Abhaken herunter, „Neue Packung“ füllt auf
 - Tägliche Erinnerung über den iPhone-Kalender (`reminders/*.ics`)
 
 **Verlauf**
-- Kalender und Liste aller Trainings mit Detailansicht
-- Statistik: Woche, Trainings pro Woche, Kraftentwicklung, Sätze pro Muskel,
-  Rekorde
+- Kalender und Liste aller Trainings mit Detailansicht und Vergleich zum
+  letzten Mal
+- Statistik: Woche, Trainings pro Woche mit Ziellinie, Kraftentwicklung,
+  Sätze pro Muskel, Rekorde
 
 **Mobility**
 - Tägliche Routine (Hüfte & Beine plus Tagesfokus, Dauer einstellbar)
@@ -49,9 +56,22 @@ danach auch offline.
 - Geführter Player mit 3D-Figur, Atemführung und Sprachansage
 
 **Einstellungen**
-- kg/lb, Wochenziel, Satzpause, Gewichts-Empfehlung, Bildschirm anlassen
-- Hell, Dunkel oder wie das iPhone, Akzentfarbe, Töne
+- kg/lb, Wochenziel, Satzpause, Gewichts-Empfehlung, Zahlenfeld, Bildschirm
+  anlassen
+- Hell, Dunkel oder wie das iPhone, Akzentfarbe, Transparenz reduzieren,
+  Haptik, Töne
 - Sicherung erstellen/wiederherstellen (JSON), Erinnerung an die Sicherung
+
+## Bedienung wie in iOS
+
+- Schwebende Tableiste und Kopfknöpfe aus Glas, Inhalte auf ruhigen Flächen
+- Seitenwechsel mit Parallaxe; vom linken Rand wischen geht zurück, die
+  vorige Seite ist dabei schon zu sehen
+- Menüs öffnen direkt am Knopf, langes Drücken öffnet Kontextmenüs
+- Haptisches Klopfen beim Abhaken und im Zahlenfeld (über einen
+  unsichtbaren Schalter – Safari bietet Web-Apps keine Vibration an)
+- Zahlen in SF Pro Rounded, Federkurven nach Apples Vorbild,
+  „Bewegung reduzieren“ wird respektiert
 
 ## Hosting auf GitHub Pages
 
@@ -74,15 +94,17 @@ danach auch offline.
 
 ```
 index.html              App-Gerüst
-css/app.css             Design-System (hell/dunkel)
+css/app.css             Design-System (hell/dunkel, Glas, Bewegung)
 js/main.js              Start, globale Ereignisse
 js/core/                Daten und Logik ohne Oberfläche
   store.js              localStorage, Migration, Sicherung
-  training.js           Vorschläge, Rekorde, Statistik, Plan-Rotation
+  training.js           Vorschläge, Rekorde, Vergleiche, Statistik, Plan-Rotation
   supplements.js        Tage, Serie, Vorrat, Erinnerungen
   plan-import.js        KI-Prompt und Parser
   catalog.js            Übungskatalog
-js/ui/                  Router, Bausteine, Sheets, Dialoge, Icons, Diagramme
+js/ui/                  Router (Übergänge, Wisch-zurück), Sheets und Menüs,
+                        Zahlenfeld, Wischen-zum-Löschen, Haptik, Diagramme,
+                        Icons, Bausteine
 js/views/               Heute, Training, Workout, Supplements, Verlauf,
                         Einstellungen, Mobility
 js/mobility/            Routinen, Player, 3D-Figur (three.js)

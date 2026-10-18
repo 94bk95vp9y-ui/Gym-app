@@ -1,6 +1,7 @@
 // Wiederkehrende Bausteine – damit jede Ansicht dieselbe Sprache spricht.
 import { esc } from './dom.js';
 import { Icon } from './icons.js';
+import { formatNumber } from '../core/format.js';
 
 // Farben der Icon-Quadrate (wie in den iOS-Einstellungen)
 export const TINT = {
@@ -73,4 +74,15 @@ export function navRow({ icon = '', color = TINT.blue, title, sub = '', value = 
       ${value ? `<span class="row-value">${value}</span>` : ''}
       ${arrow && action ? chev : ''}
     </${tag}>`;
+}
+
+// Vergleich mit dem letzten Mal als kleine Pille: „+2,5 kg“, „+1 Wdh“, „wie zuletzt“
+export function deltaPill(cmp, unit) {
+  if (!cmp) return '';
+  if (cmp.kind === 'new') return '<span class="delta new">neu</span>';
+  if (cmp.kind === 'same') return '<span class="delta same">wie zuletzt</span>';
+  const up = cmp.delta > 0;
+  const abs = Math.abs(cmp.delta);
+  const text = cmp.kind === 'weight' ? `${up ? '+' : '−'}${formatNumber(abs)} ${unit}` : `${up ? '+' : '−'}${abs} Wdh`;
+  return `<span class="delta ${up ? 'up' : 'down'}">${up ? Icon.arrowUp : Icon.arrowDown}${esc(text)}</span>`;
 }

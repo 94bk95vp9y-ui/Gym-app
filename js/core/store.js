@@ -62,8 +62,8 @@ export function uid() {
 const CATALOG_VERSION = 1;
 
 export const ACCENTS = [
-  { id: 'blue', label: 'Blau', light: '#007AFF', dark: '#0A84FF' },
-  { id: 'indigo', label: 'Indigo', light: '#5856D6', dark: '#7D7AFF' },
+  { id: 'blue', label: 'Blau', light: '#0088FF', dark: '#0091FF' },
+  { id: 'indigo', label: 'Indigo', light: '#6155F5', dark: '#6D7CFF' },
   { id: 'green', label: 'Grün', light: '#1F9D55', dark: '#30D158' },
   { id: 'orange', label: 'Orange', light: '#E8590C', dark: '#FF9F0A' },
   { id: 'graphite', label: 'Graphit', light: '#1C1C1E', dark: '#F2F2F7' },
@@ -84,6 +84,11 @@ const DEFAULT_SETTINGS = {
   accent: 'blue',
   sound: true,
   soundVolume: 0.6,
+  haptics: true,
+  // Glasflächen undurchsichtig (Safari kann „Transparenz reduzieren“ nicht abfragen)
+  solidBars: false,
+  // Eigenes Zahlenfeld im Training statt der iPhone-Tastatur
+  appKeypad: true,
   mobilityBudget: 10,
   mobilityVoice: true,
   mobilityPrep: 10,

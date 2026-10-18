@@ -1,4 +1,4 @@
-const CACHE = 'gym-cache-v21';
+const CACHE = 'gym-cache-v22';
 const ASSETS = [
   './',
   './index.html',
@@ -23,10 +23,14 @@ const ASSETS = [
   './js/ui/chart.js',
   './js/ui/components.js',
   './js/ui/dom.js',
+  './js/ui/haptics.js',
   './js/ui/icons.js',
+  './js/ui/keypad.js',
+  './js/ui/motion.js',
   './js/ui/reorder.js',
   './js/ui/router.js',
   './js/ui/sheet.js',
+  './js/ui/swipe.js',
   './js/ui/theme.js',
   './js/ui/toast.js',
   './js/vendor/three.module.min.js',

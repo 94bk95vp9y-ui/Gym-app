@@ -5,6 +5,7 @@ import { formatRest, formatDateTime, relativeDay, plural } from '../core/format.
 import { Sound, setSoundVolume } from '../core/sound.js';
 import { registerActions, registerInputs } from '../ui/dom.js';
 import { Icon } from '../ui/icons.js';
+import { haptic, HAP } from '../ui/haptics.js';
 import { registerPage, render } from '../ui/router.js';
 import { actionSheet, confirmAction, alertDialog } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
@@ -12,7 +13,7 @@ import { applySettings } from '../ui/theme.js';
 import { chev, iconTile, TINT } from '../ui/components.js';
 
 const BACKUP_INTERVAL_DAYS = 14;
-const APP_VERSION = '2.1';
+const APP_VERSION = '3.0';
 
 // Sicherung fällig? Nur wenn es überhaupt etwas zu sichern gibt.
 export function backupDue() {
@@ -59,7 +60,7 @@ function seg(key, options, value, { wide = false } = {}) {
   const i = Math.max(0, options.findIndex((o) => o.value === value));
   return `
     <div class="seg" style="--n:${options.length};--i:${i};${wide ? '' : `min-width:${options.length * 56}px`}">
-      ${options.map((o) => `<button class="${o.value === value ? 'active' : ''}" data-action="set-seg" data-key="${key}" data-value="${o.value}">${o.label}</button>`).join('')}
+      ${options.map((o) => `<button class="${o.value === value ? 'active' : ''}" data-action="set-seg" data-key="${key}" data-value="${o.value}">${HAP}${o.label}</button>`).join('')}
       <span class="seg-thumb"></span>
     </div>`;
 }
@@ -69,7 +70,7 @@ function toggleRow(key, title, sub, checked, icon, color) {
     <label class="row">
       ${iconTile(icon, color)}
       <div class="row-main"><span class="row-title">${title}</span>${sub ? `<span class="row-sub">${sub}</span>` : ''}</div>
-      <span class="toggle"><input type="checkbox" data-change="set-toggle" data-key="${key}" ${checked ? 'checked' : ''} /><span class="toggle-track"></span></span>
+      <span class="toggle"><input type="checkbox" switch data-change="set-toggle" data-key="${key}" ${checked ? 'checked' : ''} /><span class="toggle-track"></span></span>
     </label>`;
 }
 
@@ -94,10 +95,11 @@ registerPage('settings', {
         <div class="row"><span class="icon-tile text" style="--c:${TINT.blue}">kg</span><div class="row-main"><span class="row-title">Einheit</span></div>
           ${seg('unit', [{ value: 'kg', label: 'kg' }, { value: 'lb', label: 'lb' }], s.unit)}</div>
         <div class="row">${iconTile(Icon.target, TINT.red)}<div class="row-main"><span class="row-title">Wochenziel</span><span class="row-sub">Trainings pro Woche</span></div>
-          <span class="stepper"><button data-action="set-goal" data-delta="-1" aria-label="Weniger">${Icon.minus}</button><span>${s.weeklyGoal}</span><button data-action="set-goal" data-delta="1" aria-label="Mehr">${Icon.plus}</button></span></div>
+          <span class="stepper"><button data-action="set-goal" data-delta="-1" aria-label="Weniger">${HAP}${Icon.minus}</button><span>${s.weeklyGoal}</span><button data-action="set-goal" data-delta="1" aria-label="Mehr">${HAP}${Icon.plus}</button></span></div>
         <button class="row" data-action="set-rest">${iconTile(Icon.timer, TINT.orange)}<div class="row-main"><span class="row-title">Satzpause</span><span class="row-sub">Standard – pro Übung änderbar</span></div>
           <span class="row-value">${formatRest(s.restSeconds)}</span>${chev}</button>
         ${toggleRow('progressiveOverload', 'Gewichts-Empfehlung', 'Mehr Gewicht, sobald du zweimal alle Sätze mit 10+ Wdh geschafft hast', s.progressiveOverload, Icon.trendUp, TINT.green)}
+        ${toggleRow('appKeypad', 'Zahlenfeld der App', 'Große Tasten mit ± statt der iPhone-Tastatur', s.appKeypad, Icon.keypad, TINT.indigo)}
         ${toggleRow('keepAwake', 'Bildschirm anlassen', 'Während des Trainings sperrt sich das iPhone nicht', s.keepAwake, Icon.phone, TINT.gray)}
       </div>
 
@@ -107,6 +109,8 @@ registerPage('settings', {
         ${stackedRow(Icon.palette, TINT.pink, 'Akzentfarbe', `<div class="swatches">${ACCENTS.map((a) => `
             <button class="swatch ${s.accent === a.id ? 'active' : ''}" data-action="set-accent" data-id="${a.id}" aria-label="${a.label}"
               style="background:${dark ? a.dark : a.light};color:${dark ? a.dark : a.light}"><span style="color:${dark && a.id === 'graphite' ? '#000' : '#fff'}">${s.accent === a.id ? Icon.check : ''}</span></button>`).join('')}</div>`)}
+        ${toggleRow('solidBars', 'Transparenz reduzieren', 'Leisten und Menüs undurchsichtig statt Glas', s.solidBars, Icon.layers, TINT.gray)}
+        ${toggleRow('haptics', 'Haptik', 'Kurzes Klopfen beim Abhaken und Tippen', s.haptics, Icon.haptic, TINT.purple)}
         ${toggleRow('sound', 'Töne', 'Beim Abhaken, bei Rekorden und am Ende der Pause', s.sound, Icon.voiceOn, TINT.red)}
         ${s.sound ? `<div class="row"><span class="icon-tile" style="background:transparent"></span><div class="row-main">
           <input type="range" class="slider" min="0" max="100" step="5" value="${Math.round(s.soundVolume * 100)}" data-input="set-volume" data-change="set-volume" aria-label="Lautstärke" /></div></div>` : ''}
@@ -135,6 +139,7 @@ registerPage('settings', {
 
 registerActions({
   'set-seg': (el) => {
+    haptic();
     const { key } = el.dataset;
     const raw = el.dataset.value;
     const value = ['mobilityBudget'].includes(key) ? +raw : raw;

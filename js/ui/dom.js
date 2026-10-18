@@ -52,3 +52,67 @@ export function popIn(el) {
   el.classList.add('pop-in');
   el.addEventListener('animationend', () => el.classList.remove('pop-in'), { once: true });
 }
+
+// Zahlen hochzählen lassen (Zusammenfassung): Elemente mit data-count
+export function countUp(scope, ms = 700) {
+  if (prefersReducedMotion()) return;
+  qsa('[data-count]', scope).forEach((el) => {
+    const target = +el.dataset.count;
+    if (!(target > 1)) return;
+    const start = performance.now();
+    const tick = (now) => {
+      const p = Math.min(1, (now - start) / ms);
+      const eased = 1 - (1 - p) ** 3;
+      el.textContent = String(Math.round(target * eased));
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    el.textContent = '0';
+    requestAnimationFrame(tick);
+  });
+}
+
+// Ziffern wie bei iOS-Timern weiterrollen: nur geänderte Zeichen bewegen sich.
+export function rollText(el, text) {
+  if (!el) return;
+  const old = el.dataset.roll ?? el.textContent;
+  if (old === text) return;
+  el.dataset.roll = text;
+  if (prefersReducedMotion() || old.length !== text.length) {
+    el.textContent = text;
+    return;
+  }
+  const spans = el.children.length === text.length ? [...el.children] : null;
+  if (!spans) {
+    el.innerHTML = [...text].map((c) => `<span class="roll-ch">${c}</span>`).join('');
+    return;
+  }
+  [...text].forEach((c, i) => {
+    if (spans[i].textContent === c) return;
+    spans[i].textContent = c;
+    spans[i].classList.remove('roll');
+    void spans[i].offsetWidth;
+    spans[i].classList.add('roll');
+  });
+}
+
+// Titel in einer Kopfleiste: mittig, wenn genug Platz ist – sonst mittig
+// zwischen den Knöpfen (wie in iOS), notfalls mit Auslassungspunkten.
+export function placeTitle(bar, title, left, right, gap = 12) {
+  if (!bar || !title) return;
+  const W = bar.clientWidth;
+  const l = left?.offsetWidth || 0;
+  const r = right?.offsetWidth || 0;
+  const pad = parseFloat(getComputedStyle(bar).paddingLeft) || 0;
+  title.style.left = '';
+  title.style.right = '';
+  title.classList.remove('between');
+  const need = title.scrollWidth;
+  const side = Math.max(l, r) + pad + gap;
+  if (need <= W - 2 * side) {
+    bar.style.setProperty('--side', `${Math.max(l, r)}px`);
+    return;
+  }
+  title.classList.add('between');
+  title.style.left = `${pad + l + gap}px`;
+  title.style.right = `${pad + r + gap}px`;
+}

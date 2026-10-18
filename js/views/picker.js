@@ -33,7 +33,7 @@ export function groupedHtml(list, rowHtml, emptyText = 'Keine Übung gefunden.')
 }
 
 // fixed: Übungen, die schon dabei sind (werden angezeigt, aber nicht wählbar)
-export function openExercisePicker({ title = 'Übungen hinzufügen', fixed = [], fixedLabel = 'dabei', onDone }) {
+export function openExercisePicker({ title = 'Übungen', fixed = [], fixedLabel = 'dabei', onDone }) {
   const chosen = [];
   let query = '';
   const fixedSet = new Set(fixed);

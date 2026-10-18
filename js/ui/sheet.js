@@ -1,7 +1,11 @@
 // Sheets (Fenster von unten), Aktionsmenüs und Dialoge – nach iOS-Vorbild.
 // Sheets lassen sich stapeln: ein zweites Sheet legt sich über das erste,
 // das dahinter leicht zurücktritt.
-import { esc, qs, prefersReducedMotion } from './dom.js';
+import {
+  esc, qs, prefersReducedMotion, placeTitle,
+} from './dom.js';
+import { Icon } from './icons.js';
+import { dimStatusBar } from './theme.js';
 
 const root = document.getElementById('sheet-root');
 const stack = [];
@@ -21,6 +25,7 @@ function ensureBackdrop() {
 
 function syncStack() {
   ensureBackdrop().classList.toggle('show', stack.length > 0);
+  dimStatusBar(stack.length > 0);
   document.documentElement.classList.toggle('sheet-open', stack.length > 0);
   stack.forEach((s, i) => s.el.classList.toggle('behind', i < stack.length - 1));
 }
@@ -55,7 +60,7 @@ export function openSheet({
       f.innerHTML = html;
       f.hidden = !html;
     },
-    setTitle(text) { qs('.sheet-title', el).textContent = text; },
+    setTitle(text) { qs('.sheet-title', el).textContent = text; layoutHead(); },
     setRight(btn) { replaceButton('right', btn); },
     close(result) {
       if (ctl.closed) return;
@@ -77,6 +82,12 @@ export function openSheet({
     const old = qs(`[data-sheet-btn="${side}"], .sheet-hbtn-spacer.${side}`, el);
     if (old) old.outerHTML = headerButton(btn, side);
     bindButton(side);
+    layoutHead();
+  }
+  // Titel bleibt mittig; Platz bekommt er nach dem breiteren Knopf
+  function layoutHead() {
+    const head = qs('.sheet-head', el);
+    placeTitle(head, qs('.sheet-title', head), qs('[data-sheet-btn="left"]', head), qs('[data-sheet-btn="right"]', head));
   }
   function bindButton(side) {
     const b = qs(`[data-sheet-btn="${side}"]`, el);
@@ -101,6 +112,7 @@ export function openSheet({
   root.appendChild(el);
   bindButton('left');
   bindButton('right');
+  layoutHead();
   stack.push(ctl);
   syncStack();
   enableDragToClose(ctl);
@@ -146,6 +158,160 @@ function enableDragToClose(ctl) {
   grab.addEventListener('pointercancel', end);
 }
 
+// ---------- Menü am Knopf ----------
+// Wie die Pull-down-Menüs von iOS: klappt direkt am auslösenden Knopf auf
+// statt als Blatt von unten. items: [{ label, sub?, icon?, destructive?,
+// disabled?, checked?, handler }] – '-' trennt Gruppen.
+let openMenuCtl = null;
+
+// preview: true hebt das Element selbst hervor (Kontextmenü nach langem
+// Drücken) – der Hintergrund verschwimmt, das Element schwebt darüber.
+export function openMenu(anchor, items, { title = '', preview = false } = {}) {
+  openMenuCtl?.close(-1);
+  return new Promise((resolve) => {
+    let rect = anchor.getBoundingClientRect();
+    const shade = document.createElement('div');
+    shade.className = `menu-shade ${preview ? 'ctx' : ''}`;
+    let lifted = null;
+    if (preview) {
+      lifted = anchor.cloneNode(true);
+      lifted.classList.add('ctx-preview');
+      lifted.removeAttribute('id');
+      lifted.setAttribute('aria-hidden', 'true');
+      lifted.style.cssText = `left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px`;
+    }
+    const el = document.createElement('div');
+    el.className = 'menu glass';
+    el.setAttribute('role', 'menu');
+    el.innerHTML = `
+      ${title ? `<div class="menu-title">${esc(title)}</div>` : ''}
+      ${items.map((it, i) => (it === '-' ? '<div class="menu-sep" role="separator"></div>' : `
+        <button class="menu-item ${it.destructive ? 'destructive' : ''} ${it.checked ? 'checked' : ''}" role="menuitem" data-i="${i}" ${it.disabled ? 'disabled' : ''}>
+          <span class="menu-check">${it.checked ? Icon.check : ''}</span>
+          <span class="menu-label">${esc(it.label)}${it.sub ? `<small>${esc(it.sub)}</small>` : ''}</span>
+          <span class="menu-icon">${it.icon || ''}</span>
+        </button>`)).join('')}`;
+    root.append(shade, ...(lifted ? [lifted] : []), el);
+    el.classList.toggle('has-checks', items.some((it) => it && it.checked !== undefined));
+
+    // Unter oder über dem Knopf, bündig zur näheren Seite
+    const vw = window.innerWidth;
+    const vh = window.visualViewport?.height || window.innerHeight;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const safeTop = 0; // die Home-Screen-App beginnt unter der Statusleiste
+    const alignLeft = rect.left + rect.width / 2 < vw / 2;
+    let left = alignLeft ? rect.left : rect.right - w;
+    left = Math.max(8, Math.min(vw - w - 8, left));
+    if (lifted && rect.bottom + 8 + h > vh - 12 && rect.top - 8 - h < safeTop + 8) {
+      // Weder darunter noch darüber Platz: Element nach oben schieben
+      const shift = Math.max(safeTop + 8, vh - 12 - h - 8 - rect.height) - rect.top;
+      lifted.style.setProperty('--shift', `${shift}px`);
+      rect = { left: rect.left, right: rect.right, width: rect.width, top: rect.top + shift, bottom: rect.bottom + shift };
+    }
+    let top = rect.bottom + 8;
+    let below = true;
+    if (top + h > vh - 12) { top = rect.top - h - 8; below = false; }
+    top = Math.max(safeTop + 8, Math.min(vh - h - 12, top));
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+    const ox = Math.max(0, Math.min(w, rect.left + rect.width / 2 - left));
+    el.style.transformOrigin = `${ox}px ${below ? 0 : h}px`;
+    anchor.classList.add(preview ? 'ctx-source' : 'menu-anchor');
+    requestAnimationFrame(() => {
+      el.classList.add('open');
+      shade.classList.add('show');
+      lifted?.classList.add('ctx-lifted');
+    });
+
+    const ctl = {
+      close(i) {
+        if (openMenuCtl !== ctl) return;
+        openMenuCtl = null;
+        anchor.classList.remove('menu-anchor');
+        el.classList.remove('open');
+        el.classList.add('closing');
+        shade.classList.remove('show');
+        lifted?.classList.remove('ctx-lifted');
+        setTimeout(() => {
+          el.remove();
+          shade.remove();
+          lifted?.remove();
+          anchor.classList.remove('ctx-source');
+        }, prefersReducedMotion() ? 0 : 240);
+        const item = i >= 0 ? items[i] : null;
+        // Erst schließen, dann handeln – sonst liegt ein folgendes Sheet unter dem Menü
+        if (item?.handler) setTimeout(() => item.handler(), 10);
+        resolve(i);
+      },
+    };
+    openMenuCtl = ctl;
+    shade.addEventListener('pointerdown', (e) => { e.preventDefault(); ctl.close(-1); });
+    el.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-i]');
+      if (b && !b.disabled) ctl.close(+b.dataset.i);
+    });
+  });
+}
+
+export function closeMenu() {
+  openMenuCtl?.close(-1);
+}
+
+// ---------- Langes Drücken ----------
+// Elemente mit data-menu="art" öffnen nach langem Drücken ein Kontextmenü.
+// Die Einträge liefert ein registrierter Baustein: registerContextMenu(art, (el) => items).
+const contextMenus = Object.create(null);
+export function registerContextMenu(kind, build) {
+  contextMenus[kind] = build;
+}
+
+let pressTimer = null;
+let press = null;
+let swallowClick = false;
+document.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'mouse') return;
+  const el = e.target.closest('[data-menu]');
+  if (!el || !contextMenus[el.dataset.menu]) return;
+  press = { el, x: e.clientX, y: e.clientY };
+  el.classList.add('pressing');
+  clearTimeout(pressTimer);
+  pressTimer = setTimeout(() => {
+    if (!press) return;
+    const target = press.el;
+    press = null;
+    target.classList.remove('pressing');
+    const items = contextMenus[target.dataset.menu](target);
+    if (!items?.length) return;
+    swallowClick = true;
+    openMenu(target, items, { preview: true });
+  }, 480);
+}, { passive: true });
+const cancelPress = () => {
+  clearTimeout(pressTimer);
+  press?.el.classList.remove('pressing');
+  press = null;
+};
+document.addEventListener('pointermove', (e) => {
+  if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) cancelPress();
+}, { passive: true });
+document.addEventListener('pointerup', () => {
+  cancelPress();
+  if (swallowClick) setTimeout(() => { swallowClick = false; }, 350);
+});
+document.addEventListener('pointercancel', cancelPress);
+document.addEventListener('scroll', cancelPress, true);
+// Der Klick nach dem langen Drücken soll das Element nicht auch noch öffnen
+document.addEventListener('click', (e) => {
+  if (!swallowClick) return;
+  if (e.target.closest('.menu')) return;
+  e.stopPropagation();
+  e.preventDefault();
+}, true);
+document.addEventListener('contextmenu', (e) => {
+  if (e.target.closest('[data-menu]')) e.preventDefault();
+});
+
 // ---------- Aktionsmenü ----------
 // actions: [{ label, style: 'destructive'|'default', handler }]
 export function actionSheet({ title = '', message = '', actions = [], cancelLabel = 'Abbrechen' } = {}) {
@@ -162,9 +328,11 @@ export function actionSheet({ title = '', message = '', actions = [], cancelLabe
     shade.className = 'as-shade';
     root.append(shade, el);
     requestAnimationFrame(() => requestAnimationFrame(() => { el.classList.add('open'); shade.classList.add('show'); }));
+    dimStatusBar(true);
     const done = (i) => {
       el.classList.remove('open');
       shade.classList.remove('show');
+      dimStatusBar(stack.length > 0);
       setTimeout(() => { el.remove(); shade.remove(); }, prefersReducedMotion() ? 0 : 260);
       if (i >= 0) actions[i].handler?.();
       resolve(i);
@@ -204,10 +372,12 @@ function dialog({ title, message = '', input = null, buttons }) {
     // Synchron fokussieren: nur innerhalb der Nutzergeste öffnet iOS die Tastatur.
     if (field) { field.focus(); field.select(); }
     requestAnimationFrame(() => { el.classList.add('open'); shade.classList.add('show'); });
+    dimStatusBar(true);
     const done = (i) => {
       const value = field ? field.value.trim() : null;
       el.classList.remove('open');
       shade.classList.remove('show');
+      dimStatusBar(stack.length > 0);
       setTimeout(() => { el.remove(); shade.remove(); }, prefersReducedMotion() ? 0 : 200);
       resolve({ index: i, value });
     };

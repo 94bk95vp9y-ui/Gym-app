@@ -9,8 +9,11 @@ import {
 import { buildPlanPrompt, parsePlanText, normalizeExerciseName } from '../core/plan-import.js';
 import { esc, qs, registerActions, registerInputs } from '../ui/dom.js';
 import { Icon } from '../ui/icons.js';
+import { haptic, HAP } from '../ui/haptics.js';
 import { registerPage, render, push, pop } from '../ui/router.js';
-import { openSheet, actionSheet, confirmAction, alertDialog } from '../ui/sheet.js';
+import {
+  openSheet, actionSheet, confirmAction, alertDialog, openMenu, registerContextMenu,
+} from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
 import { lineChart } from '../ui/chart.js';
 import { enableReorder } from '../ui/reorder.js';
@@ -29,7 +32,7 @@ function segHtml() {
   return `
     <div class="seg-wrap">
       <div class="seg" id="training-seg" style="--n:2;--i:${i}">
-        ${items.map((x) => `<button class="${x.id === ui.seg ? 'active' : ''}" data-action="training-seg" data-seg="${x.id}">${x.label}</button>`).join('')}
+        ${items.map((x) => `<button class="${x.id === ui.seg ? 'active' : ''}" data-action="training-seg" data-seg="${x.id}">${HAP}${x.label}</button>`).join('')}
         <span class="seg-thumb"></span>
       </div>
     </div>`;
@@ -74,7 +77,7 @@ function plansHtml() {
       ${routines.map((r) => {
     const isNext = r === next && routines.length > 1;
     return `
-        <div class="plan-card ${isNext ? 'next' : ''}" data-action="open-plan" data-id="${r.id}" role="button" tabindex="0">
+        <div class="plan-card ${isNext ? 'next' : ''}" data-action="open-plan" data-menu="plan" data-id="${r.id}" role="button" tabindex="0">
           <div class="plan-card-main">
             <div class="plan-card-title"><span>${esc(r.name)}</span>${isNext ? '<span class="tag">Als Nächstes</span>' : ''}</div>
             <div class="plan-card-meta">${plural(r.exerciseIds.length, 'Übung', 'Übungen')} · ${lastLabel(lastDone, r)}</div>
@@ -91,7 +94,7 @@ function exerciseRow(last) {
   return (ex) => {
     const info = last.get(ex.id);
     return `
-      <button class="row" data-action="open-exercise" data-id="${ex.id}">
+      <button class="row" data-action="open-exercise" data-menu="exercise" data-id="${ex.id}">
         <div class="row-main">
           <span class="row-title">${esc(ex.name)}</span>
           ${info ? `<span class="row-sub">${esc(formatSet(info.best, unit()))} · ${relativeDay(info.date)}</span>` : ''}
@@ -130,11 +133,6 @@ registerPage('training', {
 registerPage('plan', {
   title: ({ id }) => Store.getRoutine(id)?.name || 'Plan',
   right: ({ id }) => `<button class="nav-btn" data-action="plan-edit" data-id="${id}">Bearbeiten</button>`,
-  footer: ({ id }) => {
-    const r = Store.getRoutine(id);
-    if (!r) return '';
-    return `<button class="btn btn-primary btn-block" data-action="start-routine" data-id="${r.id}" ${r.exerciseIds.length ? '' : 'disabled'}>${Icon.play} Training starten</button>`;
-  },
   render: ({ id }) => {
     const r = Store.getRoutine(id);
     if (!r) return '<p class="empty">Dieser Plan existiert nicht mehr.</p>';
@@ -159,6 +157,7 @@ registerPage('plan', {
         <h1 class="detail-title">${esc(r.name)}</h1>
         <p class="detail-meta">${plural(r.exerciseIds.length, 'Übung', 'Übungen')}${minutes ? ` · ca. ${minutes} Min` : ''} · ${lastLabel(lastDone, r)}</p>
         ${chips(planMuscles(r, 5))}
+        <button class="btn btn-primary btn-block detail-cta" data-action="start-routine" data-id="${r.id}" ${r.exerciseIds.length ? '' : 'disabled'}>${Icon.play} Training starten</button>
       </div>
       ${rows ? `<div class="list">${rows}</div>` : emptyState({ icon: Icon.dumbbell, title: 'Noch keine Übungen', text: 'Tippe oben auf „Bearbeiten“, um Übungen hinzuzufügen.' })}`;
   },
@@ -181,7 +180,7 @@ function exerciseStatsHtml(ex) {
   const chart = h.points.length >= 2 ? `
     <div class="section">
       <div class="section-head"><h2>${h.loaded ? 'Geschätztes 1RM' : 'Wiederholungen'}</h2></div>
-      <div class="card">${lineChart(h.points.slice(-20), { unit: h.loaded ? u : '' })}</div>
+      <div class="card">${lineChart(h.points.slice(-20), { unit: h.loaded ? u : 'Wdh' })}</div>
     </div>` : '';
   const history = `
     <div class="section">
@@ -244,9 +243,9 @@ export function openPlanEditor(id = null, { onSaved = null } = {}) {
         <span class="drag-handle" data-drag-handle aria-label="Verschieben">${Icon.reorder}</span>
         <div class="row-main"><span class="row-title">${esc(ex ? ex.name : 'Unbekannt')}</span></div>
         <span class="stepper">
-          <button data-step="-1" data-i="${i}" aria-label="Weniger Sätze">${Icon.minus}</button>
+          <button data-step="-1" data-i="${i}" aria-label="Weniger Sätze">${HAP}${Icon.minus}</button>
           <span class="num">${draft.setCounts[eid]}</span>
-          <button data-step="1" data-i="${i}" aria-label="Mehr Sätze">${Icon.plus}</button>
+          <button data-step="1" data-i="${i}" aria-label="Mehr Sätze">${HAP}${Icon.plus}</button>
         </span>
         <button class="icon-btn remove-btn" data-remove="${i}" aria-label="Entfernen">${Icon.close}</button>
       </div>`;
@@ -308,7 +307,7 @@ export function openPlanEditor(id = null, { onSaved = null } = {}) {
     if (step) {
       const eid = draft.exerciseIds[+step.dataset.i];
       draft.setCounts[eid] = Math.max(1, Math.min(12, draft.setCounts[eid] + +step.dataset.step));
-      step.parentElement.querySelector('span').textContent = draft.setCounts[eid];
+      step.parentElement.querySelector('.num').textContent = draft.setCounts[eid];
       dirty = true;
       return;
     }
@@ -486,6 +485,7 @@ registerActions({
   'training-seg': (el) => {
     if (ui.seg === el.dataset.seg) return;
     ui.seg = el.dataset.seg;
+    haptic();
     const seg = qs('#training-seg');
     seg.style.setProperty('--i', ui.seg === 'plans' ? 0 : 1);
     seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === el));
@@ -496,16 +496,21 @@ registerActions({
     document.querySelectorAll('#ex-filters .filter-chip').forEach((b) => b.classList.toggle('active', b === el));
     qs('#ex-list').innerHTML = exerciseListHtml();
   },
-  'training-add': () => {
-    if (ui.seg === 'plans') openPlanEditor(null, { onSaved: (id) => push('plan', { id }) });
-    else openExerciseEditor(null, { onSave: (ex) => { render(); push('exercise', { id: ex.id }); } });
+  'training-add': (el) => {
+    openMenu(el, [
+      { label: 'Neuer Plan', icon: Icon.doc, handler: () => openPlanEditor(null, { onSaved: (id) => push('plan', { id }) }) },
+      { label: 'Plan mit KI', icon: Icon.chat, handler: () => openImportSheet() },
+      { label: 'Neue Übung', icon: Icon.dumbbell, handler: () => openExerciseEditor(null, { onSave: (ex) => { render(); push('exercise', { id: ex.id }); } }) },
+      '-',
+      { label: 'Leeres Training', icon: Icon.play, handler: () => startBlank() },
+    ]);
   },
   'plan-new': () => openPlanEditor(null, { onSaved: (id) => push('plan', { id }) }),
   'plan-edit': (el) => openPlanEditor(el.dataset.id),
   'open-plan': (el) => push('plan', { id: el.dataset.id }),
   'open-exercise': (el) => push('exercise', { id: el.dataset.id }),
   'exercise-edit': (el) => openExerciseEditor(el.dataset.id, { onSave: () => render() }),
-  'start-routine': (el) => startRoutine(el.dataset.id),
+  'start-routine': (el) => startRoutine(el.dataset.id, { from: el }),
   'start-blank': () => startBlank(),
   'plan-import': () => openImportSheet(),
   'ex-rest': (el) => {
@@ -525,13 +530,53 @@ registerActions({
   },
   'exercise-delete': async (el) => {
     const ex = Store.getExercise(el.dataset.id);
-    if (!ex) return;
-    if (!(await confirmAction({ title: `„${ex.name}“ löschen?`, message: 'Sie wird auch aus allen Plänen entfernt. Der Verlauf bleibt erhalten.', confirmLabel: 'Übung löschen' }))) return;
-    Store.deleteExercise(ex.id);
-    pop();
-    toast('Übung gelöscht');
+    if (ex && await deleteExercise(ex)) pop();
   },
 });
+
+// Langes Drücken: Schnellaktionen für Pläne und Übungen
+registerContextMenu('plan', (el) => {
+  const r = Store.getRoutine(el.dataset.id);
+  if (!r) return null;
+  return [
+    { label: 'Training starten', icon: Icon.play, disabled: !r.exerciseIds.length, handler: () => startRoutine(r.id) },
+    { label: 'Bearbeiten', icon: Icon.pencil, handler: () => openPlanEditor(r.id) },
+    { label: 'Duplizieren', icon: Icon.copy, handler: () => duplicatePlan(r) },
+    '-',
+    { label: 'Plan löschen', icon: Icon.trash, destructive: true, handler: () => deletePlan(r) },
+  ];
+});
+
+registerContextMenu('exercise', (el) => {
+  const ex = Store.getExercise(el.dataset.id);
+  if (!ex) return null;
+  return [
+    { label: 'Bearbeiten', icon: Icon.pencil, handler: () => openExerciseEditor(ex.id, { onSave: () => render() }) },
+    '-',
+    { label: 'Übung löschen', icon: Icon.trash, destructive: true, handler: async () => { if (await deleteExercise(ex)) render(); } },
+  ];
+});
+
+function duplicatePlan(r) {
+  const copy = { ...r, id: uid(), name: `${r.name} (Kopie)`, exerciseIds: [...r.exerciseIds], setCounts: { ...(r.setCounts || {}) } };
+  Store.saveRoutine(copy);
+  render();
+  toast('Plan dupliziert');
+}
+
+async function deletePlan(r) {
+  if (!(await confirmAction({ title: `„${r.name}“ löschen?`, message: 'Bisherige Trainings bleiben im Verlauf.', confirmLabel: 'Plan löschen' }))) return;
+  Store.deleteRoutine(r.id);
+  render();
+  toast('Plan gelöscht');
+}
+
+async function deleteExercise(ex) {
+  if (!(await confirmAction({ title: `„${ex.name}“ löschen?`, message: 'Sie wird auch aus allen Plänen entfernt. Der Verlauf bleibt erhalten.', confirmLabel: 'Übung löschen' }))) return false;
+  Store.deleteExercise(ex.id);
+  toast('Übung gelöscht');
+  return true;
+}
 
 let noteTimer = null;
 registerInputs({

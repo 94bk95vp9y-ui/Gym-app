@@ -2,7 +2,7 @@
 import { Store } from '../core/store.js';
 import {
   workoutDoneSets, workoutVolume, workoutDuration, workoutPrs, exerciseNames, entryName, weekInfo, weekStreak,
-  weeklyCounts, weeklySets, keyLifts, recentRecords, routineFromWorkout,
+  weeklyCounts, weeklySets, keyLifts, recentRecords, routineFromWorkout, compareToPrevious,
   SET_TARGET_MIN, SET_TARGET_MAX,
 } from '../core/training.js';
 import {
@@ -10,11 +10,14 @@ import {
 } from '../core/format.js';
 import { esc, qs, registerActions } from '../ui/dom.js';
 import { Icon } from '../ui/icons.js';
+import { haptic, HAP } from '../ui/haptics.js';
 import { registerPage, push, pop, render } from '../ui/router.js';
-import { confirmAction, promptDialog } from '../ui/sheet.js';
+import { confirmAction, promptDialog, registerContextMenu } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
 import { sparkline } from '../ui/chart.js';
-import { chev, dateBadge, emptyState } from '../ui/components.js';
+import {
+  chev, dateBadge, emptyState, deltaPill,
+} from '../ui/components.js';
 
 const ui = { seg: 'workouts', month: null };
 const unit = () => unitLabel(Store.getSettings().unit);
@@ -36,7 +39,7 @@ function segHtml() {
   return `
     <div class="seg-wrap">
       <div class="seg" id="history-seg" style="--n:2;--i:${i}">
-        ${items.map((x) => `<button class="${x.id === ui.seg ? 'active' : ''}" data-action="history-seg" data-seg="${x.id}">${x.label}</button>`).join('')}
+        ${items.map((x) => `<button class="${x.id === ui.seg ? 'active' : ''}" data-action="history-seg" data-seg="${x.id}">${HAP}${x.label}</button>`).join('')}
         <span class="seg-thumb"></span>
       </div>
     </div>`;
@@ -108,7 +111,7 @@ function workoutsHtml() {
         <div class="list">${m.items.map((w) => {
     const prs = workoutPrs(w);
     return `
-          <button class="row hist-row" data-action="open-workout" data-id="${w.id}">
+          <button class="row hist-row" data-action="open-workout" data-menu="workout" data-id="${w.id}">
             ${dateBadge(w.startedAt)}
             <div class="row-main">
               <span class="row-title strong">${esc(w.routineName || 'Freies Training')}${prs ? `<span class="pr-mark">${prs > 1 ? `${prs} PR` : 'PR'}</span>` : ''}</span>
@@ -120,6 +123,28 @@ function workoutsHtml() {
 }
 
 // ---------- Statistik ----------
+// Säulen je Woche mit gestrichelter Ziellinie; die laufende Woche ist heller,
+// weil sie noch nicht vorbei ist.
+function weeksChart(weeks, goal) {
+  const max = Math.max(goal + 1, ...weeks.map((w) => w.count));
+  const goalPos = (goal / max) * 100;
+  return `
+    <div class="wchart" style="--goal:${goalPos.toFixed(1)}%">
+      <div class="wchart-plot">
+        <span class="wchart-goal"><span>Ziel ${goal}</span></span>
+        ${weeks.map((w, i) => {
+    const now = i === weeks.length - 1;
+    return `
+          <div class="wchart-col ${w.count >= goal ? 'hit' : ''} ${now ? 'now' : ''}">
+            <b>${w.count || ''}</b>
+            <i style="height:${w.count ? Math.max(6, (w.count / max) * 100) : 0}%"></i>
+          </div>`;
+  }).join('')}
+      </div>
+      <div class="wchart-axis">${weeks.map((w, i) => `<span>${i === weeks.length - 1 ? 'jetzt' : `${w.from.getDate()}.${w.from.getMonth() + 1}.`}</span>`).join('')}</div>
+    </div>`;
+}
+
 function statsHtml() {
   const workouts = Store.getWorkouts();
   if (!workouts.length) {
@@ -130,14 +155,13 @@ function statsHtml() {
   const info = weekInfo();
   const streak = weekStreak(settings.weeklyGoal);
   const weeks = weeklyCounts(8);
-  const maxWeek = Math.max(settings.weeklyGoal, ...weeks.map((w) => w.count), 1);
   const lifts = keyLifts(6);
   const sets = weeklySets(7);
   const groups = Object.entries(sets).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
   const records = recentRecords(30, 6);
   return `
     <div class="section">
-      <div class="section-head"><h2>Diese Woche</h2>${streak ? `<span class="meta">Ziel ${streak}× in Folge</span>` : ''}</div>
+      <div class="section-head"><h2>Diese Woche</h2>${streak > 1 ? `<span class="meta">${streak} Wochen in Folge im Ziel</span>` : ''}</div>
       <div class="tiles">
         <div class="tile"><span class="tile-label">Trainings</span><div class="tile-value">${info.count}<small>/${settings.weeklyGoal}</small></div></div>
         <div class="tile"><span class="tile-label">Sätze</span><div class="tile-value">${info.sets}</div></div>
@@ -147,14 +171,7 @@ function statsHtml() {
     </div>
     <div class="section">
       <div class="section-head"><h2>Trainings pro Woche</h2><span class="meta">8 Wochen</span></div>
-      <div class="card">
-        <div class="weeks">${weeks.map((w, i) => `
-          <div class="weeks-col ${w.count >= settings.weeklyGoal ? 'hit' : ''} ${i === weeks.length - 1 ? 'now' : ''}">
-            <i style="height:${Math.max(4, (w.count / maxWeek) * 76)}px"></i>
-            <span>${w.count}</span>
-          </div>`).join('')}</div>
-        <div class="weeks-foot"><span>vor 8 Wochen</span><span>Ziel: ${settings.weeklyGoal}× pro Woche</span><span>jetzt</span></div>
-      </div>
+      <div class="card">${weeksChart(weeks, settings.weeklyGoal)}</div>
     </div>
     ${lifts.length ? `
       <div class="section">
@@ -229,7 +246,8 @@ registerPage('workout', {
         <div class="section">
           <div class="list">
             <button class="row" data-action="open-exercise-stat" data-id="${e.exerciseId}">
-              <div class="row-main"><span class="row-title strong">${esc(entryName(e, names))}</span></div>${chev}
+              <div class="row-main"><span class="row-title strong">${esc(entryName(e, names))}</span></div>
+              ${done.length ? deltaPill(compareToPrevious(e, w), u) : ''}${chev}
             </button>
             ${done.length ? done.map((s, i) => `
               <div class="set-line"><span>${i + 1}</span><span>${esc(formatSet(s, u))}</span>${s.pr ? '<span class="pr-mark">PR</span>' : '<span></span>'}</div>`).join('') : '<div class="set-line"><span></span><span class="muted">Keine Sätze abgehakt</span><span></span></div>'}
@@ -245,10 +263,37 @@ registerPage('workout', {
   },
 });
 
+registerContextMenu('workout', (el) => {
+  const w = Store.getWorkout(el.dataset.id);
+  if (!w) return null;
+  return [
+    { label: 'Öffnen', icon: Icon.doc, handler: () => push('workout', { id: w.id }) },
+    ...(!w.routineId && w.entries.length ? [{ label: 'Als Plan speichern', icon: Icon.plus, handler: () => saveAsPlan(w) }] : []),
+    '-',
+    { label: 'Training löschen', icon: Icon.trash, destructive: true, handler: () => deleteWorkout(w.id, false) },
+  ];
+});
+
+async function deleteWorkout(id, back) {
+  if (!(await confirmAction({ title: 'Training löschen?', message: 'Das lässt sich nicht rückgängig machen.', confirmLabel: 'Training löschen' }))) return;
+  Store.deleteWorkout(id);
+  if (back) pop(); else render();
+  toast('Training gelöscht');
+}
+
+async function saveAsPlan(w) {
+  const name = await promptDialog({ title: 'Plan speichern', message: 'Wie soll der Plan heißen?', placeholder: 'z. B. Oberkörper' });
+  if (!name) return;
+  Store.saveRoutine(routineFromWorkout({ ...w, routineName: name }));
+  toast(`Plan „${name}“ gespeichert`);
+  render();
+}
+
 registerActions({
   'history-seg': (el) => {
     if (ui.seg === el.dataset.seg) return;
     ui.seg = el.dataset.seg;
+    haptic();
     const seg = qs('#history-seg');
     seg.style.setProperty('--i', ui.seg === 'workouts' ? 0 : 1);
     seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === el));
@@ -262,18 +307,9 @@ registerActions({
   },
   'open-workout': (el) => push('workout', { id: el.dataset.id }),
   'open-exercise-stat': (el) => push('exercise', { id: el.dataset.id }),
-  'workout-delete': async (el) => {
-    if (!(await confirmAction({ title: 'Training löschen?', message: 'Das lässt sich nicht rückgängig machen.', confirmLabel: 'Training löschen' }))) return;
-    Store.deleteWorkout(el.dataset.id);
-    pop();
-    toast('Training gelöscht');
-  },
-  'workout-save-plan': async (el) => {
+  'workout-delete': (el) => deleteWorkout(el.dataset.id, true),
+  'workout-save-plan': (el) => {
     const w = Store.getWorkout(el.dataset.id);
-    const name = await promptDialog({ title: 'Plan speichern', message: 'Wie soll der Plan heißen?', placeholder: 'z. B. Oberkörper' });
-    if (!name || !w) return;
-    Store.saveRoutine(routineFromWorkout({ ...w, routineName: name }));
-    toast(`Plan „${name}“ gespeichert`);
-    render();
+    if (w) saveAsPlan(w);
   },
 });
