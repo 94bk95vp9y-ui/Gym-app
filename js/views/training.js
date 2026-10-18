@@ -106,7 +106,16 @@ function exerciseRow(last) {
 function exerciseListHtml() {
   const all = Store.getExercises();
   const list = ui.group === 'all' ? all : all.filter((e) => e.muscleGroup === ui.group);
-  return groupedHtml(filterExercises(list, ui.query), exerciseRow(lastPerformanceMap()));
+  const found = filterExercises(list, ui.query);
+  if (!found.length && ui.query.trim()) {
+    return emptyState({
+      icon: Icon.search,
+      title: 'Keine Übung gefunden',
+      text: ui.group === 'all' ? 'Leg sie einfach an – sie steht dann in Plänen und im Training zur Wahl.' : 'Vielleicht unter einer anderen Muskelgruppe – oder neu anlegen.',
+      action: `<button class="btn btn-tinted" data-action="ex-create-from-search">${Icon.plus} „${esc(ui.query.trim())}“ anlegen</button>`,
+    });
+  }
+  return groupedHtml(found, exerciseRow(lastPerformanceMap()));
 }
 
 function filterChipsHtml() {
@@ -174,7 +183,8 @@ function exerciseStatsHtml(ex) {
   const tile = (label, value, sub) => `<div class="tile"><span class="tile-label">${label}</span><div class="tile-value">${value}</div><span class="tile-sub">${sub}</span></div>`;
   const stats = h.loaded
     ? tile('Bestleistung', `${formatNumber(best.top.weight)}<small>${u}</small>`, `× ${best.top.reps} Wdh · ${esc(formatDate(best.date))}`)
-      + tile('1RM geschätzt', `${formatNumber(Math.round(h.bestValue))}<small>${u}</small>`, `${plural(h.sessions.length, 'Einheit', 'Einheiten')} · zuletzt ${relativeDay(h.sessions[0].date)}`)
+      // Das 1RM steht schon groß über dem Diagramm – hier lieber das letzte Mal
+      + tile('Letztes Mal', `${formatNumber(h.sessions[0].top.weight)}<small>${u}</small>`, `× ${h.sessions[0].top.reps} Wdh · ${relativeDay(h.sessions[0].date)}`)
     : tile('Meiste Wdh', `${best.top.reps}`, esc(formatDate(best.date)))
       + tile('Einheiten', `${h.sessions.length}`, `zuletzt ${relativeDay(h.sessions[0].date)}`);
   const chart = h.points.length >= 2 ? `
@@ -400,7 +410,7 @@ function applyImportedPlans(resolved) {
 
 function openImportSheet() {
   const sheet = openSheet({
-    title: 'Pläne mit KI erstellen',
+    title: 'Plan mit KI',
     full: true,
     left: { label: 'Abbrechen' },
     right: null,
@@ -505,6 +515,10 @@ registerActions({
       { label: 'Leeres Training', icon: Icon.play, handler: () => startBlank() },
     ]);
   },
+  'ex-create-from-search': () => openExerciseEditor(null, {
+    name: ui.query.trim(),
+    onSave: (ex) => { ui.query = ''; render(); push('exercise', { id: ex.id }); },
+  }),
   'plan-new': () => openPlanEditor(null, { onSaved: (id) => push('plan', { id }) }),
   'plan-edit': (el) => openPlanEditor(el.dataset.id),
   'open-plan': (el) => push('plan', { id: el.dataset.id }),

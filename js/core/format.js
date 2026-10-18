@@ -1,6 +1,6 @@
 export function formatDate(iso) {
   const d = new Date(iso);
-  return d.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: 'short' });
+  return d.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 export function formatDateTime(iso) {
@@ -12,7 +12,7 @@ export function formatDuration(ms) {
   const totalMin = Math.round(ms / 60000);
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
-  if (h > 0) return `${h} Std ${m} Min`;
+  if (h > 0) return m ? `${h} Std ${m} Min` : `${h} Std`;
   return `${m} Min`;
 }
 

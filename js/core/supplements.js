@@ -13,7 +13,7 @@ export const SLOTS = [
   { id: 'morning', label: 'Morgens', short: 'Morgens', from: 4, to: 11, reminder: '0730' },
   { id: 'noon', label: 'Mittags', short: 'Mittags', from: 11, to: 15, reminder: '1230' },
   { id: 'evening', label: 'Abends', short: 'Abends', from: 15, to: 21, reminder: '1900' },
-  { id: 'night', label: 'Vor dem Schlafen', short: 'Nachts', from: 21, to: 28, reminder: '2200' },
+  { id: 'night', label: 'Zur Nacht', short: 'Zur Nacht', from: 21, to: 28, reminder: '2200' },
 ];
 
 // Vorschläge zum schnellen Anlegen. Die Tageszeit ist nur ein üblicher

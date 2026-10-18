@@ -474,7 +474,7 @@ function syncRest() {
           <div class="rest-label"><span>Pause</span><b class="num" id="rest-time">${formatClock(remaining)}</b></div>
           <button class="rest-btn" data-action="rest-adjust" data-delta="-15" aria-label="15 Sekunden weniger">${HAP}−15</button>
           <button class="rest-btn" data-action="rest-adjust" data-delta="15" aria-label="15 Sekunden mehr">${HAP}+15</button>
-          <button class="rest-btn primary" data-action="rest-skip">${HAP}Weiter</button>
+          <button class="rest-btn primary" data-action="rest-skip">${HAP}Überspringen</button>
         </div>
         ${nextText ? `<div class="rest-next">Als Nächstes: <strong>${nextText}</strong></div>` : ''}
         <span class="rest-fill" id="rest-fill"></span>
@@ -749,14 +749,14 @@ function openSummary(id) {
       sub: relativeDay(previous.startedAt),
     } : {
       icon: Icon.chart,
-      text: pct > -15 ? `Volumen fast wie beim letzten Mal` : 'Kürzer als beim letzten Mal',
+      text: pct > -15 ? 'Volumen fast wie beim letzten Mal' : 'Weniger Volumen als beim letzten Mal',
       sub: `${vol(volume)} statt ${vol(prevVolume)} · ${relativeDay(previous.startedAt)}`,
     });
   }
   facts.push({
     icon: Icon.target,
-    text: week >= settings.weeklyGoal ? 'Wochenziel erreicht' : `${week} von ${settings.weeklyGoal} Trainings diese Woche`,
-    sub: week >= settings.weeklyGoal ? `${week} von ${settings.weeklyGoal} Trainings` : `noch ${settings.weeklyGoal - week}`,
+    text: week > settings.weeklyGoal ? 'Wochenziel übertroffen' : week === settings.weeklyGoal ? 'Wochenziel erreicht' : `${week} von ${settings.weeklyGoal} Trainings diese Woche`,
+    sub: week >= settings.weeklyGoal ? `${plural(week, 'Training', 'Trainings')} diese Woche` : `noch ${settings.weeklyGoal - week} bis zum Ziel`,
   });
   const diffText = diff ? [
     diff.added ? `${plural(diff.added, 'Übung', 'Übungen')} hinzugefügt` : '',
@@ -792,8 +792,8 @@ function openSummary(id) {
         <p>${esc(w.routineName || 'Freies Training')} · ${esc(new Date(w.startedAt).toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
       </div>
       <div class="sum-stats">
-        <div><b class="num" data-count="${minutes}">${minutes}</b><span>Minuten</span></div>
-        <div><b class="num" data-count="${workoutDoneSets(w)}">${workoutDoneSets(w)}</b><span>Sätze</span></div>
+        <div><b class="num" data-count="${minutes}">${minutes}</b><span>${minutes === 1 ? 'Minute' : 'Minuten'}</span></div>
+        <div><b class="num" data-count="${workoutDoneSets(w)}">${workoutDoneSets(w)}</b><span>${workoutDoneSets(w) === 1 ? 'Satz' : 'Sätze'}</span></div>
         <div><b class="num">${volume >= 1000 && u === 'kg' ? `${formatNumber(Math.round(volume / 100) / 10)}<small>t</small>` : `${formatVolume(volume)}<small>${u}</small>`}</b><span>Volumen</span></div>
       </div>
       ${prs.length ? `

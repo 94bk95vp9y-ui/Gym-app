@@ -76,7 +76,7 @@ export function openSheet({
       onClose?.(result);
     },
   };
-  const buttons = { left, right: right === undefined ? { label: 'Fertig' } : right };
+  const buttons = { left, right: right === undefined ? { label: 'Fertig', style: 'primary' } : right };
   function replaceButton(side, btn) {
     buttons[side] = btn;
     const old = qs(`[data-sheet-btn="${side}"], .sheet-hbtn-spacer.${side}`, el);

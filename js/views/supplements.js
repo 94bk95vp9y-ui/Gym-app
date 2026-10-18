@@ -39,13 +39,15 @@ function stockText(s) {
 
 // Eine Zeile zum Abhaken: Kreis links wie in einer Erinnerungsliste
 function checkRow(s, day, taken, { slot = true } = {}) {
-  const sub = [s.dose, isLow(s) ? stockText(s) : ''].filter(Boolean).join(' · ');
+  // Vorrat betrifft nur heute – beim Nachtragen vergangener Tage stört er
+  const low = isLow(s) && day === dayKey();
+  const sub = [s.dose, low ? stockText(s) : ''].filter(Boolean).join(' · ');
   return `
     <button class="row check-row ${taken ? 'taken' : ''}" data-action="supp-toggle" data-id="${s.id}" data-day="${day}" aria-pressed="${taken}">
       ${HAP}<span class="check">${Icon.check}</span>
       <div class="row-main">
         <span class="row-title">${esc(s.name)}</span>
-        ${sub ? `<span class="row-sub ${isLow(s) ? 'warn' : ''}">${esc(sub)}</span>` : ''}
+        ${sub ? `<span class="row-sub ${low ? 'warn' : ''}">${esc(sub)}</span>` : ''}
       </div>
       ${slot ? `<span class="slot">${slotLabel(s.slot)}</span>` : ''}
     </button>`;
@@ -68,7 +70,7 @@ function checklistHtml(day, { grouped = false } = {}) {
     const later = day === dayKey() && index > nowIndex;
     return `
       <div class="supp-slot">
-        <div class="supp-slot-head"><span>${slot.label}${later ? ' · später' : ''}</span>
+        <div class="supp-slot-head"><span>${slot.label}${later ? ' <i class="slot-later">später</i>' : ''}</span>
           ${open.length > 1 ? `<button data-action="supp-all" data-day="${day}" data-slot="${slot.id}">Alle abhaken</button>` : ''}</div>
         ${inSlot.map((s) => checkRow(s, day, !!taken[s.id], { slot: false })).join('')}
       </div>`;
@@ -192,7 +194,7 @@ function remindersHtml(active) {
         ${slots.map((slot) => {
     const time = settings.supplementReminders?.[slot.id] || slot.reminder;
     return `
-          <div class="row">
+          <div class="row reminder-row">
             ${iconTile(Icon.bell, TINT.red)}
             <div class="row-main"><span class="row-title">${slot.label}</span></div>
             <select class="input time-select" data-change="supp-time" data-slot="${slot.id}" aria-label="Uhrzeit ${slot.label}">
@@ -273,7 +275,7 @@ function openDaySheet(day) {
     title: dayLabel(day),
     className: 'supp-day-sheet',
     body: `
-      <div class="section-head" style="margin-top:4px"><h2>Nachtragen</h2><span class="meta supp-progress">${st.done} von ${st.expected}</span></div>
+      <p class="sheet-sub"><span class="supp-progress">${st.done} von ${st.expected}</span> genommen – antippen zum Nachtragen</p>
       <div class="list">${checklistHtml(day, { grouped: true })}</div>`,
     onClose: () => render(),
   });

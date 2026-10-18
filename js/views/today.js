@@ -46,9 +46,9 @@ function heroHtml() {
           <button class="hero-switch" data-action="choose-workout">Noch eins ${Icon.chevronRight}</button>
         </div>
         <h2 class="hero-title">${esc(doneToday.routineName || 'Freies Training')}</h2>
-        <div class="hero-meta muted">${formatTime(doneToday.startedAt)} Uhr · ${Math.round(workoutDuration(doneToday) / 60000)} Min</div>
+        <div class="hero-meta muted">${formatTime(doneToday.startedAt)} Uhr · ${Math.max(1, Math.round(workoutDuration(doneToday) / 60000))} Min</div>
         <div class="hero-stats">
-          <div><b>${workoutDoneSets(doneToday)}</b><span>Sätze</span></div>
+          <div><b>${workoutDoneSets(doneToday)}</b><span>${workoutDoneSets(doneToday) === 1 ? 'Satz' : 'Sätze'}</span></div>
           <div><b>${formatVolume(workoutVolume(doneToday))}</b><span>${u} Volumen</span></div>
           <div><b>${prs}</b><span>${prs === 1 ? 'Rekord' : 'Rekorde'}</span></div>
         </div>

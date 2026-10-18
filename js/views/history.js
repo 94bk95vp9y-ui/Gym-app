@@ -236,11 +236,11 @@ registerPage('workout', {
         <p class="detail-meta">${new Date(w.startedAt).toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · ${formatTime(w.startedAt)} Uhr</p>
       </div>
       <div class="card"><div class="stats divided" style="--cols:3">
-        <div class="stat"><b class="num">${Math.round(workoutDuration(w) / 60000)}<small>min</small></b><span>Dauer</span></div>
+        <div class="stat"><b class="num">${Math.max(1, Math.round(workoutDuration(w) / 60000))}<small>Min</small></b><span>Dauer</span></div>
         <div class="stat"><b class="num">${workoutDoneSets(w)}</b><span>Sätze</span></div>
         <div class="stat"><b class="num">${volumeShort(workoutVolume(w), u)}</b><span>Volumen${prs ? ` · ${prs} PR` : ''}</span></div>
       </div></div>
-      ${w.entries.map((e) => {
+      ${w.entries.filter((e) => e.sets.some((s) => s.done)).map((e) => {
     const done = e.sets.filter((s) => s.done);
     return `
         <div class="section">
@@ -249,11 +249,15 @@ registerPage('workout', {
               <div class="row-main"><span class="row-title strong">${esc(entryName(e, names))}</span></div>
               ${done.length ? deltaPill(compareToPrevious(e, w), u) : ''}${chev}
             </button>
-            ${done.length ? done.map((s, i) => `
-              <div class="set-line"><span>${i + 1}</span><span>${esc(formatSet(s, u))}</span>${s.pr ? '<span class="pr-mark">PR</span>' : '<span></span>'}</div>`).join('') : '<div class="set-line"><span></span><span class="muted">Keine Sätze abgehakt</span><span></span></div>'}
+            ${done.map((s, i) => `
+              <div class="set-line"><span>${i + 1}</span><span>${esc(formatSet(s, u))}</span>${s.pr ? '<span class="pr-mark">PR</span>' : '<span></span>'}</div>`).join('')}
           </div>
         </div>`;
   }).join('')}
+      ${(() => {
+    const skipped = w.entries.filter((e) => !e.sets.some((s) => s.done)).map((e) => entryName(e, names));
+    return skipped.length ? `<p class="section-foot skipped">Ausgelassen: ${esc(skipped.join(', '))}</p>` : '';
+  })()}
       <div class="section">
         <div class="list">
           ${!w.routineId && w.entries.length ? `<button class="row accent center" data-action="workout-save-plan" data-id="${w.id}"><div class="row-main"><span class="row-title">Als Plan speichern</span></div></button>` : ''}
