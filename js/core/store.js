@@ -288,6 +288,12 @@ export const Store = {
     target.removedOn = onDay;
     write(KEYS.supplements, list);
   },
+  // Neustart: alle aktiven Supplements zählen erst ab `day`. Was davor war,
+  // bleibt gespeichert, taucht aber weder im Kalender als vergessen noch in
+  // Serie und Quote auf. Pläne, Übungen und Trainings bleiben unberührt.
+  restartSupplements(day) {
+    write(KEYS.supplements, Store.getSupplements().map((s) => (s.removedOn ? s : { ...s, since: day })));
+  },
   getSupplementLog() {
     return read(KEYS.supplementLog, {});
   },

@@ -160,14 +160,11 @@ h1, h2, h3, h4, p { margin: 0; }
   position: absolute;
   inset: 0;
   z-index: 3;
-  width: 100%;
-  height: 100%;
   margin: 0;
-  opacity: 0;
   border-radius: inherit;
   cursor: pointer;
-  touch-action: pan-x pan-y;
 }
+.hap-switch { position: fixed; left: 0; top: 0; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
 html:not(.ios) .hap, html.no-haptics .hap { display: none; }
 
 /* ==========================================================================
@@ -833,17 +830,6 @@ button.tile:active, .tile[data-action]:active { transform: scale(0.97); transiti
 .hero-switch svg { width: 15px; height: 15px; }
 .hero-title { font-size: 32px; font-weight: 700; letter-spacing: -0.024em; line-height: 1.1; margin-top: 12px; text-wrap: balance; }
 .hero-meta { font-size: 15px; margin-top: 6px; opacity: 0.88; }
-.hero-preview {
-  margin-top: 14px;
-  font-size: 14px;
-  line-height: 1.5;
-  opacity: 0.9;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-}
-.hero-preview i { font-style: normal; opacity: 0.55; padding: 0 7px; }
 .hero .chips { margin-top: 14px; }
 .hero .chip { background: color-mix(in srgb, var(--on-accent) 18%, transparent); color: var(--on-accent); }
 .hero-time { font-family: var(--font-round); font-size: 50px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; margin-top: 12px; font-variant-numeric: tabular-nums; }
@@ -1005,9 +991,6 @@ button.tile:active, .tile[data-action]:active { transform: scale(0.97); transiti
 .drag-active { z-index: 5; box-shadow: var(--shadow-float); border-radius: 14px; }
 
 .group-head {
-  position: sticky;
-  top: 0;
-  z-index: 1;
   padding: 18px 6px 8px;
   font-size: 13px;
   font-weight: 700;
@@ -1016,7 +999,6 @@ button.tile:active, .tile[data-action]:active { transform: scale(0.97); transiti
   letter-spacing: 0.04em;
   background: var(--bg);
 }
-.screen .group-head { top: calc(var(--safe-top) + 52px); }
 .pick-row .check { width: 26px; height: 26px; }
 .pick-row .check svg { width: 15px; height: 15px; }
 
@@ -1588,7 +1570,7 @@ button.set-prev:active { background: var(--fill); }
 .sheet:has(.sheet-footer:not([hidden])) .sheet-body { padding-bottom: 12px; }
 
 /* Menü am Knopf (iOS-Pull-down) */
-.menu-shade { position: fixed; inset: 0; z-index: 64; }
+.menu-shade { position: fixed; inset: 0; z-index: 64; cursor: pointer; }
 .menu-shade.ctx { background: rgba(0, 0, 0, 0.12); -webkit-backdrop-filter: blur(0); backdrop-filter: blur(0); transition: background-color 0.3s, backdrop-filter 0.3s, -webkit-backdrop-filter 0.3s; }
 .menu-shade.ctx.show { -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
 :root[data-theme="dark"] .menu-shade.ctx { background: rgba(0, 0, 0, 0.35); }

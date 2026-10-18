@@ -83,7 +83,6 @@ function heroHtml() {
       </div>
       <h2 class="hero-title">${esc(plan.name)}</h2>
       <div class="hero-meta">${plural(count, 'Übung', 'Übungen')}${minutes ? ` · ca. ${minutes} Min` : ''} · ${lastDone.has(plan.id) ? `zuletzt ${relativeDay(lastDone.get(plan.id))}` : 'noch nicht trainiert'}</div>
-      ${count ? `<p class="hero-preview">${names.map(esc).join('<i>·</i>')}</p>` : ''}
       <div class="hero-actions">
         <button class="btn btn-hero" data-action="start-routine" data-id="${plan.id}" ${count ? '' : 'disabled'}>${Icon.play} Training starten</button>
       </div>

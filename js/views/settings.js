@@ -122,6 +122,12 @@ registerPage('settings', {
         ${toggleRow('mobilityVoice', 'Sprachansage', 'Übung, Seitenwechsel und Atmung', s.mobilityVoice, Icon.voiceOn, TINT.teal)}
       </div>
 
+      <div class="section-label">Neu starten</div>
+      <div class="list icons">
+        <button class="row" data-action="fresh-start">${iconTile(Icon.restore, TINT.green)}<div class="row-main"><span class="row-title">Ab heute neu zählen</span>
+          <span class="row-sub">Supplement-Kalender, Serie und Quote beginnen heute. Pläne und Trainings bleiben.</span></div>${chev}</button>
+      </div>
+
       <div class="section-label">Daten</div>
       <div class="list icons">
         <button class="row" data-action="backup-export">${iconTile(Icon.archive, TINT.blue)}<div class="row-main"><span class="row-title">Sicherung erstellen</span>
@@ -165,6 +171,20 @@ registerActions({
     render();
   },
   'backup-export': () => exportBackup().then(() => render()),
+  'fresh-start': async () => {
+    const active = Store.getActive();
+    const stale = active && Date.now() - new Date(active.startedAt).getTime() > 12 * 3600000;
+    if (!(await confirmAction({
+      title: 'Ab heute neu zählen?',
+      message: `Vergangene Tage zählen im Supplement-Kalender nicht mehr als vergessen, Serie und Quote starten heute.${stale ? ' Das alte, nicht beendete Training wird verworfen.' : ''} Pläne, Übungen und Trainings bleiben erhalten.`,
+      confirmLabel: 'Ab heute neu zählen',
+      destructive: false,
+    }))) return;
+    Store.restartSupplements(dayKey());
+    if (stale) Store.clearActive();
+    render();
+    toast('Neustart – ab heute zählt alles');
+  },
   'wipe-data': async () => {
     if (!(await confirmAction({ title: 'Alle Daten löschen?', message: 'Pläne, Trainings, Supplements und Einstellungen werden unwiderruflich gelöscht.', confirmLabel: 'Alles löschen' }))) return;
     Store.wipeAll();

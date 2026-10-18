@@ -166,8 +166,11 @@ let openMenuCtl = null;
 
 // preview: true hebt das Element selbst hervor (Kontextmenü nach langem
 // Drücken) – der Hintergrund verschwimmt, das Element schwebt darüber.
+let lastMenuClose = { anchor: null, at: 0 };
 export function openMenu(anchor, items, { title = '', preview = false } = {}) {
-  openMenuCtl?.close(-1);
+  // Erneutes Antippen desselben Knopfs schließt nur (kein sofortiges Wiederöffnen)
+  if (openMenuCtl) { openMenuCtl.close(-1); return Promise.resolve(-1); }
+  if (lastMenuClose.anchor === anchor && performance.now() - lastMenuClose.at < 400) return Promise.resolve(-1);
   return new Promise((resolve) => {
     let rect = anchor.getBoundingClientRect();
     const shade = document.createElement('div');
@@ -228,6 +231,9 @@ export function openMenu(anchor, items, { title = '', preview = false } = {}) {
       close(i) {
         if (openMenuCtl !== ctl) return;
         openMenuCtl = null;
+        // Nur ein Wegtippen sperrt das Wiederöffnen – nach einer Auswahl darf
+        // direkt ein Folgemenü am selben Knopf aufgehen (z. B. Satzpause)
+        if (i < 0) lastMenuClose = { anchor, at: performance.now() };
         anchor.classList.remove('menu-anchor');
         el.classList.remove('open');
         el.classList.add('closing');
@@ -246,7 +252,9 @@ export function openMenu(anchor, items, { title = '', preview = false } = {}) {
       },
     };
     openMenuCtl = ctl;
-    shade.addEventListener('pointerdown', (e) => { e.preventDefault(); ctl.close(-1); });
+    // Schließen erst beim Klick: würde schon das Aufsetzen schließen, landete
+    // der Klick danach auf dem Knopf darunter und öffnete das Menü gleich wieder.
+    shade.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); ctl.close(-1); });
     el.addEventListener('click', (e) => {
       const b = e.target.closest('[data-i]');
       if (b && !b.disabled) ctl.close(+b.dataset.i);
