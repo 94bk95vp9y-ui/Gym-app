@@ -339,6 +339,19 @@ export const Store = {
     return next;
   },
 
+  // kg ↔ lb: alle gespeicherten Gewichte umrechnen (auf 0,1 gerundet – so
+  // kommt man beim Zurückstellen wieder beim alten Wert an)
+  convertWeights(factor) {
+    const conv = (w) => (w > 0 ? Math.round(w * factor * 10) / 10 : w);
+    const fix = (workout) => ({
+      ...workout,
+      entries: workout.entries.map((e) => ({ ...e, sets: e.sets.map((x) => ({ ...x, weight: conv(x.weight) })) })),
+    });
+    write(KEYS.workouts, read(KEYS.workouts, []).map(fix));
+    const active = Store.getActive();
+    if (active) write(KEYS.active, fix(active));
+  },
+
   // ---------- Sicherung ----------
   exportAll() {
     return {

@@ -1266,6 +1266,8 @@ button.set-prev:active { background: var(--fill); }
 .rest-label span { font-size: 12px; font-weight: 700; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.06em; }
 .rest-label b { font-family: var(--font-round); font-size: 34px; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; line-height: 1.05; transition: color 0.3s; }
 .rest.ending .rest-label b { color: var(--warn-strong); }
+.rest.all-done .rest-label b { font-family: var(--font); font-size: 19px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; }
+.rest.all-done .rest-label span { color: var(--success); }
 .rest-btn {
   height: 44px;
   min-width: 52px;

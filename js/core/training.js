@@ -42,11 +42,22 @@ export function previousSessionFor(exerciseId, workout) {
 
 // Bester Satz heute gegen den besten Satz der vorigen Einheit. Gewicht zählt
 // vor Wiederholungen: 82,5 × 6 nach 80 × 8 ist ein Plus von 2,5 kg.
+// Schwerster Satz (bei gleichem Gewicht der mit mehr Wiederholungen)
+function heaviestSet(sets) {
+  return (sets || []).filter((s) => s.done && s.reps > 0)
+    .reduce((best, s) => (!best || (s.weight || 0) > (best.weight || 0)
+      || ((s.weight || 0) === (best.weight || 0) && s.reps > best.reps) ? s : best), null);
+}
+
+// Schwerster Satz heute gegen den schwersten der vorigen Einheit. Gewicht
+// zählt vor Wiederholungen: 82,5 × 6 nach 80 × 8 ist ein Plus von 2,5 kg.
+// (Nach geschätztem 1RM auszuwählen und dann nach Gewicht zu vergleichen,
+// hätte leichte Wiederholungssätze als „−10 kg“ gewertet.)
 export function compareToPrevious(entry, workout) {
-  const today = bestSet(entry.sets);
+  const today = heaviestSet(entry.sets);
   if (!today) return null;
   const prev = previousSessionFor(entry.exerciseId, workout);
-  const before = prev ? bestSet(prev.entry.sets) : null;
+  const before = prev ? heaviestSet(prev.entry.sets) : null;
   if (!before) return { kind: 'new', delta: 0 };
   if ((today.weight || 0) !== (before.weight || 0)) {
     return { kind: 'weight', delta: Math.round(((today.weight || 0) - (before.weight || 0)) * 100) / 100 };
@@ -124,7 +135,10 @@ export function workoutFromRoutine(routine) {
     const ex = Store.getExercise(eid);
     return ex ? newEntry(ex, id, plannedSets(routine, eid)) : null;
   }).filter(Boolean);
-  return { id, routineId: routine.id, routineName: routine.name, startedAt: new Date().toISOString(), finishedAt: null, entries };
+  // Stand des Plans beim Start – „Plan anpassen?“ vergleicht damit, nicht mit
+  // einem Plan, der während des Trainings bearbeitet wurde
+  const plan = { exerciseIds: [...routine.exerciseIds], setCounts: { ...(routine.setCounts || {}) } };
+  return { id, routineId: routine.id, routineName: routine.name, startedAt: new Date().toISOString(), finishedAt: null, plan, entries };
 }
 
 export function blankWorkout() {
@@ -148,7 +162,7 @@ function historyBest(exerciseId, excludeWorkoutId) {
   }
   const key = `${exerciseId}|${excludeWorkoutId}`;
   if (bestCache.has(key)) return bestCache.get(key);
-  const best = { load: 0, reps: 0, any: false };
+  const best = { load: 0, reps: 0, any: false, anyLoad: false, anyReps: false };
   Store.getWorkouts().forEach((w) => {
     if (w.id === excludeWorkoutId) return;
     w.entries.forEach((e) => {
@@ -157,6 +171,7 @@ function historyBest(exerciseId, excludeWorkoutId) {
         const score = setScore(s);
         if (!score) return;
         best.any = true;
+        if (score.kind === 'load') best.anyLoad = true; else best.anyReps = true;
         best[score.kind] = Math.max(best[score.kind], score.value);
       });
     });
@@ -173,8 +188,13 @@ export function refreshPrFlags(workout, ei) {
   const winner = { load: -1, reps: -1 };
   entry.sets.forEach((set, i) => {
     set.pr = false;
-    const score = hist.any ? setScore(set) : null;
-    if (!score || score.value <= best[score.kind]) return;
+    // Verglichen wird nur mit derselben Art: ein Satz mit vergessenem Gewicht
+    // (0 kg) ist kein Wiederholungsrekord, wenn bisher immer mit Gewicht
+    // trainiert wurde – und der erste Satz mit Gewicht keiner nach reinem
+    // Körpergewicht.
+    const score = setScore(set);
+    if (!score || !hist[score.kind === 'load' ? 'anyLoad' : 'anyReps']) return;
+    if (score.value <= best[score.kind]) return;
     best[score.kind] = score.value;
     winner[score.kind] = i;
   });
@@ -262,8 +282,9 @@ export function planMinutes(routine) {
 }
 
 // Weicht das Training vom Plan ab (andere Übungen, Reihenfolge oder Satzzahl)?
-export function planDiff(workout, routine) {
-  if (!routine) return null;
+export function planDiff(workout, current) {
+  if (!current) return null;
+  const routine = workout.plan || current;
   const ids = workout.entries.map((e) => e.exerciseId);
   const added = ids.filter((id) => !routine.exerciseIds.includes(id)).length;
   const removed = routine.exerciseIds.filter((id) => !ids.includes(id)).length;

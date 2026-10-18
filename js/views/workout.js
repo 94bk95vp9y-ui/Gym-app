@@ -173,7 +173,7 @@ export function isWorkoutOpen() { return W.open; }
 // ---------- Darstellung ----------
 function prevSetText(set) {
   if (!set) return '—';
-  return set.weight > 0 ? `${formatNumber(set.weight)} × ${set.reps}` : `${set.reps} Wdh`;
+  return set.weight > 0 ? `${formatNumber(set.weight)}\u2009×\u2009${set.reps}` : `${set.reps} Wdh`;
 }
 
 function fatigueNote(lastSession, workout, ei, groupOf) {
@@ -253,7 +253,7 @@ function exerciseCardHtml(w, entry, ei, ctx) {
         ${fatigue ? `<p class="ex-hint">${esc(fatigue)}</p>` : ''}
         <div class="set-table">
           <div class="set-cols set-headrow"><span>Satz</span><span>Vorher</span><span>${ctx.unit}</span><span>Wdh</span><span></span></div>
-          ${entry.sets.map((s, si) => setRowHtml(s, ei, si, prevSets[si])).join('')}
+          ${entry.sets.map((s, si) => setRowHtml(s, ei, si, prevSets.length ? prevSets[Math.min(si, prevSets.length - 1)] : null)).join('')}
         </div>
         <button class="add-set" data-action="w-add-set" data-ei="${ei}">${Icon.plus} Satz</button>
       </div></div>
@@ -292,11 +292,13 @@ function paint() {
         </div>
       </main>
       <div id="rest-slot"></div>
+      <div id="done-slot"></div>
     </div>`;
   qs('#w-content', root).scrollTop = scroll;
   if (wasOpen) requestAnimationFrame(() => qs('.workout', root)?.classList.remove('instant'));
   W.restShown = false;
   syncRest();
+  syncAllDone(w);
   // Neu gezeichnet wird nach Löschen, Rückgängig, Hinzufügen – danach kann
   // an derselben Stelle ein anderer Satz stehen. Zahlenfeld lieber schließen.
   if (W.field) closeKeypad();
@@ -425,6 +427,25 @@ function startRest(exerciseId) {
   syncRest();
 }
 
+// Alle Sätze erledigt: statt einer Pause unten „Training beenden“ anbieten
+function syncAllDone(w = Store.getActive()) {
+  const slot = qs('#done-slot', root);
+  if (!slot || !w) return;
+  const p = workoutProgress(w);
+  const all = p.total > 0 && p.done === p.total;
+  if (all && !slot.firstElementChild) {
+    slot.innerHTML = `
+      <div class="rest glass all-done">
+        <div class="rest-main">
+          <div class="rest-label"><span>Geschafft</span><b>Alle Sätze erledigt</b></div>
+          <button class="rest-btn primary" data-action="w-finish">Beenden</button>
+        </div>
+      </div>`;
+  } else if (!all && slot.firstElementChild) {
+    slot.innerHTML = '';
+  }
+}
+
 function syncRest() {
   const slot = qs('#rest-slot', root);
   if (!slot) return;
@@ -515,12 +536,23 @@ function replaceExercise(ei) {
       const cur = Store.getActive();
       const ex = Store.getExercise(ids[0]);
       if (!cur || !ex) return;
-      const count = cur.entries[ei].sets.length;
-      cur.entries[ei] = newEntry(ex, cur.id, count);
+      const old = cur.entries[ei];
+      const loggedSets = old.sets.filter((x) => x.done).length;
+      // Schon abgehakte Sätze bleiben stehen: dann kommt die neue Übung für
+      // den Rest dazu (typisch: Gerät belegt, auf eine andere Übung wechseln)
+      const target = loggedSets ? ei + 1 : ei;
+      const entry = newEntry(ex, cur.id, loggedSets ? Math.max(1, old.sets.length - loggedSets) : old.sets.length);
+      if (loggedSets) {
+        old.sets = old.sets.filter((x) => x.done);
+        cur.entries.splice(target, 0, entry);
+      } else {
+        cur.entries[ei] = entry;
+      }
       Store.setActive(cur);
       paint();
-      popIn(qs(`.ex-card[data-ei="${ei}"]`, root));
-      if (ids.length > 1) toast('Ersetzt – weitere Auswahl ignoriert');
+      popIn(qs(`.ex-card[data-ei="${target}"]`, root));
+      if (loggedSets) toast(`${ex.name} übernimmt die restlichen Sätze`);
+      else if (ids.length > 1) toast('Ersetzt – weitere Auswahl ignoriert');
     },
   });
 }
@@ -634,6 +666,19 @@ function chooseRest(ei, anchor) {
 }
 
 // ---------- Beenden ----------
+// Ende des Trainings: normalerweise jetzt. Lag das Training lange offen
+// (vergessen zu beenden), zählt der letzte abgehakte Satz – sonst stünde
+// ein Training mit 26 Stunden Dauer im Verlauf.
+function finishTime(w) {
+  const now = Date.now();
+  const doneAts = w.entries.flatMap((e) => e.sets.filter((x) => x.done && x.doneAt).map((x) => x.doneAt));
+  const last = doneAts.length ? Math.max(...doneAts) : 0;
+  if (last && now - last > 90 * 60000) return last + 60000;
+  const start = new Date(w.startedAt).getTime();
+  if (!last && now - start > 5 * 3600000) return start + Math.max(30, workoutDoneSets(w) * 3) * 60000;
+  return now;
+}
+
 async function finish() {
   const w = Store.getActive();
   if (!w) return;
@@ -657,8 +702,8 @@ async function finish() {
   });
   if (!ok) return;
   const cur = Store.getActive();
-  cur.finishedAt = new Date().toISOString();
-  cur.entries.forEach((e) => e.sets.forEach((s) => { delete s.suggested; }));
+  cur.finishedAt = new Date(finishTime(cur)).toISOString();
+  cur.entries.forEach((e) => e.sets.forEach((s) => { delete s.suggested; delete s.doneAt; }));
   Store.finishActiveWorkout(cur);
   Sound.finish();
   minimizeWorkout();
@@ -829,7 +874,12 @@ function toggleSet(ei, si) {
     return false;
   }
   set.done = !set.done;
-  if (set.done) set.suggested = false;
+  if (set.done) {
+    set.suggested = false;
+    set.doneAt = Date.now();
+  } else {
+    delete set.doneAt;
+  }
   const prIndex = refreshPrFlags(w, ei);
   Store.setActive(w);
   if (row) {
@@ -842,10 +892,18 @@ function toggleSet(ei, si) {
   }
   updateCard(w, ei);
   updateProgress(w);
+  syncAllDone(w);
   advanceFocus(w, set.done && isEntryComplete(w.entries[ei]) ? ei : undefined);
   if (set.done) {
     document.activeElement?.blur?.();
-    startRest(w.entries[ei].exerciseId);
+    if (workoutProgress(w).done === workoutProgress(w).total) {
+      const bar = qs('#rest-slot .rest', root);
+      if (bar) bar.dataset.skipped = '1';
+      Store.setRest(null);
+      syncRest();
+    } else {
+      startRest(w.entries[ei].exerciseId);
+    }
     if (prIndex === si) {
       Sound.record();
       haptic(2);
@@ -918,6 +976,21 @@ function revealRow(ei, si) {
   else if (rect.top < topLimit) content.scrollBy({ top: rect.top - topLimit, behavior: 'smooth' });
 }
 
+function fallbackFor(w, ei, si, field) {
+  const sets = w.entries[ei].sets;
+  for (let i = si - 1; i >= 0; i -= 1) if (sets[i][field] > 0) return String(sets[i][field]);
+  const prev = prevFor(w, ei, si);
+  return prev && prev[field] > 0 ? String(prev[field]) : '';
+}
+
+// Vergleichssatz vom letzten Mal – dieselbe Zuordnung wie beim Vorbefüllen:
+// gibt es heute mehr Sätze, gilt der letzte Satz von damals
+function prevFor(w, ei, si) {
+  const last = lastSessionFor(w.entries[ei].exerciseId, w.id);
+  const sets = last ? last.entry.sets.filter((x) => x.done && x.reps > 0) : [];
+  return sets.length ? sets[Math.min(si, sets.length - 1)] : null;
+}
+
 function openField(ei, si, field) {
   const w = Store.getActive();
   const set = w?.entries[ei]?.sets[si];
@@ -936,9 +1009,18 @@ function openField(ei, si, field) {
     decimal: field === 'weight',
     step: field === 'weight' ? WEIGHT_STEP[unit()] : 1,
     primary: primaryFor(ei, si, field),
+    // ± bei leerem Feld startet beim Satz davor bzw. beim letzten Mal
+    fallback: fallbackFor(w, ei, si, field),
     onChange: (text, fresh) => applyFieldText(text, fresh),
     onPrimary: () => keypadPrimary(),
     onClose: () => {
+      // „80,“ o. ä. sauber als Zahl anzeigen
+      const cur = Store.getActive()?.entries[ei]?.sets[si];
+      const f = fieldEl(ei, si, field);
+      if (cur && f && !f.classList.contains('suggested')) {
+        const v = field === 'weight' ? (cur.weight > 0 ? formatNumber(cur.weight) : '') : (cur.reps > 0 ? String(cur.reps) : '');
+        qs('.sf-val', f).innerHTML = v ? esc(v) : '<span class="sf-ph">0</span>';
+      }
       W.field = null;
       markEditing();
       document.documentElement.classList.remove('kp-open');
@@ -961,6 +1043,16 @@ function applyFieldText(text, fresh) {
   const value = parseNumber(text);
   set[field] = field === 'reps' ? Math.floor(value) : value;
   const row = rowEl(ei, si);
+  // Ohne Wiederholungen ist ein Satz nicht erledigt
+  if (set.done && !(set.reps > 0)) {
+    set.done = false;
+    delete set.doneAt;
+    row?.classList.remove('done');
+    Store.setActive(w);
+    updateCard(w, ei);
+    updateProgress(w);
+    syncAllDone(w);
+  }
   if (set.suggested) {
     set.suggested = false;
     qsa('.set-field', row).forEach((i) => i.classList.remove('suggested'));
@@ -1074,8 +1166,7 @@ registerActions({
     const w = Store.getActive();
     const entry = w?.entries[ei];
     const set = entry?.sets[si];
-    const last = entry ? lastSessionFor(entry.exerciseId, w.id) : null;
-    const prev = last ? last.entry.sets.filter((s) => s.done && s.reps > 0)[si] : null;
+    const prev = entry ? prevFor(w, ei, si) : null;
     if (!set || !prev) return;
     set.weight = prev.weight || 0;
     set.reps = prev.reps;

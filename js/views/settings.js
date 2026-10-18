@@ -144,9 +144,23 @@ registerPage('settings', {
 });
 
 registerActions({
-  'set-seg': (el) => {
+  'set-seg': async (el) => {
     haptic();
     const { key } = el.dataset;
+    if (key === 'unit' && el.dataset.value !== Store.getSettings().unit) {
+      // Gewichte sind ohne Einheit gespeichert – ohne Umrechnen stünde aus
+      // 100 kg plötzlich 100 lb im Verlauf
+      const toLb = el.dataset.value === 'lb';
+      if (Store.getWorkouts().length || Store.getActive()) {
+        if (!(await confirmAction({
+          title: `Auf ${toLb ? 'Pfund (lb)' : 'Kilogramm (kg)'} umstellen?`,
+          message: 'Alle Gewichte im Verlauf werden umgerechnet.',
+          confirmLabel: 'Umstellen und umrechnen',
+          destructive: false,
+        }))) { render(); return; }
+        Store.convertWeights(toLb ? 2.20462 : 0.453592);
+      }
+    }
     const raw = el.dataset.value;
     const value = ['mobilityBudget'].includes(key) ? +raw : raw;
     Store.updateSettings({ [key]: value });
