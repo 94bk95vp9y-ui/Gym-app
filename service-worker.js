@@ -1,4 +1,4 @@
-const CACHE = 'gym-cache-v25';
+const CACHE = 'gym-cache-v26';
 const ASSETS = [
   './',
   './index.html',
@@ -45,6 +45,7 @@ const ASSETS = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',
+  './icons/icon-512-maskable.png',
 ];
 
 self.addEventListener('install', (event) => {
@@ -76,15 +77,23 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Netz zuerst – aber höchstens 2,5 s warten, wenn eine Kopie im Cache
+  // liegt: im Gym ist das Netz oft schlecht, und die App soll trotzdem sofort
+  // starten. Die Antwort aus dem Netz aktualisiert den Cache trotzdem.
+  // cache: 'no-cache' umgeht den HTTP-Cache (GitHub Pages: 10 Minuten), damit
+  // eine neue Version nicht stückweise mit alten Dateien gemischt ankommt.
+  const network = fetch(request, { cache: 'no-cache' }).then((response) => {
+    if (response && response.ok) {
+      const clone = response.clone();
+      caches.open(CACHE).then((cache) => cache.put(request, clone));
+    }
+    return response;
+  });
   event.respondWith(
-    fetch(request)
-      .then((response) => {
-        if (response && response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(request, clone));
-        }
-        return response;
-      })
-      .catch(() => caches.match(request).then((cached) => cached || caches.match('./index.html'))),
+    caches.match(request).then((cached) => {
+      if (!cached) return network.catch(() => caches.match('./index.html'));
+      const timeout = new Promise((resolve) => { setTimeout(() => resolve(cached), 2500); });
+      return Promise.race([network.catch(() => cached), timeout]);
+    }),
   );
 });

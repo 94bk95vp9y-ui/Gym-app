@@ -19,6 +19,8 @@ import { haptic, HAP } from '../ui/haptics.js';
 import { chev, iconTile, ring, emptyState, TINT } from '../ui/components.js';
 
 const ui = { month: null };
+// Neuer Tag (App über Nacht offen): Kalender springt auf den aktuellen Monat
+window.addEventListener('daychange', () => { ui.month = null; });
 const slotLabel = (id) => SLOTS.find((s) => s.id === id)?.label || '';
 
 function dayLabel(key) {

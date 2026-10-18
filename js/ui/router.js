@@ -45,7 +45,7 @@ function current() {
 function titleOf(entry) {
   const page = pages[entry.id];
   if (!page) return '';
-  return typeof page.title === 'function' ? page.title(entry.params || {}) : page.title;
+  return typeof page.title === 'function' ? safely(() => page.title(entry.params || {})) : page.title;
 }
 
 let liveBarHtml = () => '';
@@ -104,15 +104,32 @@ function keyOf(entry, tab = nav.tab, depth = nav.stacks[tab].length) {
   return `${tab}:${depth}:${entry.id}:${JSON.stringify(entry.params || {})}`;
 }
 
+// Auffangnetz: wirft eine Seite (etwa wegen kaputter Daten), bleibt die App
+// bedienbar – mit Hinweis und dem Weg zu Sicherung und Einstellungen.
+function safely(fn, fallback = '') {
+  try { return fn(); } catch (err) {
+    console.error(err);
+    return fallback;
+  }
+}
+
+const ERROR_HTML = `
+  <div class="empty-state">
+    <span class="empty-icon">${Icon.info}</span>
+    <strong>Ansicht konnte nicht geladen werden</strong>
+    <p>Deine Daten bleiben erhalten. In den Einstellungen kannst du eine Sicherung erstellen.</p>
+    <button class="btn btn-tinted" data-action="open-settings">Einstellungen</button>
+  </div>`;
+
 function buildScreen(entry, { tab = nav.tab, depth = nav.stacks[nav.tab].length } = {}) {
   const page = pages[entry.id];
   const params = entry.params || {};
   const pushed = depth > 0;
   const stack = nav.stacks[tab];
   const title = titleOf(entry);
-  const kicker = !pushed && page.kicker ? page.kicker(params) : '';
-  const right = page.right ? page.right(params) : '';
-  const footer = page.footer ? page.footer(params) : '';
+  const kicker = !pushed && page.kicker ? safely(() => page.kicker(params)) : '';
+  const right = page.right ? safely(() => page.right(params)) : '';
+  const footer = page.footer ? safely(() => page.footer(params)) : '';
   const parent = depth > 1 ? stack[depth - 2] : { id: tab, params: {} };
   const backLabel = titleOf(parent) || TABS.find((t) => t.id === tab)?.label || 'Zurück';
   const el = document.createElement('div');
@@ -134,7 +151,7 @@ function buildScreen(entry, { tab = nav.tab, depth = nav.stacks[nav.tab].length 
         <div class="page-head-text">${kicker ? `<div class="page-kicker">${esc(kicker)}</div>` : ''}<h1 class="large-title">${esc(title)}</h1></div>
         ${right ? `<div class="page-head-actions">${right}</div>` : ''}
       </div>`}
-      ${page.render(params)}
+      ${safely(() => page.render(params), ERROR_HTML)}
     </main>
     ${footer ? `<div class="screen-footer">${footer}</div>` : ''}`;
   return el;
@@ -155,7 +172,7 @@ function activate(el, scrollTop = 0) {
   content.addEventListener('scroll', onScroll, { passive: true });
   active = el;
   const entry = current();
-  pages[entry.id]?.mount?.(content, entry.params || {});
+  safely(() => pages[entry.id]?.mount?.(content, entry.params || {}));
 }
 
 function updateChrome() {

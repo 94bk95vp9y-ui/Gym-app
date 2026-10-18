@@ -42,9 +42,18 @@ function read(key, fallback) {
   }
 }
 
+// Schlägt das Speichern fehl (Speicher voll), wird der Zwischenspeicher
+// verworfen – sonst gälte im Speicher etwas anderes als auf dem Gerät – und
+// die App meldet sich (siehe main.js).
 function write(key, value) {
   const raw = JSON.stringify(value);
-  localStorage.setItem(key, raw);
+  try {
+    localStorage.setItem(key, raw);
+  } catch (err) {
+    cache.delete(key);
+    window.dispatchEvent(new CustomEvent('storage-failed', { detail: { key, err } }));
+    throw err;
+  }
   cache.set(key, { raw, value });
 }
 
@@ -162,6 +171,11 @@ export function validateBackup(data) {
     || w.entries.some((e) => !e || !Array.isArray(e.sets)))) {
     return 'Die Trainings in der Sicherung sind beschädigt.';
   }
+  if ((data.workouts || []).some((w) => w.entries.some((e) => !e.exerciseId || e.sets.some((x) => !x || typeof x !== 'object')))) {
+    return 'Die Trainings in der Sicherung sind beschädigt.';
+  }
+  if ((data.supplements || []).some((x) => !x || !x.id || typeof x.name !== 'string' || typeof x.since !== 'string')) return 'Die Supplements in der Sicherung sind beschädigt.';
+  if ('supplementLog' in data && data.supplementLog && Object.values(data.supplementLog).some((d) => !d || typeof d !== 'object')) return 'Die Supplement-Daten in der Sicherung sind beschädigt.';
   if ('settings' in data && (typeof data.settings !== 'object' || Array.isArray(data.settings))) return 'Die Einstellungen in der Sicherung sind beschädigt.';
   if ('supplementLog' in data && (typeof data.supplementLog !== 'object' || Array.isArray(data.supplementLog))) return 'Die Supplement-Daten in der Sicherung sind beschädigt.';
   return null;

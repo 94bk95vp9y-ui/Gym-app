@@ -19,7 +19,12 @@ import {
   chev, dateBadge, emptyState, deltaPill,
 } from '../ui/components.js';
 
-const ui = { seg: 'workouts', month: null };
+const ui = { seg: 'workouts', month: null, allMonths: false };
+// Viele Jahre Training ergeben Hunderte Zeilen – die Liste zeigt erst nur die
+// letzten Monate, ältere auf Wunsch.
+const RECENT_MONTHS = 6;
+// Neuer Tag (App über Nacht offen): Kalender springt auf den aktuellen Monat
+window.addEventListener('daychange', () => { ui.month = null; });
 const unit = () => unitLabel(Store.getSettings().unit);
 
 function volumeText(volume, u) {
@@ -103,9 +108,11 @@ function workoutsHtml() {
     }
     months[months.length - 1].items.push(w);
   });
+  const shown = ui.allMonths ? months : months.slice(0, RECENT_MONTHS);
+  const hidden = months.slice(shown.length).reduce((n, m) => n + m.items.length, 0);
   return `
     <div class="section">${calendarHtml()}</div>
-    ${months.map((m) => `
+    ${shown.map((m) => `
       <div class="section">
         <div class="section-head"><h2>${esc(m.label)}</h2><span class="meta">${plural(m.items.length, 'Training', 'Trainings')}</span></div>
         <div class="list">${m.items.map((w) => {
@@ -119,7 +126,8 @@ function workoutsHtml() {
             </div>${chev}
           </button>`;
   }).join('')}</div>
-      </div>`).join('')}`;
+      </div>`).join('')}
+    ${hidden ? `<div class="section"><button class="btn btn-plain btn-block" data-action="history-more">${HAP}Ältere anzeigen (${plural(hidden, 'Training', 'Trainings')})</button></div>` : ''}`;
 }
 
 // ---------- Statistik ----------
@@ -302,6 +310,10 @@ registerActions({
     seg.style.setProperty('--i', ui.seg === 'workouts' ? 0 : 1);
     seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === el));
     qs('#history-body').innerHTML = ui.seg === 'workouts' ? workoutsHtml() : statsHtml();
+  },
+  'history-more': () => {
+    ui.allMonths = true;
+    qs('#history-body').innerHTML = workoutsHtml();
   },
   'history-month': (el) => {
     const d = new Date(ui.month.y, ui.month.m + +el.dataset.delta, 1);

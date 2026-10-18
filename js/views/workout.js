@@ -382,7 +382,7 @@ function liveText(w) {
 let liveTicker = null;
 function startLiveTicker() {
   clearInterval(liveTicker);
-  let resting = !!Store.getRest();
+  let restEnd = Store.getRest()?.endsAt || 0;
   liveTicker = setInterval(() => {
     const w = Store.getActive();
     if (!w || W.open) { clearInterval(liveTicker); return; }
@@ -391,12 +391,12 @@ function startLiveTicker() {
       if (el.classList.contains('hero-time')) rollText(el, liveText(w));
       else el.textContent = liveText(w);
     }
-    const now = !!Store.getRest();
-    if (resting && !now && document.visibilityState === 'visible') {
+    const rest = Store.getRest();
+    if (restEnd && !rest && document.visibilityState === 'visible' && restEndedJustNow(restEnd)) {
       Sound.restOver();
       toast('Pause vorbei');
     }
-    resting = now;
+    restEnd = rest?.endsAt || 0;
   }, 500);
 }
 
@@ -446,6 +446,12 @@ function syncAllDone(w = Store.getActive()) {
   }
 }
 
+// Kommt die App erst Minuten nach dem Pausenende zurück, wäre „Pause vorbei“
+// samt Ton nur noch verwirrend.
+function restEndedJustNow(endsAt) {
+  return Date.now() - endsAt < 3000;
+}
+
 function syncRest() {
   const slot = qs('#rest-slot', root);
   if (!slot) return;
@@ -455,7 +461,7 @@ function syncRest() {
     if (bar && !bar.classList.contains('leaving')) {
       bar.classList.add('leaving');
       setTimeout(() => bar.remove(), 240);
-      if (W.restShown && !bar.dataset.skipped && document.visibilityState === 'visible') {
+      if (W.restShown && !bar.dataset.skipped && document.visibilityState === 'visible' && restEndedJustNow(W.restEndsAt || 0)) {
         Sound.restOver();
         toast('Pause vorbei');
       }
@@ -463,6 +469,7 @@ function syncRest() {
     W.restShown = false;
     return;
   }
+  W.restEndsAt = rest.endsAt;
   const remaining = Math.max(0, (rest.endsAt - Date.now()) / 1000);
   if (!bar) {
     const w = Store.getActive();

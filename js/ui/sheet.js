@@ -9,6 +9,10 @@ import { dimStatusBar } from './theme.js';
 
 const root = document.getElementById('sheet-root');
 const stack = [];
+// Ein Doppeltipp auf einen Knopf soll ein Sheet nicht gleich wieder
+// schließen: der zweite Tipp landet sonst auf dem frisch eingeblendeten Schatten.
+let shownAt = 0;
+const justOpened = () => performance.now() - shownAt < 350;
 let backdrop = null;
 
 function ensureBackdrop() {
@@ -16,6 +20,7 @@ function ensureBackdrop() {
   backdrop = document.createElement('div');
   backdrop.className = 'backdrop';
   backdrop.addEventListener('click', () => {
+    if (justOpened()) return;
     const top = stack[stack.length - 1];
     if (top && top.dismissible) top.close();
   });
@@ -24,6 +29,9 @@ function ensureBackdrop() {
 }
 
 function syncStack() {
+  if (!stack.length && document.documentElement.classList.contains('sheet-open')) {
+    window.dispatchEvent(new Event('sheets-closed'));
+  }
   ensureBackdrop().classList.toggle('show', stack.length > 0);
   dimStatusBar(stack.length > 0);
   document.documentElement.classList.toggle('sheet-open', stack.length > 0);
@@ -40,6 +48,7 @@ export function openSheet({
   title = '', body = '', footer = '', left = null, right, full = false, className = '',
   onMount = null, onClose = null, dismissible = true,
 } = {}) {
+  shownAt = performance.now();
   const el = document.createElement('section');
   el.className = `sheet ${full ? 'full' : ''} ${className}`;
   el.setAttribute('role', 'dialog');
@@ -324,6 +333,7 @@ document.addEventListener('contextmenu', (e) => {
 // actions: [{ label, style: 'destructive'|'default', handler }]
 export function actionSheet({ title = '', message = '', actions = [], cancelLabel = 'Abbrechen' } = {}) {
   return new Promise((resolve) => {
+    shownAt = performance.now();
     const el = document.createElement('div');
     el.className = 'action-sheet';
     el.innerHTML = `
@@ -345,7 +355,7 @@ export function actionSheet({ title = '', message = '', actions = [], cancelLabe
       if (i >= 0) actions[i].handler?.();
       resolve(i);
     };
-    shade.addEventListener('click', () => done(-1));
+    shade.addEventListener('click', () => { if (!justOpened()) done(-1); });
     el.addEventListener('click', (e) => {
       const b = e.target.closest('[data-i]');
       if (b) done(+b.dataset.i);

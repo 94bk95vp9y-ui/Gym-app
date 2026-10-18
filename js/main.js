@@ -5,6 +5,7 @@ import { registerActions, runAction, runInput } from './ui/dom.js';
 import { render, pop, switchTab } from './ui/router.js';
 import { topSheet } from './ui/sheet.js';
 import { enableChartScrub } from './ui/chart.js';
+import { toast } from './ui/toast.js';
 import './views/today.js';
 import './views/training.js';
 import './views/supplements.js';
@@ -35,6 +36,14 @@ document.addEventListener('click', (e) => {
   if (!el || el.disabled) return;
   runAction(el.dataset.action, el, e);
 });
+// Karten mit role="button" (sie enthalten selbst Knöpfe) per Tastatur bedienbar
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const el = e.target;
+  if (!(el instanceof HTMLElement) || el.getAttribute('role') !== 'button' || !el.dataset.action) return;
+  e.preventDefault();
+  el.click();
+});
 document.addEventListener('input', (e) => {
   const el = e.target.closest('[data-input]');
   if (el) runInput(el.dataset.input, el, e);
@@ -46,15 +55,33 @@ document.addEventListener('change', (e) => {
 
 // Die App bleibt auf dem iPhone oft tagelang im Speicher. Kommt sie zurück,
 // muss zumindest der Tag stimmen – sonst stünden noch die abgehakten
-// Supplements von gestern da.
+// Supplements von gestern da. Auch wer über Mitternacht offen bleibt, sieht
+// den neuen Tag spätestens nach einer Minute. Offene Blätter werden nicht
+// weggerissen; der Wechsel folgt, sobald sie zu sind.
 let renderedDay = dayKey();
+function checkDay() {
+  if (dayKey() === renderedDay || topSheet()) return;
+  renderedDay = dayKey();
+  window.dispatchEvent(new CustomEvent('daychange'));
+  render();
+}
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   workoutVisible();
-  if (dayKey() !== renderedDay && !topSheet()) {
-    renderedDay = dayKey();
-    render();
-  }
+  checkDay();
+});
+window.addEventListener('sheets-closed', checkDay);
+setInterval(() => { if (document.visibilityState === 'visible') checkDay(); }, 60000);
+
+// Voller Speicher: Safari wirft beim Schreiben. Die Änderung ist dann nicht
+// gespeichert – lieber laut sagen als still verlieren.
+let storageWarned = 0;
+window.addEventListener('storage-failed', () => {
+  if (Date.now() - storageWarned < 10000) return;
+  storageWarned = Date.now();
+  toast('Speichern fehlgeschlagen – Speicher voll? Bitte Sicherung erstellen.', { duration: 6000 });
+  // Anzeige auf den tatsächlich gespeicherten Stand zurückholen
+  if (!topSheet()) setTimeout(render, 0);
 });
 
 applySettings();
