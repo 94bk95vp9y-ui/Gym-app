@@ -696,11 +696,16 @@ function openSummary(id) {
   const facts = [];
   if (prevVolume > 0 && volume > 0) {
     const pct = Math.round((volume / prevVolume - 1) * 100);
-    facts.push({
+    const vol = (v) => (v >= 1000 && u === 'kg' ? `${formatNumber(Math.round(v / 100) / 10)} t` : `${formatVolume(v)} ${u}`);
+    // Deutlich weniger ist meist ein bewusst kürzeres Training – sachlich statt als Minus
+    facts.push(pct >= 0 ? {
       icon: Icon.trendUp,
-      text: pct > 0 ? `${pct} % mehr Volumen als beim letzten Mal`
-        : pct < 0 ? `${-pct} % weniger Volumen als beim letzten Mal` : 'Gleiches Volumen wie beim letzten Mal',
+      text: pct > 0 ? `${pct} % mehr Volumen als beim letzten Mal` : 'Gleiches Volumen wie beim letzten Mal',
       sub: relativeDay(previous.startedAt),
+    } : {
+      icon: Icon.chart,
+      text: pct > -15 ? `Volumen fast wie beim letzten Mal` : 'Kürzer als beim letzten Mal',
+      sub: `${vol(volume)} statt ${vol(prevVolume)} · ${relativeDay(previous.startedAt)}`,
     });
   }
   facts.push({
