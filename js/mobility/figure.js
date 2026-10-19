@@ -12,6 +12,7 @@
 // rechte entsteht durch Spiegeln.
 
 import * as THREE from '../vendor/three.module.min.js';
+import { loadFigure } from './skin.js';
 
 // ---------- Vektoren als [x, y, z] ----------
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -52,7 +53,7 @@ function ik(root, target, l1, l2, pole) {
   if (len(p) < 1e-5) p = Math.abs(dir[1]) < 0.9 ? [0, 1, 0] : [0, 0, 1];
   p = norm(p);
   const mid = add(root, add(mul(dir, Math.cos(a) * l1), mul(p, Math.sin(a) * l1)));
-  return { mid, end: add(root, mul(dir, dist)) };
+  return { mid, end: add(root, mul(dir, dist)), bend: p };
 }
 
 // Pose -> Gelenkpositionen
@@ -81,6 +82,7 @@ export function solvePose(pose) {
     const leg = ik(hip, pose[`foot${s}`], BODY.thigh, BODY.shin, kneePole);
     j[`knee${s}`] = leg.mid;
     j[`ankle${s}`] = leg.end;
+    j[`kneeBend${s}`] = leg.bend;
     const toeTarget = pose[`toe${s}`] || add(leg.end, [0, -0.05, BODY.foot]);
     j[`footDir${s}`] = norm(sub(toeTarget, leg.end));
 
@@ -90,6 +92,7 @@ export function solvePose(pose) {
     const arm = ik(sh, hand, BODY.upperArm, BODY.foreArm, elbowPole);
     j[`elbow${s}`] = arm.mid;
     j[`wrist${s}`] = arm.end;
+    j[`elbowBend${s}`] = arm.bend;
   });
   return j;
 }
@@ -201,6 +204,26 @@ function roundedRect(w, h, r) {
   s.lineTo(x, y + r);
   s.quadraticCurveTo(x, y, x + r, y);
   return s;
+}
+
+// Teilenamen der Gliederpuppe → Knochen des Modells
+const SKIN_PARTS = {
+  thigh: ['thigh'], shin: ['shin'], knee: ['thigh', 'shin'], upperArm: ['upper_arm'], foreArm: ['forearm'],
+  shoulder: ['shoulder'], hipBall: ['pelvis'], foot: ['foot', 'toe', 'heel02'], ankle: ['foot'],
+  hand: ['hand'], elbow: ['upper_arm', 'forearm'], wrist: ['hand'],
+};
+const SKIN_SINGLE = {
+  chest: ['spine003'], abdomen: ['spine001', 'spine002'], pelvis: ['spine', 'pelvisL', 'pelvisR'],
+  neckSeg: ['spine004'], head: ['spine005'], nose: ['spine005'],
+};
+function skinBones(names) {
+  const out = new Set();
+  names.forEach((n) => {
+    if (SKIN_SINGLE[n]) { SKIN_SINGLE[n].forEach((b) => out.add(b)); return; }
+    const m = /^(\w+?)([LR])$/.exec(n);
+    if (m && SKIN_PARTS[m[1]]) SKIN_PARTS[m[1]].forEach((b) => out.add(`${b}${m[2]}`));
+  });
+  return out;
 }
 
 export class FigureStage {
@@ -372,6 +395,35 @@ export class FigureStage {
     // Die Wand steht meist abgewandt vom Hauptlicht – etwas Eigenleuchten,
     // damit sie nicht wie ein dunkler Block wirkt.
     this.wallMaterial.emissive.set(dark ? 0x1e1e21 : 0x9a9894);
+    this.palette = {
+      skin: new THREE.Color(dark ? 0xc99a7c : 0xdcab8b),
+      shirt: new THREE.Color(dark ? 0x5b6070 : 0x3d4250),
+      shorts: new THREE.Color(dark ? 0x30333b : 0x262930),
+      shoes: new THREE.Color(dark ? 0xd8d8dc : 0xf4f4f6),
+      hair: new THREE.Color(0x3b2a20),
+      accent,
+    };
+    this.paintSkin();
+  }
+
+  // Menschliches Modell laden; ohne Datei bleibt die Gliederpuppe.
+  async useModel() {
+    if (this.skin) return true;
+    if (!this.modelLoading) {
+      this.modelLoading = loadFigure().then((fig) => {
+        this.skin = fig;
+        this.scene.add(fig.mesh);
+        this.body.visible = false;
+        this.paintSkin();
+        if (this.ex) this.update(this.lastT || 0);
+        return true;
+      }).catch(() => { this.modelLoading = null; return false; });
+    }
+    return this.modelLoading;
+  }
+
+  paintSkin() {
+    if (this.skin && this.palette) this.skin.paint(this.palette, this.skinHighlight || new Set());
   }
 
   // Übung einrichten: Hervorhebung, Requisiten, Bildausschnitt.
@@ -383,6 +435,8 @@ export class FigureStage {
     Object.entries(this.parts).forEach(([name, m]) => {
       m.material = hi.has(name) ? this.hiMaterial : this.bodyMaterial;
     });
+    this.skinHighlight = skinBones(hi);
+    this.paintSkin();
 
     this.walls.forEach((w) => this.scene.remove(w));
     this.walls = (ex.props || []).filter((p) => p.type === 'wall').map((p) => {
@@ -443,6 +497,7 @@ export class FigureStage {
   pose(t) {
     const j = solvePose(sampleExercise(this.ex, t, this.side));
     this.joints = j;
+    if (this.skin) this.skin.pose(j);
     const P = this.parts;
     const place = (m, a, b) => {
       tmpA.set(a[0], a[1], a[2]);

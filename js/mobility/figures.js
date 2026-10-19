@@ -19,6 +19,7 @@ export async function stageFor(name) {
   const m = await load();
   if (!stages[name]) stages[name] = new m.FigureStage();
   stages[name].applyTheme(mzTheme());
+  await stages[name].useModel();
   return stages[name];
 }
 
@@ -48,10 +49,11 @@ export async function fillThumbs(root) {
   if (!thumbStage) thumbStage = new m.FigureStage({ thumb: true });
   const theme = mzTheme();
   thumbStage.applyTheme(theme);
+  const model = await thumbStage.useModel();
   for (const img of imgs) {
     const ex = exercise(img.dataset.thumb);
     if (!ex) continue;
-    const key = `${ex.id}:${theme.dark}:${theme.accent}`;
+    const key = `${ex.id}:${theme.dark}:${theme.accent}:${model}`;
     if (!cache.has(key)) {
       // Ein Bild pro Frame – sonst stockt das Öffnen
       await new Promise((r) => requestAnimationFrame(r));
