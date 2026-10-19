@@ -2,7 +2,7 @@
 // Beine plus wechselnder Tagesfokus, passend zur eingestellten Dauer) und die
 // zwei tiefen Einheiten für die Beine.
 import { Store } from '../core/store.js';
-import { CORE, FOCUS, DEEP, LEG_PLAN, fitToBudget, routineSeconds } from './plans.js';
+import { CORE, FOCUS, DEEP, LEG_PLAN, KICK_PLAN, KICK_RULES, fitToBudget, routineSeconds } from './plans.js';
 import { exercise } from './library.js';
 
 const DAY = 86400000;
@@ -44,9 +44,14 @@ export function planRoutines() {
   return LEG_PLAN.map((d) => ({ ...d, kind: 'plan', items: d.items.filter((x) => exercise(x.id)) }));
 }
 
+// Tägliche Kick-Routine nach deinem Plan, in drei Varianten
+export function kickRoutines() {
+  return KICK_PLAN.map((d) => ({ ...d, kind: 'plan', rules: KICK_RULES, items: d.items.filter((x) => exercise(x.id)) }));
+}
+
 export function routineById(id) {
   if (id === 'daily') return dailyRoutine();
-  return [...planRoutines(), ...deepRoutines()].find((r) => r.id === id) || null;
+  return [...kickRoutines(), ...planRoutines(), ...deepRoutines()].find((r) => r.id === id) || null;
 }
 
 export function routineTotal(routine) {

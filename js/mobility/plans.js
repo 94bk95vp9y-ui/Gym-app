@@ -20,12 +20,18 @@ export const SWITCH_SECONDS = 6;
 // Kurze Pause zwischen zwei Sätzen derselben Übung
 export const SET_REST = 10;
 
-// Anspannen-Loslassen: 3 Durchgänge, danach ein letztes, tieferes Halten
-export const PNF = { cycles: 3, stretch: 20, contract: 6, relax: 3, final: 20 };
-export const PNF_SECONDS = PNF.cycles * (PNF.stretch + PNF.contract + PNF.relax) + PNF.final;
+// Anspannen-Loslassen: erst dehnen (lead), dann Durchgänge aus Anspannen,
+// Loslassen und tieferem Halten. Ein Plan kann das pro Eintrag anpassen
+// (item.pnf), Standard sind 3 Durchgänge mit 20 s Halten.
+export const PNF = { lead: 20, cycles: 3, contract: 6, relax: 3, hold: 20 };
+export const pnfOf = (item) => ({ ...PNF, ...(item?.pnf || {}) });
+export const pnfSeconds = (cfg = PNF) => cfg.lead + cfg.cycles * (cfg.contract + cfg.relax + cfg.hold);
+export const PNF_SECONDS = pnfSeconds(PNF);
 
 const it = (id, seconds, extra = {}) => ({ id, seconds, ...extra });
-const pnf = (id, section) => ({ id, seconds: PNF_SECONDS, mode: 'pnf', section });
+const pnf = (id, section, cfg = null, extra = {}) => ({
+  id, seconds: pnfSeconds({ ...PNF, ...(cfg || {}) }), mode: 'pnf', section, ...(cfg ? { pnf: cfg } : {}), ...extra,
+});
 
 // ---------- Tägliche Routine ----------
 // Kern: jeden Tag gleich (deine bisherige tägliche Routine, leicht verdichtet)
@@ -230,3 +236,164 @@ export function fitToBudget(items, budgetMin, prep) {
   }
   return list;
 }
+
+// ---------- Tägliche Mobility-Routine für hohe Kicks ----------
+// Nach deinem Plan (PDF): jeden Tag gleich, ca. 55 Minuten, getrennt vom Gym.
+// Fünf Teile: A Aufwärmen, B statisch und Anspannen-Loslassen, C aktive
+// Beweglichkeit, D kontrollierte Kicks, E Kraft in Dehnposition.
+// Varianten: „Kurz“ halbiert Teil B, „Nach Beintag“ macht Teil E nur
+// einen Satz (bei starkem Muskelkater).
+const KA = 'A · Aufwärmen';
+const KB = 'B · Statisch und PNF dehnen';
+const KC = 'C · Aktive Beweglichkeit';
+const KD = 'D · Kontrollierte Kicks';
+const KE = 'E · Kraft in Dehnposition';
+const INTENSITY = 'Dehnintensität 6–7 von 10: deutliches Ziehen, ruhiges Atmen noch möglich.';
+
+export const KICK_RULES = [
+  'Nicht direkt vor dem Gym-Beintag – an diesem Tag nach dem Gym oder zu einer anderen Tageszeit.',
+  'Am Tag nach dem Beintag bei starkem Muskelkater: Variante „Nach Beintag“ (Teil E nur 1 Satz, Dehnintensität 5–6).',
+  'Fällt ein Tag aus, nicht nachholen.',
+  'Wenn 55 Minuten zu lang werden: Variante „Kurz“ (Teil B halbiert).',
+  `${INTENSITY} Abbrechen bei stechendem Schmerz, Gelenkschmerz, Kribbeln oder Taubheit.`,
+  'Teil E: jeden Satz 2–3 Wiederholungen vor der Erschöpfung beenden, nie bis zum Muskelversagen.',
+  'Die Kicks in Teil D ersetzen kein Techniktraining – die Technik selbst sollte dir ein Trainer zeigen.',
+];
+
+const HAM_PNF = { lead: 20, cycles: 2, contract: 5, relax: 2, hold: 20 };
+const FROG_PNF = { lead: 0, cycles: 3, contract: 5, relax: 2, hold: 20 };
+const HAM_TEXT = {
+  name: 'Beinheben mit Gurt',
+  cues: [
+    'Rückenlage, ein Bein gestreckt am Boden, der Oberschenkel bleibt unten.',
+    'Gurt um den Fußballen, das gestreckte Bein nach oben ziehen, bis es hinten deutlich zieht.',
+    'Becken flach am Boden, Knie gestreckt, Fuß locker.',
+  ],
+  mistakes: ['Fuß stark anziehen (verstärkt den Nervenzug, Kribbeln möglich).', 'Becken hebt sich.', 'Knie beugt sich.'],
+};
+
+function kickPlan({ short = false, sore = false } = {}) {
+  // Teil B halbieren: halbe Haltezeit bzw. halbe Satzzahl
+  const half = (seconds) => (short ? Math.max(20, Math.round(seconds / 2 / 5) * 5) : seconds);
+  const halfSets = (sets) => (short ? Math.ceil(sets / 2) : sets);
+  const eSets = sore ? 1 : 2;
+  return [
+    it('jump-rope', 180, { section: KA }),
+    it('leg-swing', 25, {
+      section: KA,
+      ex: {
+        name: 'Beinpendeln vor und zurück',
+        tempo: '12 pro Seite – klein anfangen, jede Wiederholung etwas höher',
+        cues: ['Seitlich zur Wand, eine Hand an der Wand, Standbein minimal gebeugt.', 'Das äußere Bein locker gestreckt vor und zurück schwingen.', 'Klein anfangen, mit jeder Wiederholung etwas höher. Oberkörper bleibt aufrecht.'],
+        mistakes: ['Mit dem Oberkörper mitschaukeln, um Höhe zu schummeln.'],
+      },
+    }),
+    it('leg-swing-side', 25, {
+      section: KA,
+      ex: {
+        name: 'Beinpendeln seitlich',
+        tempo: '12 pro Seite – nach außen immer etwas höher',
+        cues: ['Gesicht zur Wand, beide Hände an der Wand.', 'Ein Bein vor dem Körper seitlich hin und her schwingen.', 'Nach außen immer etwas höher.'],
+      },
+    }),
+    it('calf-step', 75, { section: KB, sets: halfSets(2) }),
+    it('calf-step-bent', half(60), { section: KB }),
+    it('hamstring-supine', half(60), { section: KB, ex: { ...HAM_TEXT, name: 'Beinheben mit Gurt · statisch' } }),
+    pnf('hamstring-supine', KB, HAM_PNF, {
+      sets: halfSets(2),
+      ex: {
+        ...HAM_TEXT,
+        name: 'Beinheben mit Gurt · PNF',
+        pnf: 'Ferse mit etwa halber Kraft gegen den Gurt nach unten drücken – das Bein bewegt sich nicht.',
+      },
+    }),
+    it('couch-stretch', 75, {
+      section: KB,
+      sets: halfSets(2),
+      ex: {
+        cues: ['Vor Wand oder Sofakante knien, Kissen unter das hintere Knie, Unterschenkel senkrecht an der Wand.', 'Gesäß des hinteren Beins fest anspannen, Becken leicht nach hinten kippen.', 'Dann den Oberkörper langsam aufrichten – das Ziehen ist vorn an Hüfte und Oberschenkel, nicht im unteren Rücken.'],
+        mistakes: ['Hohlkreuz statt Hüftstreckung.', 'Gesäß nicht angespannt.'],
+        easier: 'Knie weiter von der Wand weg, Hände auf dem vorderen Knie abstützen.',
+      },
+    }),
+    it('pigeon', 60, {
+      section: KB,
+      sets: halfSets(2),
+      ex: {
+        cues: ['Aus dem Vierfüßlerstand ein Knie nach vorn hinter die Hand derselben Seite, Unterschenkel schräg.', 'Das andere Bein gestreckt nach hinten schieben, Becken gerade nach unten sinken lassen.', 'Für mehr Dehnung den Oberkörper mit geradem Rücken nach vorn ablegen.'],
+        mistakes: ['Schmerz im vorderen Knie ignorieren.', 'Becken kippt zur Seite.'],
+        easier: 'Bei Knieschmerz: Figur 4 in Rückenlage. Kommt die Hüfte nicht zum Boden, ein Kissen darunter.',
+      },
+    }),
+    it('frog', half(90), {
+      section: KB,
+      ex: {
+        cues: ['Vierfüßlerstand auf weicher Matte, Knie weit auseinander und im rechten Winkel, Unterschenkel parallel.', 'Auf die Unterarme gehen, Rücken gerade.', 'Gesäß langsam nach hinten Richtung Fersen schieben, bis es innen zieht.'],
+        mistakes: ['Ins Hohlkreuz fallen.'],
+      },
+    }),
+    pnf('frog', KB, short ? { ...FROG_PNF, cycles: 2 } : FROG_PNF, {
+      ex: { name: 'Frosch · PNF', pnf: 'Knie mit halber Kraft in den Boden drücken, als wolltest du sie zusammenziehen.' },
+    }),
+    it('straddle', half(90), {
+      section: KB,
+      ex: {
+        name: 'Grätschsitz',
+        cues: ['Beine gestreckt maximal grätschen, Knie und Zehen zeigen zur Decke.', 'Aufrecht sitzen – bei Rundrücken auf ein Kissen.', 'Mit geradem Rücken die Brust nach vorn Richtung Boden – die Bewegung kommt aus der Hüfte.'],
+        mistakes: ['Rücken rund machen.', 'Knie nach innen drehen lassen.'],
+      },
+    }),
+    it('seated-leg-lift', 45, { section: KC, sets: 2 }),
+    it('leg-raise-front-3', 46, {
+      section: KC,
+      sets: 2,
+      ex: {
+        cues: ['Seitlich zur Wand, eine Hand an der Wand, aufrecht stehen.', 'Gestrecktes Bein in 2 Sekunden nach vorn so hoch wie möglich heben.', 'Oben 3 Sekunden halten, in 2 Sekunden ablassen – kein Schwung.'],
+        mistakes: ['Nach hinten lehnen.', 'Standbein beugen.'],
+      },
+    }),
+    it('leg-raise-side-3', 46, {
+      section: KC,
+      sets: 2,
+      ex: {
+        cues: ['Hand an Wand oder Stuhllehne, aufrecht stehen.', 'Gestrecktes Bein seitlich so hoch wie möglich heben, Zehen zeigen nach vorn.', 'Oben 3 Sekunden halten, langsam ablassen. Oberkörper möglichst aufrecht.'],
+        mistakes: ['Oberkörper weit zur Seite kippen.', 'Bein nach vorn drehen, um höher zu kommen.'],
+      },
+    }),
+    it('knee-hold', 44, { section: KC, sets: 2 }),
+    it('kick-front-slow', 37, { section: KD }),
+    it('kick-side-slow', 37, { section: KD }),
+    it('kick-round-slow', 37, { section: KD }),
+    it('kick-set', 25, { section: KD }),
+    it('cossack-slow', 75, { section: KE, sets: eSets }),
+    it('single-leg-rdl', 46, { section: KE, sets: eSets }),
+    it('split-squat-deep', 50, { section: KE, sets: eSets }),
+    it('hanging-leg-raise', 46, { section: KE, sets: eSets }),
+    it('copenhagen', 18, { section: KE, sets: eSets, mode: 'hold' }),
+    it('side-lying-abduction', 50, { section: KE, sets: eSets }),
+  ];
+}
+
+export const KICK_PLAN = [
+  {
+    id: 'kicks-full',
+    short: 'Komplett',
+    name: 'Kick-Routine · komplett',
+    description: `Hüft- und Beinbeweglichkeit für hohe Kicks: Aufwärmen, Dehnen mit Anspannen-Loslassen, aktive Beweglichkeit, Kicks in Zeitlupe und Kraft in der Dehnposition. ${INTENSITY}`,
+    items: kickPlan(),
+  },
+  {
+    id: 'kicks-short',
+    short: 'Kurz',
+    name: 'Kick-Routine · kurz',
+    description: 'Wie die komplette Routine, aber Teil B halbiert – für Tage, an denen 55 Minuten zu lang sind.',
+    items: kickPlan({ short: true }),
+  },
+  {
+    id: 'kicks-sore',
+    short: 'Nach Beintag',
+    name: 'Kick-Routine · nach Beintag',
+    description: 'Bei starkem Muskelkater am Tag nach dem Beintag: Teil E nur 1 Satz, beim Dehnen nur Intensität 5–6.',
+    items: kickPlan({ sore: true }),
+  },
+];

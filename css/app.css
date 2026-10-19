@@ -433,6 +433,9 @@ html:not(.ios) .hap, html.no-haptics .hap { display: none; }
   margin: 28px 16px 8px;
 }
 .section-foot { font-size: 13px; color: var(--text-2); margin: 8px 16px 0; line-height: 1.45; }
+.mob-rules { margin-bottom: 14px; }
+.mob-rules ul { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.mob-rules li + li { margin-top: 4px; }
 
 .card {
   background: var(--card);
@@ -1646,8 +1649,8 @@ button.set-prev:active { background: var(--fill); }
 .p-segs i { display: block; height: 100%; background: var(--accent); transform-origin: left; transform: scaleX(0); }
 .p-stage { position: relative; flex: 1; min-height: 180px; }
 .p-stage canvas { position: absolute; inset: 0; }
-.p-side { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1; }
-.p-section { position: absolute; top: 12px; left: 16px; z-index: 1; }
+.p-side { position: absolute; top: 12px; right: 16px; z-index: 1; }
+.p-section { position: absolute; top: 12px; left: 16px; z-index: 1; max-width: calc(100% - 150px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
 .p-info { padding: 0 24px; text-align: center; }
 .p-phase { font-size: 12px; font-weight: 700; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; }
 .p-name { font-size: 25px; font-weight: 700; letter-spacing: -0.02em; margin-top: 4px; }

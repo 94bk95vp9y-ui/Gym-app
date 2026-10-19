@@ -6,7 +6,7 @@ import { esc, qs, qsa, prefersReducedMotion } from '../ui/dom.js';
 import { Icon } from '../ui/icons.js';
 import { confirmAction } from '../ui/sheet.js';
 import { exercise } from './library.js';
-import { PNF, PNF_SECONDS, SWITCH_SECONDS, SET_REST } from './plans.js';
+import { pnfOf, pnfSeconds, SWITCH_SECONDS, SET_REST } from './plans.js';
 import { prepSeconds, mins, COUNT_MIN_SECONDS, weekCount } from './routines.js';
 import { stageFor } from './figures.js';
 
@@ -69,28 +69,32 @@ function buildSteps(items, prep) {
     const ex = planExercise(item);
     if (!ex) return;
     const mode = modeOf(item, ex);
-    const duration = mode === 'pnf' ? PNF_SECONDS : item.seconds;
+    const pnf = mode === 'pnf' ? pnfOf(item) : null;
+    const duration = pnf ? pnfSeconds(pnf) : item.seconds;
     const sets = item.sets || 1;
     steps.push({ kind: 'prep', ex, item, index, side: 'L', mode, duration: prep, set: 1, sets });
     for (let set = 1; set <= sets; set += 1) {
       if (set > 1) steps.push({ kind: 'rest', ex, item, index, side: 'L', mode, duration: SET_REST, set, sets });
       (ex.sides ? ['L', 'R'] : ['L']).forEach((side, si) => {
         if (si > 0) steps.push({ kind: 'switch', ex, item, index, side, mode, duration: SWITCH_SECONDS, set, sets });
-        steps.push({ kind: 'work', ex, item, index, side, mode, duration, set, sets });
+        steps.push({ kind: 'work', ex, item, index, side, mode, duration, set, sets, pnf });
       });
     }
   });
   return steps;
 }
 
-function pnfPhase(t) {
-  const cycle = PNF.stretch + PNF.contract + PNF.relax;
-  const c = Math.floor(t / cycle);
-  if (c >= PNF.cycles) return { k: 'final', c: PNF.cycles, left: PNF_SECONDS - t };
-  const u = t - c * cycle;
-  if (u < PNF.stretch) return { k: 'stretch', c, left: PNF.stretch - u };
-  if (u < PNF.stretch + PNF.contract) return { k: 'contract', c, left: PNF.stretch + PNF.contract - u };
-  return { k: 'relax', c, left: cycle - u };
+// Phase im Anspannen-Loslassen: erst dehnen, dann Durchgänge aus
+// Anspannen, Loslassen und tieferem Halten (das letzte heißt „final“).
+function pnfPhase(t, cfg) {
+  if (t < cfg.lead) return { k: 'stretch', c: 0, left: cfg.lead - t };
+  const cycle = cfg.contract + cfg.relax + cfg.hold;
+  const u = t - cfg.lead;
+  const c = Math.min(cfg.cycles - 1, Math.floor(u / cycle));
+  const w = u - c * cycle;
+  if (w < cfg.contract) return { k: 'contract', c, left: cfg.contract - w };
+  if (w < cfg.contract + cfg.relax) return { k: 'relax', c, left: cfg.contract + cfg.relax - w };
+  return { k: c === cfg.cycles - 1 ? 'final' : 'hold', c, left: cycle - w };
 }
 
 const fmt = (s) => { const v = Math.max(0, s); return v >= 60 ? `${Math.floor(v / 60)}:${String(v % 60).padStart(2, '0')}` : `${v}`; };
@@ -262,13 +266,15 @@ function updateSub(step, t, figT) {
   if (step.kind !== 'work') {
     key = 'none';
   } else if (step.mode === 'pnf') {
-    const ph = pnfPhase(t);
+    const cfg = step.pnf;
+    const ph = pnfPhase(t, cfg);
     key = `${ph.k}:${ph.c}`;
-    const label = { stretch: ph.c === 0 ? 'Dehnen' : 'Tiefer halten', contract: 'Anspannen', relax: 'Loslassen', final: 'Letztes Mal tiefer' }[ph.k];
-    html = `<b>${label}</b><span>${Math.ceil(ph.left)} s · Durchgang ${Math.min(ph.c + 1, PNF.cycles)}/${PNF.cycles}</span>`;
+    const label = { stretch: 'Dehnen', contract: 'Anspannen', relax: 'Loslassen', hold: 'Tiefer halten', final: 'Letztes Mal tiefer' }[ph.k];
+    const round = ph.k === 'stretch' ? '' : ` · Durchgang ${ph.c + 1}/${cfg.cycles}`;
+    html = `<b>${label}</b><span>${Math.ceil(ph.left)} s${round}</span>`;
     if (key !== p.sub && !p.paused) {
       if (ph.k === 'contract') { Sound.tick(); say(ph.c === 0 ? `Anspannen. ${step.ex.pnf || 'Sanft gegen den Widerstand drücken, etwa 30 Prozent.'}` : 'Anspannen.', { rate: 1.05 }); } else if (ph.k === 'relax') say('Loslassen.', { rate: 1.05 });
-      else if (ph.k === 'stretch' && ph.c > 0) say('Tiefer sinken. Halten.', { rate: 1.05 });
+      else if (ph.k === 'hold') say('Tiefer sinken. Halten.', { rate: 1.05 });
       else if (ph.k === 'final') say('Letztes Mal tiefer. Ruhig halten.', { rate: 1.05 });
     }
   } else if (step.mode === 'active') {
@@ -288,7 +294,7 @@ function updateSub(step, t, figT) {
     html = ph < 3 ? '<b>Ausatmen</b><span>und tiefer sinken</span>' : '<b>Einatmen</b><span>ruhig halten</span>';
   } else {
     key = 'tempo';
-    html = `<b>Bewegen</b><span>${esc(step.ex.tempo || 'ruhig und kontrolliert')}</span>`;
+    html = `<b>${step.mode === 'hold' ? 'Halten' : 'Bewegen'}</b><span>${esc(step.ex.tempo || 'ruhig und kontrolliert')}</span>`;
   }
   if (key === p.sub) return;
   p.sub = key;
@@ -324,7 +330,7 @@ function loop() {
     }
     bar.style.transform = `scaleX(${fill})`;
   });
-  if (p.stage) p.stage.update(step.kind === 'work' && step.mode === 'pnf' && pnfPhase(t).k === 'contract' ? 0 : figT);
+  if (p.stage) p.stage.update(step.kind === 'work' && step.mode === 'pnf' && pnfPhase(t, step.pnf).k === 'contract' ? 0 : figT);
   if (!p.paused && t >= step.duration) {
     advance();
     if (!P || P.finished) return;

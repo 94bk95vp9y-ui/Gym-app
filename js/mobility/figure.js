@@ -290,6 +290,7 @@ export class FigureStage {
     this.bodyMaterial = new THREE.MeshStandardMaterial({ roughness: 0.58, metalness: 0.02 });
     this.hiMaterial = new THREE.MeshStandardMaterial({ roughness: 0.48, metalness: 0.02, emissiveIntensity: 0.22 });
     this.strapMaterial = new THREE.MeshStandardMaterial({ roughness: 0.7 });
+    this.propMaterial = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0 });
     this.buildBody();
 
     this.az = 0;
@@ -390,6 +391,7 @@ export class FigureStage {
     this.hiMaterial.emissive.copy(accent);
     this.strapMaterial.color.copy(accent).multiplyScalar(0.55);
     this.ironMaterial.color.set(dark ? 0x55555c : 0x3b3b40);
+    this.propMaterial.color.set(dark ? 0x6b625a : 0xb9a58c);
     this.matMaterial.color.copy(accent).lerp(new THREE.Color(dark ? 0x2a2a2d : 0xffffff), dark ? 0.9 : 0.8);
     this.wallMaterial.color.set(dark ? 0x3a3a3e : 0xf1efec);
     // Die Wand steht meist abgewandt vom Hauptlicht – etwas Eigenleuchten,
@@ -438,6 +440,7 @@ export class FigureStage {
     this.skinHighlight = skinBones(hi);
     this.paintSkin();
 
+    this.buildProps(ex.props || [], side);
     this.walls.forEach((w) => this.scene.remove(w));
     this.walls = (ex.props || []).filter((p) => p.type === 'wall').map((p) => {
       const w = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.3), this.wallMaterial);
@@ -468,6 +471,11 @@ export class FigureStage {
         .forEach((k) => pts.push(j[k]));
       pts.push(add(j.ankleL, mul(j.footDirL, BODY.foot)), add(j.ankleR, mul(j.footDirR, BODY.foot)));
     }
+    const mx = (p) => (side === 'R' ? [-p[0], p[1], p[2]] : p);
+    (ex.props || []).forEach((p) => {
+      if (p.type === 'box') pts.push(mx(add(p.at, [p.size[0] / 2, p.size[1], 0])), mx(add(p.at, [-p.size[0] / 2, p.size[1], 0])));
+      if (p.type === 'bar' && p.frame !== false) pts.push(mx(p.from), mx(p.to));
+    });
     const min = [Infinity, Infinity, Infinity];
     const max = [-Infinity, -Infinity, -Infinity];
     pts.forEach((p) => { for (let k = 0; k < 3; k += 1) { min[k] = Math.min(min[k], p[k]); max[k] = Math.max(max[k], p[k]); } });
@@ -493,11 +501,79 @@ export class FigureStage {
     this.update(0);
   }
 
+  // Weitere Requisiten: Kasten (Stufe, Bank), Stange (Geländer, Reck),
+  // Gewichtsmanschette am Knöchel und Springseil. Für die rechte Seite
+  // gespiegelt wie die Posen.
+  buildProps(props, side) {
+    if (this.propGroup) {
+      this.scene.remove(this.propGroup);
+      this.propGroup.traverse((o) => o.geometry?.dispose?.());
+    }
+    const g = new THREE.Group();
+    this.propGroup = g;
+    this.scene.add(g);
+    const mx = (p) => (side === 'R' ? [-p[0], p[1], p[2]] : p);
+    this.cuff = null;
+    this.rope = null;
+    props.forEach((p) => {
+      if (p.type === 'box') {
+        const [w, h, d] = p.size;
+        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), this.propMaterial);
+        const c = mx(p.at);
+        m.position.set(c[0], c[1] + h / 2, c[2]);
+        m.castShadow = true;
+        m.receiveShadow = true;
+        g.add(m);
+      } else if (p.type === 'bar') {
+        const a = v3(mx(p.from));
+        const b = v3(mx(p.to));
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(p.r || 0.018, p.r || 0.018, 1, 12), this.ironMaterial);
+        m.position.copy(a).add(b).multiplyScalar(0.5);
+        m.quaternion.setFromUnitVectors(Y, b.clone().sub(a).normalize());
+        m.scale.y = a.distanceTo(b);
+        m.castShadow = true;
+        g.add(m);
+      } else if (p.type === 'cuff') {
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.058, 0.09, 18), this.strapMaterial);
+        m.castShadow = true;
+        g.add(m);
+        this.cuff = { mesh: m, side: side === 'R' ? (p.side === 'L' ? 'R' : 'L') : p.side };
+      } else if (p.type === 'rope') {
+        this.rope = { period: p.period || 0.6, mesh: null };
+      }
+    });
+  }
+
+  placeProps(j, t) {
+    if (this.cuff) {
+      const s = this.cuff.side;
+      const shin = norm(sub(j[`knee${s}`], j[`ankle${s}`]));
+      const c = add(j[`ankle${s}`], mul(shin, 0.07));
+      this.cuff.mesh.position.set(c[0], c[1], c[2]);
+      this.cuff.mesh.quaternion.setFromUnitVectors(Y, v3(shin));
+    }
+    if (this.rope) {
+      // Seil von Hand zu Hand, die Mitte kreist um die Querachse
+      const a = (2 * Math.PI * t) / this.rope.period;
+      const mid = [j.pelvis[0], j.pelvis[1] * 0.98, j.pelvis[2]];
+      const R = mid[1] + 0.02;
+      const ring = (x, k) => [x, mid[1] + k * R * Math.cos(a), mid[2] + k * R * Math.sin(a) * 0.75];
+      const pts = [j.wristL, ring(0.32, 0.8), ring(0, 1), ring(-0.32, 0.8), j.wristR].map(v3);
+      const geo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 48, 0.006, 6);
+      if (this.rope.mesh) { this.rope.mesh.geometry.dispose(); this.rope.mesh.geometry = geo; } else {
+        this.rope.mesh = new THREE.Mesh(geo, this.strapMaterial);
+        this.rope.mesh.castShadow = true;
+        this.propGroup.add(this.rope.mesh);
+      }
+    }
+  }
+
   // Figur auf den Zeitpunkt t (Sekunden) stellen.
   pose(t) {
     const j = solvePose(sampleExercise(this.ex, t, this.side));
     this.joints = j;
     if (this.skin) this.skin.pose(j);
+    this.placeProps(j, t);
     const P = this.parts;
     const place = (m, a, b) => {
       tmpA.set(a[0], a[1], a[2]);

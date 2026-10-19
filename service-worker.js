@@ -1,4 +1,4 @@
-const CACHE = 'gym-cache-v28';
+const CACHE = 'gym-cache-v29';
 const ASSETS = [
   './',
   './index.html',
@@ -21,6 +21,8 @@ const ASSETS = [
   './js/mobility/plans.js',
   './js/mobility/player.js',
   './js/mobility/routines.js',
+  './js/mobility/skin.js',
+  './models/figure.glb',
   './js/ui/chart.js',
   './js/ui/components.js',
   './js/ui/dom.js',
@@ -35,6 +37,8 @@ const ASSETS = [
   './js/ui/theme.js',
   './js/ui/toast.js',
   './js/vendor/three.module.min.js',
+  './js/vendor/GLTFLoader.js',
+  './js/vendor/BufferGeometryUtils.js',
   './js/views/goal.js',
   './js/views/history.js',
   './js/views/mobility.js',

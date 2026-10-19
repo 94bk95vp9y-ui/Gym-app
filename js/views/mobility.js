@@ -7,7 +7,7 @@ import { openSheet, closeAllSheets } from '../ui/sheet.js';
 import { relativeDay, plural } from '../core/format.js';
 import { itemSeconds } from '../mobility/plans.js';
 import {
-  dailyRoutine, deepRoutines, planRoutines, routineById, routineTotal, lastSession, doneToday, weekCount, mins, prepSeconds,
+  dailyRoutine, deepRoutines, planRoutines, kickRoutines, routineById, routineTotal, lastSession, doneToday, weekCount, mins, prepSeconds,
 } from '../mobility/routines.js';
 import { thumb, fillThumbs } from '../mobility/figures.js';
 import { startRoutine, planExercise } from '../mobility/player.js';
@@ -54,6 +54,10 @@ function openMobility() {
   const sheet = openSheet({
     title: 'Mobility',
     body: `
+      <div class="section-label">Tägliche Kick-Routine</div>
+      <div class="list">${kickRoutines().map(routineRow).join('')}</div>
+      <p class="section-foot">Dein Plan für hohe Kicks: jeden Tag gleich, getrennt vom Gym. „Kurz“ halbiert das Dehnen, „Nach Beintag“ macht den Kraftteil nur einmal.</p>
+      <div class="section-label">Kurze Routine</div>
       <div class="list">${routineRow(daily)}</div>
       <p class="section-foot">${esc(daily.description)}</p>
       <div class="section-label">Dein Beinplan</div>
@@ -79,6 +83,13 @@ function openMobility() {
 function play(id) {
   const r = routineById(id);
   if (r) startRoutine(r, { onClose: () => render() });
+}
+
+function rulesHtml(rules) {
+  if (!rules?.length) return '';
+  return `<div class="list mob-rules"><div class="row" style="flex-direction:column;align-items:stretch;gap:6px">
+    <span class="row-title strong">Regeln</span>
+    <ul>${rules.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div></div>`;
 }
 
 function openPreview(id) {
@@ -109,7 +120,7 @@ function openPreview(id) {
     full: true,
     left: { label: 'Zurück' },
     right: null,
-    body: `${r.description ? `<p class="muted" style="margin:0 4px 14px;font-size:15px">${esc(r.description)}</p>` : ''}<div class="list">${rows}</div>`,
+    body: `${r.description ? `<p class="muted" style="margin:0 4px 14px;font-size:15px">${esc(r.description)}</p>` : ''}${rulesHtml(r.rules)}<div class="list">${rows}</div>`,
     footer: `<button class="btn btn-primary btn-block" data-mob-go>${Icon.play} Starten · ${mins(routineTotal(r))}</button>`,
     onMount: (s) => {
       fillThumbs(s.body);

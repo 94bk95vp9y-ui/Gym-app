@@ -65,12 +65,18 @@ danach auch offline.
   Sätze pro Muskel, Rekorde
 
 **Mobility**
-- Tägliche Routine (Hüfte & Beine plus Tagesfokus, Dauer einstellbar)
+- Tägliche Kick-Routine (ca. 55–70 Min, jeden Tag gleich): Aufwärmen,
+  statisch und Anspannen-Loslassen dehnen, aktive Beweglichkeit, Kicks in
+  Zeitlupe, Kraft in Dehnposition – komplett, kurz (Dehnteil halbiert) oder
+  nach dem Beintag (Kraftteil nur ein Satz); mit den Regeln aus dem Plan
+- Kurze tägliche Routine (Hüfte & Beine plus Tagesfokus, Dauer einstellbar)
 - Beinplan in vier Blöcken (Aufwärmen, mit Gewicht in tiefer Position,
   statisch dehnen, aktive Beweglichkeit) – mit Gewicht oder für die anderen
   Tage ohne, dafür mit mehr aktiver Beweglichkeit; mit Sätzen und Pausen
 - Zwei tiefe Einheiten für die Beine
-- Geführter Player mit 3D-Figur, Atemführung und Sprachansage
+- Geführter Player mit 3D-Figur (menschliches Modell mit Kleidung und
+  farbig markierten Zielmuskeln), Atemführung, Sprachansage und
+  Anspannen-Loslassen mit Zeiten pro Übung
 
 **Einstellungen**
 - kg/lb, Wochenziel, Satzpause, Steigerungs-Ziele, Zahlenfeld, Bildschirm
@@ -124,9 +130,17 @@ js/ui/                  Router (Übergänge, Wisch-zurück), Sheets und Menüs,
                         Icons, Bausteine
 js/views/               Heute, Training, Workout, Supplements, Verlauf,
                         Einstellungen, Mobility
-js/mobility/            Routinen, Player, 3D-Figur (three.js)
+js/mobility/            Routinen, Player, 3D-Figur (three.js), Modell-Skinning (skin.js)
+models/figure.glb       3D-Modell der Figur
 service-worker.js       Offline-Cache
 ```
+
+## Herkunft des 3D-Modells
+
+`models/figure.glb` ist das „3D Male Base Mesh“ von BoQsc
+(github.com/BoQsc/Godot-Male-Base-Mesh), laut Godot Asset Library unter
+CC0 (gemeinfrei). Das Repository selbst enthält keine Lizenzdatei.
+three.js und die Hilfsdateien in `js/vendor/` stehen unter der MIT-Lizenz.
 
 ## Daten sichern
 
