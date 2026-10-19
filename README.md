@@ -66,6 +66,9 @@ danach auch offline.
 
 **Mobility**
 - Tägliche Routine (Hüfte & Beine plus Tagesfokus, Dauer einstellbar)
+- Beinplan in vier Blöcken (Aufwärmen, mit Gewicht in tiefer Position,
+  statisch dehnen, aktive Beweglichkeit) – mit Gewicht oder für die anderen
+  Tage ohne, dafür mit mehr aktiver Beweglichkeit; mit Sätzen und Pausen
 - Zwei tiefe Einheiten für die Beine
 - Geführter Player mit 3D-Figur, Atemführung und Sprachansage
 

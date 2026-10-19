@@ -1192,10 +1192,127 @@ const EXTRA = [
   },
 ];
 
+// ---------- Mit Gewicht und längerem Halten (Beinplan) ----------
+// Varianten bestehender Übungen: gleiche Figur, anderes Tempo bzw. Gewicht.
+const BASE_BY_ID = new Map([...BASE_EXERCISES.map((ex) => [ex.id, { ...ex, ...(META[ex.id] || {}) }]), ...EXTRA.map((e) => [e.id, e])]);
+
+// Kosaken-Kniebeuge mit Kettlebell vor der Brust: 3 s runter, 1 s halten, hoch
+const GOBLET = (x, y, z) => ({ handL: [x + 0.05, y, z], handR: [x - 0.05, y, z], elbowL: [x + 0.2, y - 0.35, z], elbowR: [x - 0.2, y - 0.35, z] });
+const COSSACK_LOW = (side) => ({
+  pelvis: [side * 0.28, 0.4, -0.08], pUp: [0, 1, 0.2], cUp: [0, 1, 0.45],
+  kneeL: side > 0 ? [0.72, 0.5, 0.38] : [0.3, 0.5, 0.3], toeL: side > 0 ? [0.7, 0.03, 0.14] : [0.63, 0.22, 0.08],
+  kneeR: side > 0 ? [-0.3, 0.5, 0.3] : [-0.72, 0.5, 0.38], toeR: side > 0 ? [-0.63, 0.22, 0.08] : [-0.7, 0.03, 0.14],
+  ...GOBLET(side * 0.28, 0.68, 0.24),
+});
+const COSSACK_TOP = {
+  pelvis: [0, 0.64, -0.03], pUp: [0, 1, 0.08], cUp: [0, 1, 0.2],
+  kneeL: [0.55, 0.5, 0.35], toeL: [0.7, 0.03, 0.14], kneeR: [-0.55, 0.5, 0.35], toeR: [-0.7, 0.03, 0.14],
+  ...GOBLET(0, 0.97, 0.25),
+};
+
+// Rumänisches Kreuzheben: Hüfte nach hinten, Rücken gerade, Hanteln nah am Bein
+const RDL_TOP = {
+  pelvis: [0, 0.97, 0], pUp: [0, 1, 0], cUp: [0, 1, 0],
+  handL: [0.15, 0.8, 0.1], handR: [-0.15, 0.8, 0.1], elbowL: [0.2, 1.0, -0.3], elbowR: [-0.2, 1.0, -0.3],
+};
+const RDL_LOW = {
+  pelvis: [0, 0.9, -0.22], pUp: [0, 0.72, 0.7], cUp: [0, 0.55, 0.84],
+  handL: [0.15, 0.5, 0.2], handR: [-0.15, 0.5, 0.2], elbowL: [0.2, 0.9, -0.1], elbowR: [-0.2, 0.9, -0.1],
+};
+
+// Beinheben mit 5 Sekunden oben: gleiche Bewegung, länger gehalten
+function holdLonger(id, newId, name) {
+  const b = BASE_BY_ID.get(id);
+  const [f0, f1, up] = b.frames;
+  return {
+    ...b,
+    id: newId,
+    name,
+    seconds: 48,
+    reps: 5,
+    loop: 9.6,
+    tempo: 'Langsam heben, oben 5 Sekunden halten, langsam senken',
+    harder: 'Oben noch länger halten oder eine Gewichtsmanschette tragen.',
+    frames: [f0, f1, { ...up, t: 2.6 }, { ...up, t: 7.6 }],
+  };
+}
+
+const PLAN_EXTRA = [
+  {
+    ...BASE_BY_ID.get('cossack'),
+    id: 'cossack-loaded',
+    name: 'Kosaken-Kniebeuge mit Gewicht',
+    kind: 'active',
+    regions: ['adductors', 'hamstrings'],
+    seconds: 60,
+    reps: 6,
+    tempo: '3 Sek runter, 1 Sek unten halten, hoch – abwechselnd, 6 pro Seite',
+    why: 'Das Gewicht zieht dich tiefer in die Position und macht die Beweglichkeit belastbar – Kraft genau dort, wo die Dehnung endet.',
+    cues: [
+      'Sehr breiter Stand, Kurzhantel oder Kettlebell vor der Brust.',
+      'Hüfte zu einer Seite nach hinten-unten sinken lassen, das andere Bein bleibt gestreckt, Zehen nach oben.',
+      '3 Sekunden runter, 1 Sekunde unten halten, dann hoch und zur anderen Seite.',
+    ],
+    mistakes: ['Ferse des gebeugten Beins hebt ab oder der Rücken rundet sich.'],
+    easier: 'Ohne Gewicht oder nur halb tief.',
+    harder: 'Schwereres Gewicht oder unten 3 Sekunden halten.',
+    props: [{ type: 'kettlebell' }],
+    loop: 10,
+    base: { footL: [0.6, 0.08, 0], footR: [-0.6, 0.08, 0], pFwd: [0, 0, 1] },
+    frames: [
+      { t: 0, p: COSSACK_TOP },
+      { t: 3, p: COSSACK_LOW(1) },
+      { t: 4, p: COSSACK_LOW(1) },
+      { t: 5, p: COSSACK_TOP },
+      { t: 8, p: COSSACK_LOW(-1) },
+      { t: 9, p: COSSACK_LOW(-1) },
+    ],
+  },
+  {
+    id: 'rdl',
+    name: 'Rumänisches Kreuzheben',
+    regions: ['hamstrings', 'lowback'],
+    kind: 'active',
+    type: 'flow',
+    sides: false,
+    seconds: 52,
+    reps: 8,
+    tempo: '4 Sek absenken, bis die Beinrückseite stark zieht, dann aufrichten',
+    why: 'Dehnt die Beinrückseite unter Last und kräftigt sie zugleich in der Länge – so wird die Beweglichkeit stabil.',
+    feel: 'Rückseite der Oberschenkel, bis in die Kniekehlen',
+    cues: [
+      'Füße hüftbreit, Knie leicht gebeugt, Gewicht nah am Körper.',
+      'Hüfte nach hinten schieben, der Rücken bleibt gerade.',
+      '4 Sekunden absenken, bis die Beinrückseite stark zieht – dann aufrichten.',
+    ],
+    mistakes: ['Rücken rund machen oder das Gewicht weit vor den Beinen halten.'],
+    easier: 'Leichteres Gewicht und nur bis zu den Knien.',
+    harder: 'Wenn du Beine ohnehin im Gym trainierst: dort mit der Langhantel in voller Tiefe.',
+    cam: { az: 75, el: 8 },
+    highlight: ['thighL', 'thighR'],
+    props: [{ type: 'dumbbells' }],
+    mat: { hidden: true },
+    loop: 6.5,
+    base: {
+      footL: [0.11, 0.08, 0], footR: [-0.11, 0.08, 0], toeL: [0.13, 0.03, 0.17], toeR: [-0.13, 0.03, 0.17],
+      kneeL: [0.11, 0.5, 0.4], kneeR: [-0.11, 0.5, 0.4], pFwd: [0, 0, 1],
+    },
+    frames: [
+      { t: 0, p: RDL_TOP },
+      { t: 0.4, p: RDL_TOP },
+      { t: 4.4, p: RDL_LOW },
+      { t: 4.8, p: RDL_LOW },
+    ],
+  },
+  holdLonger('leg-raise-front', 'leg-raise-front-hold', 'Aktiver Beinheber vorn'),
+  holdLonger('leg-raise-side', 'leg-raise-side-hold', 'Aktiver Beinheber seitlich'),
+];
+
 // Alles zusammen, mit Einordnung
 export const EXERCISES = [
   ...BASE_EXERCISES.map((ex) => ({ ...ex, ...(META[ex.id] || {}) })),
   ...EXTRA,
+  ...PLAN_EXTRA,
 ];
 const BY_ID = new Map(EXERCISES.map((e) => [e.id, e]));
 // Stufen in beide Richtungen verknüpfen: up = nächste Stufe, down = leichtere

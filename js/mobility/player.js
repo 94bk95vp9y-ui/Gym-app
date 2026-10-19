@@ -6,7 +6,7 @@ import { esc, qs, qsa, prefersReducedMotion } from '../ui/dom.js';
 import { Icon } from '../ui/icons.js';
 import { confirmAction } from '../ui/sheet.js';
 import { exercise } from './library.js';
-import { PNF, PNF_SECONDS, SWITCH_SECONDS } from './plans.js';
+import { PNF, PNF_SECONDS, SWITCH_SECONDS, SET_REST } from './plans.js';
 import { prepSeconds, mins, COUNT_MIN_SECONDS, weekCount } from './routines.js';
 import { stageFor } from './figures.js';
 
@@ -56,18 +56,29 @@ function modeOf(item, ex) {
   return ex.type === 'hold' ? 'hold' : 'flow';
 }
 
+// Ein Plan kann Texte einer Übung anpassen (item.ex) und mehrere Sätze
+// vorsehen (item.sets) – dazwischen eine kurze Pause.
+export function planExercise(item) {
+  const base = exercise(item.id);
+  return base && item.ex ? { ...base, ...item.ex } : base;
+}
+
 function buildSteps(items, prep) {
   const steps = [];
   items.forEach((item, index) => {
-    const ex = exercise(item.id);
+    const ex = planExercise(item);
     if (!ex) return;
     const mode = modeOf(item, ex);
     const duration = mode === 'pnf' ? PNF_SECONDS : item.seconds;
-    steps.push({ kind: 'prep', ex, item, index, side: 'L', mode, duration: prep });
-    (ex.sides ? ['L', 'R'] : ['L']).forEach((side, si) => {
-      if (si > 0) steps.push({ kind: 'switch', ex, item, index, side, mode, duration: SWITCH_SECONDS });
-      steps.push({ kind: 'work', ex, item, index, side, mode, duration });
-    });
+    const sets = item.sets || 1;
+    steps.push({ kind: 'prep', ex, item, index, side: 'L', mode, duration: prep, set: 1, sets });
+    for (let set = 1; set <= sets; set += 1) {
+      if (set > 1) steps.push({ kind: 'rest', ex, item, index, side: 'L', mode, duration: SET_REST, set, sets });
+      (ex.sides ? ['L', 'R'] : ['L']).forEach((side, si) => {
+        if (si > 0) steps.push({ kind: 'switch', ex, item, index, side, mode, duration: SWITCH_SECONDS, set, sets });
+        steps.push({ kind: 'work', ex, item, index, side, mode, duration, set, sets });
+      });
+    }
   });
   return steps;
 }
@@ -184,7 +195,9 @@ function enterStep(first = false) {
   p.lastWhole = null;
   p.cueIndex = -1;
   p.sub = null;
-  if (step.kind !== 'work' || !prev || prev.side !== step.side || prev.index !== step.index) p.figureStart = performance.now();
+  // Neu starten, sobald gearbeitet wird – sonst zählte die Vorbereitung bei
+  // den Wiederholungen mit
+  if (step.kind !== 'work' || !prev || prev.kind !== 'work' || prev.side !== step.side || prev.index !== step.index) p.figureStart = performance.now();
   showFigure();
   const { ex } = step;
   const total = p.routine.items.length;
@@ -196,14 +209,16 @@ function enterStep(first = false) {
   section.textContent = step.item.section || '';
   section.hidden = !step.item.section;
   const modeText = { hold: 'Halten', flow: 'Bewegen', pnf: 'Anspannen-Loslassen', active: 'Aktiv', breath: 'Atmen' }[step.mode];
+  const setText = step.sets > 1 ? ` · Satz ${step.set}/${step.sets}` : '';
   p.dom.phase.textContent = {
     prep: `Gleich · ${step.index + 1} von ${total}`,
-    switch: 'Seite wechseln',
-    work: `${step.index + 1} von ${total} · ${modeText}`,
+    switch: `Seite wechseln${setText}`,
+    rest: `Kurze Pause · gleich Satz ${step.set}/${step.sets}`,
+    work: `${step.index + 1} von ${total} · ${modeText}${setText}`,
   }[step.kind];
   p.el.classList.toggle('paused', p.paused);
   const nextItem = p.routine.items[step.index + 1];
-  qs('#p-next', p.el).innerHTML = nextItem ? `<span>Danach</span><strong>${esc(exercise(nextItem.id).name)}</strong>` : '<span>Letzte Übung</span>';
+  qs('#p-next', p.el).innerHTML = nextItem ? `<span>Danach</span><strong>${esc(planExercise(nextItem).name)}</strong>` : '<span>Letzte Übung</span>';
   updateCue(true);
   if (step.kind === 'prep') {
     Sound.bell();
@@ -212,6 +227,9 @@ function enterStep(first = false) {
   } else if (step.kind === 'switch') {
     Sound.bell();
     say('Seite wechseln.');
+  } else if (step.kind === 'rest') {
+    Sound.bell();
+    say(`Kurze Pause. Gleich Satz ${step.set}.`);
   } else {
     Sound.go();
   }
@@ -224,11 +242,13 @@ function updateCue(force) {
   let index;
   if (step.kind === 'prep') index = 0;
   else if (step.kind === 'switch') index = -2;
+  else if (step.kind === 'rest') index = -3;
   else index = Math.min(cues.length - 1, Math.floor(elapsed() / Math.max(8, step.duration / Math.max(1, cues.length))));
   if (!force && index === p.cueIndex) return;
   p.cueIndex = index;
   const el = qs('#p-cue', p.el);
-  const text = index === -2 ? 'Kurz lockern und auf die andere Seite wechseln.' : (cues[index] || '');
+  const text = index === -2 ? 'Kurz lockern und auf die andere Seite wechseln.'
+    : index === -3 ? 'Kurz lockern – gleich geht es mit dem nächsten Satz weiter.' : (cues[index] || '');
   if (el.textContent === text) return;
   if (prefersReducedMotion()) { el.textContent = text; return; }
   el.classList.add('fade');

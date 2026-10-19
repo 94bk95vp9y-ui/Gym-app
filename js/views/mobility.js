@@ -5,13 +5,12 @@ import { Icon } from '../ui/icons.js';
 import { render } from '../ui/router.js';
 import { openSheet, closeAllSheets } from '../ui/sheet.js';
 import { relativeDay, plural } from '../core/format.js';
-import { exercise } from '../mobility/library.js';
 import { itemSeconds } from '../mobility/plans.js';
 import {
-  dailyRoutine, deepRoutines, routineById, routineTotal, lastSession, doneToday, weekCount, mins, prepSeconds,
+  dailyRoutine, deepRoutines, planRoutines, routineById, routineTotal, lastSession, doneToday, weekCount, mins, prepSeconds,
 } from '../mobility/routines.js';
 import { thumb, fillThumbs } from '../mobility/figures.js';
-import { startRoutine } from '../mobility/player.js';
+import { startRoutine, planExercise } from '../mobility/player.js';
 import { iconTile, TINT } from '../ui/components.js';
 
 // Kachel für „Heute“: Antippen öffnet die Auswahl, Play startet die tägliche Routine
@@ -34,7 +33,7 @@ export function mobilityTileHtml() {
 
 function routineRow(r) {
   const last = lastSession(r.id);
-  const label = r.kind === 'deep' ? r.short : r.name;
+  const label = r.kind === 'deep' || r.kind === 'plan' ? r.short : r.name;
   return `
     <div class="row" style="gap:12px">
       <button class="row-main" data-mob-preview="${r.id}" style="text-align:left;flex-direction:row;align-items:center;gap:12px">
@@ -57,6 +56,9 @@ function openMobility() {
     body: `
       <div class="list">${routineRow(daily)}</div>
       <p class="section-foot">${esc(daily.description)}</p>
+      <div class="section-label">Dein Beinplan</div>
+      <div class="list">${planRoutines().map(routineRow).join('')}</div>
+      <p class="section-foot">Mit Gewicht an den Tagen mit Kurzhantel oder Kettlebell, an den anderen Tagen ohne – dafür etwas mehr aktive Beweglichkeit.</p>
       <div class="section-label">Tiefe Einheiten für die Beine</div>
       <div class="list">${deep.map(routineRow).join('')}</div>
       <p class="section-foot">Etwa 30 Minuten mit Anspannen-Loslassen und langem Halten – ein- bis zweimal pro Woche statt der täglichen Routine.</p>
@@ -85,7 +87,7 @@ function openPreview(id) {
   const prep = prepSeconds();
   let section = null;
   const rows = r.items.map((item) => {
-    const ex = exercise(item.id);
+    const ex = planExercise(item);
     if (!ex) return '';
     const head = item.section && item.section !== section ? `<div class="group-head" style="position:static;padding:12px 4px 6px">${esc(item.section)}</div>` : '';
     if (item.section) section = item.section;
@@ -98,7 +100,7 @@ function openPreview(id) {
       <div class="row" style="gap:12px">
         ${thumb(ex.id)}
         <div class="row-main"><span class="row-title">${esc(ex.name)}</span>
-          <span class="row-sub">${how}${ex.sides ? ' · je Seite' : ''}</span></div>
+          <span class="row-sub">${how}${item.sets > 1 ? ` · ${item.sets} Sätze` : ''}${ex.sides ? ' · je Seite' : ''}</span></div>
         <span class="row-value num">${mins(secs)}</span>
       </div>`;
   }).join('');

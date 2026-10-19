@@ -328,6 +328,33 @@ export class FigureStage {
       this.scene.add(m);
       return m;
     });
+
+    // Gewichte: eine Kettlebell vor der Brust oder je eine Kurzhantel pro Hand
+    this.ironMaterial = new THREE.MeshStandardMaterial({ color: 0x3b3b40, roughness: 0.45, metalness: 0.35 });
+    const shadowed = (m) => { m.castShadow = true; return m; };
+    const bell = new THREE.Group();
+    bell.add(shadowed(new THREE.Mesh(new THREE.SphereGeometry(0.075, 24, 18), this.ironMaterial)));
+    const horn = shadowed(new THREE.Mesh(new THREE.TorusGeometry(0.048, 0.012, 10, 24, Math.PI), this.ironMaterial));
+    horn.position.y = 0.055;
+    bell.add(horn);
+    bell.visible = false;
+    this.scene.add(bell);
+    this.kettlebell = bell;
+    this.dumbbells = [0, 1].map(() => {
+      const g = new THREE.Group();
+      const bar = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.17, 10), this.ironMaterial));
+      bar.rotation.z = Math.PI / 2;
+      g.add(bar);
+      [-1, 1].forEach((d) => {
+        const head = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.05, 18), this.ironMaterial));
+        head.rotation.z = Math.PI / 2;
+        head.position.x = d * 0.105;
+        g.add(head);
+      });
+      g.visible = false;
+      this.scene.add(g);
+      return g;
+    });
   }
 
   // accent/dark überschreiben die App-Farben (Mobility-Bereich: eigenes Grün,
@@ -339,6 +366,7 @@ export class FigureStage {
     this.hiMaterial.color.copy(accent);
     this.hiMaterial.emissive.copy(accent);
     this.strapMaterial.color.copy(accent).multiplyScalar(0.55);
+    this.ironMaterial.color.set(dark ? 0x55555c : 0x3b3b40);
     this.matMaterial.color.copy(accent).lerp(new THREE.Color(dark ? 0x2a2a2d : 0xffffff), dark ? 0.9 : 0.8);
     this.wallMaterial.color.set(dark ? 0x3a3a3e : 0xf1efec);
     // Die Wand steht meist abgewandt vom Hauptlicht – etwas Eigenleuchten,
@@ -372,6 +400,10 @@ export class FigureStage {
     });
     this.strapDefs = (ex.props || []).filter((p) => p.type === 'strap');
     this.straps.forEach((s, i) => { s.visible = !!this.strapDefs[i]; });
+    const weight = (ex.props || []).find((p) => p.type === 'kettlebell' || p.type === 'dumbbells');
+    this.weight = weight?.type || null;
+    this.kettlebell.visible = this.weight === 'kettlebell';
+    this.dumbbells.forEach((d) => { d.visible = this.weight === 'dumbbells'; });
 
     // Bildausschnitt aus allen Posen der Schleife
     const pts = [];
@@ -463,6 +495,27 @@ export class FigureStage {
     place(P.neckSeg, neckTop, add(j.neck, mul(j.headUp, -0.02)));
     at(P.head, j.head);
     at(P.nose, add(add(j.head, mul(j.look, 0.1)), mul(j.headUp, -0.015)));
+
+    // Kettlebell: zwischen beiden Händen, der Körper hängt unter den Griffen
+    if (this.weight === 'kettlebell') {
+      const mid = mix(j.wristL, j.wristR, 0.5);
+      this.kettlebell.position.set(mid[0], mid[1] - 0.07, mid[2] + 0.02);
+      const side = norm([j.cb.l[0], 0, j.cb.l[2]]);
+      tmpM.makeBasis(v3(side), v3([0, 1, 0]), v3(cross(side, [0, 1, 0])));
+      this.kettlebell.quaternion.setFromRotationMatrix(tmpM);
+    }
+    // Kurzhanteln: in der Faust, Stange quer zum Körper
+    if (this.weight === 'dumbbells') {
+      ['L', 'R'].forEach((s, i) => {
+        const fore = norm(sub(j[`wrist${s}`], j[`elbow${s}`]));
+        const c = add(j[`wrist${s}`], mul(fore, 0.06));
+        const db = this.dumbbells[i];
+        db.position.set(c[0], c[1], c[2]);
+        const across = norm(sub(j.cb.l, mul(fore, dot(j.cb.l, fore))));
+        tmpM.makeBasis(v3(across), v3(fore), v3(cross(across, fore)));
+        db.quaternion.setFromRotationMatrix(tmpM);
+      });
+    }
 
     // Gurt/Handtuch zwischen Hand und Fußballen
     (this.strapDefs || []).forEach((def, i) => {

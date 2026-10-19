@@ -2,7 +2,7 @@
 // Beine plus wechselnder Tagesfokus, passend zur eingestellten Dauer) und die
 // zwei tiefen Einheiten für die Beine.
 import { Store } from '../core/store.js';
-import { CORE, FOCUS, DEEP, fitToBudget, routineSeconds } from './plans.js';
+import { CORE, FOCUS, DEEP, LEG_PLAN, fitToBudget, routineSeconds } from './plans.js';
 import { exercise } from './library.js';
 
 const DAY = 86400000;
@@ -39,9 +39,14 @@ export function deepRoutines() {
   }));
 }
 
+// Dein Beinplan: mit Gewicht und ohne (für die anderen Tage)
+export function planRoutines() {
+  return LEG_PLAN.map((d) => ({ ...d, kind: 'plan', items: d.items.filter((x) => exercise(x.id)) }));
+}
+
 export function routineById(id) {
   if (id === 'daily') return dailyRoutine();
-  return deepRoutines().find((r) => r.id === id) || null;
+  return [...planRoutines(), ...deepRoutines()].find((r) => r.id === id) || null;
 }
 
 export function routineTotal(routine) {

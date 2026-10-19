@@ -17,6 +17,8 @@
 import { exercise } from './library.js';
 
 export const SWITCH_SECONDS = 6;
+// Kurze Pause zwischen zwei Sätzen derselben Übung
+export const SET_REST = 10;
 
 // Anspannen-Loslassen: 3 Durchgänge, danach ein letztes, tieferes Halten
 export const PNF = { cycles: 3, stretch: 20, contract: 6, relax: 3, final: 20 };
@@ -103,11 +105,102 @@ export const DEEP = [
   },
 ];
 
+// ---------- Beinplan ----------
+// Vier Blöcke: Aufwärmen, belastet in tiefer Position, statisch dehnen,
+// aktive Beweglichkeit. An den Tagen ohne Gewicht fällt Block 2 weg, dafür
+// gibt es in Block 4 einen dritten Satz.
+const WARMUP = 'Aufwärmen';
+const LOADED = 'Belastet in tiefer Position';
+const STATIC = 'Statisch dehnen';
+const ACTIVE = 'Aktive Beweglichkeit';
+
+function legPlan(withWeight) {
+  return [
+    it('leg-swing', 20, {
+      section: WARMUP,
+      ex: { tempo: '10× vor und zurück, Schwung langsam steigern', cues: ['An der Wand festhalten, Oberkörper aufrecht.', '10× vor und zurück schwingen.', 'Den Schwung langsam steigern.'] },
+    }),
+    it('leg-swing-side', 20, {
+      section: WARMUP,
+      ex: { tempo: '10× seitlich, Schwung langsam steigern', cues: ['An der Wand festhalten, Oberkörper aufrecht.', '10× zur Seite schwingen.', 'Den Schwung langsam steigern.'] },
+    }),
+    it('deep-squat', 40, {
+      section: WARMUP,
+      ex: { name: 'Tiefe Kniebeuge halten', cues: ['Füße schulterbreit, leicht nach außen.', 'So tief wie möglich, Fersen bleiben am Boden.', 'Ellbogen drücken die Knie nach außen.'] },
+    }),
+    ...(withWeight ? [
+      it('cossack-loaded', 60, { section: LOADED, sets: 2 }),
+      it('rdl', 52, { section: LOADED, sets: 2 }),
+    ] : []),
+    it('hamstring-supine', 45, {
+      section: STATIC,
+      sets: 2,
+      ex: { name: 'Beinbeuger liegend', cues: ['Auf dem Rücken, Gurt oder Handtuch um den Fußballen.', 'Gestrecktes Bein zur Decke ziehen.', 'Becken bleibt am Boden, Fuß locker.'] },
+    }),
+    it('frog', 60, {
+      section: STATIC,
+      sets: 2,
+      ex: { cues: ['Vierfüßler, Knie weit auseinander, Unterschenkel parallel.', 'Polster unter die Knie.', 'Gesäß Richtung Fersen schieben.'] },
+    }),
+    it('couch-stretch', 45, {
+      section: STATIC,
+      sets: 2,
+      ex: {
+        cues: ['Hinteres Knie am Boden, Fuß an Wand oder Sofa.', 'Oberkörper aufrecht, Gesäß anspannen.', 'Nicht ins Hohlkreuz fallen.'],
+        easier: 'Tiefer Ausfallschritt ohne Wand.',
+      },
+    }),
+    it('figure-four', 45, {
+      section: STATIC,
+      sets: 2,
+      ex: { name: 'Figur-4 liegend', cues: ['Rückenlage, Knöchel auf das gegenüberliegende Knie.', 'Dieses Bein zur Brust ziehen.', 'Ruhig atmen, Schultern bleiben locker.'], harder: 'Später: die Taube.' },
+    }),
+    // Waden: erst mit gestrecktem, dann mit leicht gebeugtem Knie
+    it('calf-wall', 45, {
+      section: STATIC,
+      ex: { cues: ['Hinteres Bein gestreckt, Ferse am Boden.', 'Hüfte nach vorn schieben.', 'Ruhig halten.'] },
+    }),
+    it('soleus-wall', 45, {
+      section: STATIC,
+      ex: { cues: ['Wie eben, jetzt das hintere Knie leicht beugen.', 'Ferse bleibt am Boden.', 'Die Dehnung wandert tiefer in die Wade.'] },
+    }),
+    it('leg-raise-front-hold', 48, {
+      section: ACTIVE,
+      sets: withWeight ? 2 : 3,
+      ex: { cues: ['Hand an der Wand, aufrecht stehen.', 'Gestrecktes Bein langsam und ohne Schwung so hoch wie möglich heben.', 'Oben 5 Sekunden halten, langsam senken.'] },
+    }),
+    it('leg-raise-side-hold', 48, {
+      section: ACTIVE,
+      sets: withWeight ? 2 : 3,
+      ex: { cues: ['Hand an der Wand, Oberkörper aufrecht.', 'Gestrecktes Bein zur Seite heben, Zehen zeigen nach vorn.', 'Oben 5 Sekunden halten, langsam senken.'] },
+    }),
+  ];
+}
+
+export const LEG_PLAN = [
+  {
+    id: 'legs-weight',
+    short: 'Mit Gewicht',
+    name: 'Beinplan · mit Gewicht',
+    description: 'Aufwärmen, belastet in tiefer Position (Kurzhantel oder Kettlebell), statisch dehnen, aktive Beweglichkeit.',
+    items: legPlan(true),
+  },
+  {
+    id: 'legs-light',
+    short: 'Ohne Gewicht',
+    name: 'Beinplan · ohne Gewicht',
+    description: 'Für die anderen Tage: ohne den Block mit Gewicht, dafür ein Satz mehr aktive Beweglichkeit.',
+    items: legPlan(false),
+  },
+];
+
 // ---------- Hilfen ----------
 export function itemSeconds(item, prep) {
   const ex = exercise(item.id);
   if (!ex) return 0;
-  return prep + item.seconds * (ex.sides ? 2 : 1) + (ex.sides ? SWITCH_SECONDS : 0);
+  const sets = item.sets || 1;
+  const work = item.seconds * (ex.sides ? 2 : 1) + (ex.sides ? SWITCH_SECONDS : 0);
+  return prep + sets * work + (sets - 1) * SET_REST;
 }
 export function routineSeconds(items, prep) {
   return items.reduce((n, item) => n + itemSeconds(item, prep), 0);
