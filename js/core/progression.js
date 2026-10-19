@@ -133,7 +133,9 @@ export function sessionsFor(exerciseId, workouts, { excludeId = null, limit = 10
 
 // ---------- Wiederholungsbereich und Gewichtssprung ----------
 function validRange(r) {
-  return Array.isArray(r) && r.length === 2 && r[0] > 0 && r[1] > r[0] ? [r[0], r[1]] : null;
+  if (!Array.isArray(r) || r.length !== 2) return null;
+  const [lo, hi] = r.map(Number);
+  return Number.isInteger(lo) && Number.isInteger(hi) && lo > 0 && hi > lo ? [lo, hi] : null;
 }
 
 export function sameRange(a, b) {
@@ -218,13 +220,23 @@ export function learnedRange(exercise, profile, sessions, unit = 'kg') {
 // übliche Wert fürs Gerät. Bei der Langhantel gehen kleine Scheiben überall.
 export function stepOf(exercise, profile, sessions, unit) {
   const options = STEP_OPTIONS[unit === 'lb' ? 'lb' : 'kg'];
-  if (exercise.increment > 0) return { step: exercise.increment, auto: false };
+  const own = Number(exercise.increment);
+  if (Number.isFinite(own) && own > 0) return { step: own, auto: false };
   const fallback = profile.step[unit === 'lb' ? 1 : 0];
   if (profile.equipment === 'barbell') return { step: fallback, auto: true };
   const tops = [...new Set(sessions.filter((s) => s.loaded).map((s) => s.top))].sort((a, b) => a - b);
   let min = Infinity;
   for (let i = 1; i < tops.length; i += 1) min = Math.min(min, round2(tops[i] - tops[i - 1]));
-  return { step: options.includes(min) ? min : fallback, auto: true };
+  if (options.includes(min)) return { step: min, auto: true };
+  // Nur ein Gewicht bekannt: passt es nicht ins übliche Raster (24 kg bei
+  // 2,5er-Schritten), ist das Studio wohl anders gestuft – 24 → 26 statt 26,5
+  const last = sessions.find((s) => s.loaded)?.top;
+  const onGrid = (w, st) => Math.abs(w / st - Math.round(w / st)) < 1e-6;
+  if (last && !onGrid(last, fallback)) {
+    const fit = options.filter((o) => o <= fallback && o >= fallback / 2.5 && onGrid(last, o)).pop();
+    if (fit) return { step: fit, auto: true };
+  }
+  return { step: fallback, auto: true };
 }
 
 // ---------- Rechenhilfen ----------
@@ -258,12 +270,14 @@ function roundStep(value, step) {
 }
 
 // Etwa factor × Gewicht, auf den Gewichtssprung gerundet und mindestens eine
-// Stufe leichter. Wäre schon eine Stufe mehr als 20 % (leichte Kurzhanteln),
-// gibt es kein leichteres Gewicht – dann lieber weniger Wdh.
+// Stufe leichter. Wird der Abschlag dadurch deutlich größer als gewollt
+// (leichte Kurzhanteln: eine Stufe sind schnell 25 %), gibt es kein
+// leichteres Gewicht – dann lieber weniger Wdh.
 export function lighter(weight, factor, step) {
   let w = roundStep(weight * factor, step);
   if (w >= weight) w = round2(weight - step);
-  if (w <= 0 || (weight - w) / weight > 0.2) return null;
+  const maxCut = Math.max(0.2, 1 - factor + 0.1);
+  if (w <= 0 || (weight - w) / weight > maxCut) return null;
   return w;
 }
 
@@ -391,16 +405,23 @@ export function withChoice(target, choice) {
 
 // Vorschlagswerte für die Sätze: die Sätze vom letzten Mal, angepasst ans
 // Ziel. Aufwärmsätze bleiben, wie sie waren.
-export function targetSets(target, last, count) {
+// slots: nur diese Plätze berechnen (nach dem Löschen eines Satzes) – das
+// „+1“ landet dann auf einem Satz, den es noch gibt.
+export function targetSets(target, last, count, slots = null) {
   const src = last ? last.done : [];
   const total = Math.max(1, count ?? Math.min(8, src.length || 3));
-  const sets = Array.from({ length: total }, (_, i) => {
-    const s = src[Math.min(i, src.length - 1)];
+  const plan = slots || Array.from({ length: total }, (_, i) => i);
+  const sets = plan.map((i) => {
+    const at = Math.min(i, src.length - 1);
+    const s = src[at];
     if (!s) return { weight: 0, reps: 0, done: false, suggested: false };
-    return { weight: s.weight || 0, reps: s.reps, done: false, suggested: true, work: isWorkSet(last, s) };
+    // slot: Platz beim Vorbefüllen – so lassen sich Vorschläge auch nach dem
+    // Löschen eines Satzes richtig nachziehen
+    return { weight: s.weight || 0, reps: s.reps, done: false, suggested: true, slot: i, at, work: isWorkSet(last, s) };
   });
   const work = sets.filter((s) => s.work);
-  sets.forEach((s) => { delete s.work; });
+  const atOf = new Map(sets.map((s) => [s, s.at]));
+  sets.forEach((s) => { delete s.work; delete s.at; });
   if (!target || !work.length) return sets;
 
   const scaled = (w) => (w === target.from ? target.weight : roundStep(w * (target.weight / target.from), target.step));
@@ -421,18 +442,21 @@ export function targetSets(target, last, count) {
         s.reps = repsFor(s, w2);
         s.weight = w2;
       });
+      lightenWarmups(sets, work, target);
       break;
     case 'comeback':
       work.forEach((s) => {
         if (target.lighter && s.weight > 0) s.weight = scaled(s.weight);
         else s.reps = Math.max(1, Math.floor(s.reps * 0.85));
       });
+      if (target.lighter) lightenWarmups(sets, work, target);
       break;
     case 'build':
     case 'plateau': {
       // Eine (bzw. zwei) Wdh mehr – ab dem Fokus-Satz in den Sätzen, die
       // noch nicht oben sind
-      const start = Math.min(target.focus || 0, work.length - 1);
+      const focusAt = src.indexOf(last.work[Math.min(target.focus || 0, last.work.length - 1)]);
+      const start = Math.max(0, work.findIndex((s) => atOf.get(s) >= focusAt));
       let left = target.pace || 1;
       [...work.slice(start), ...work.slice(0, start)].forEach((s) => {
         if (left > 0 && s.reps < target.top) {
@@ -446,6 +470,15 @@ export function targetSets(target, last, count) {
       break;
   }
   return sets;
+}
+
+// Aufwärmsätze nicht schwerer als die neuen Arbeitssätze: im gleichen
+// Verhältnis leichter (85 / 100 / 100 → 70 / 80 / 80 statt 85 / 80 / 80)
+function lightenWarmups(sets, work, target) {
+  sets.forEach((s) => {
+    if (work.includes(s) || !(s.weight > 0) || s.weight < target.weight) return;
+    s.weight = Math.max(target.step, roundStep(s.weight * (target.weight / target.from), target.step));
+  });
 }
 
 // ---------- Fortschritt bis zum nächsten Gewicht ----------

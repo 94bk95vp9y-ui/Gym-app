@@ -340,6 +340,7 @@ function paint() {
   // Neu gezeichnet wird nach Löschen, Rückgängig, Hinzufügen – danach kann
   // an derselben Stelle ein anderer Satz stehen. Zahlenfeld lieber schließen.
   if (W.field) closeKeypad();
+  W.goalSheet?.refresh();
 }
 
 function updateProgress(w) {
@@ -407,14 +408,19 @@ function advanceFocus(w, finishedIndex, delay = 650) {
   const next = currentIndex(w);
   qsa('.ex-card', root).forEach((c) => c.classList.toggle('current', +c.dataset.ei === next));
   if (finishedIndex === undefined) return;
-  const done = qs(`.ex-card[data-ei="${finishedIndex}"]`, root);
+  // Über die Übung statt die Position: in der Wartezeit kann sich die
+  // Reihenfolge ändern (Entfernen, Rückgängig, Sortieren)
+  const id = w.entries[finishedIndex].exerciseId;
   setTimeout(() => {
     const cur = Store.getActive();
-    if (!done || !cur || !isEntryComplete(cur.entries[finishedIndex])) return;
-    W.expanded.delete(cur.entries[finishedIndex].exerciseId);
+    const index = cur ? cur.entries.findIndex((e) => e.exerciseId === id) : -1;
+    const done = index >= 0 ? qs(`.ex-card[data-ei="${index}"]`, root) : null;
+    if (!done || !isEntryComplete(cur.entries[index])) return;
+    W.expanded.delete(id);
     done.classList.add('collapsed');
     qs('.ex-head-main', done)?.setAttribute('aria-expanded', 'false');
-    const target = next >= 0 ? qs(`.ex-card[data-ei="${next}"]`, root) : null;
+    const upcoming = currentIndex(cur);
+    const target = upcoming >= 0 ? qs(`.ex-card[data-ei="${upcoming}"]`, root) : null;
     target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, delay);
 }
@@ -783,10 +789,11 @@ async function finish() {
   cur.finishedAt = new Date(finishTime(cur)).toISOString();
   cur.entries.forEach((e) => {
     delete e.choice;
-    e.sets.forEach((s) => { delete s.suggested; delete s.doneAt; });
+    e.sets.forEach((s) => { delete s.suggested; delete s.doneAt; delete s.slot; });
   });
   Store.finishActiveWorkout(cur);
-  learnRanges(cur);
+  // Nur eine Verfeinerung – darf das Speichern des Trainings nie aufhalten
+  try { learnRanges(cur); } catch { /* z. B. Speicher voll */ }
   Sound.finish();
   minimizeWorkout();
   setTimeout(() => openSummary(cur.id), 260);
@@ -958,10 +965,14 @@ function refreshSuggestions(w, ei) {
   const ex = Store.getExercise(entry.exerciseId);
   if (!ex) return false;
   const { target, last } = progressionOf(ex, { excludeId: w.id });
-  const fresh = targetSets(withChoice(target, entry.choice), last, entry.sets.length);
+  // Über den Platz beim Vorbefüllen zuordnen – nach dem Löschen eines Satzes
+  // stimmt die Position nicht mehr. Ohne Platz (neu hinzugefügte Sätze) bleibt
+  // der Satz, wie er ist.
+  const slots = entry.sets.map((x) => x.slot).filter((x) => Number.isInteger(x));
+  const fresh = new Map(targetSets(withChoice(target, entry.choice), last, null, slots).map((x) => [x.slot, x]));
   let changed = false;
-  entry.sets.forEach((set, i) => {
-    const f = fresh[i];
+  entry.sets.forEach((set) => {
+    const f = Number.isInteger(set.slot) ? fresh.get(set.slot) : null;
     if (set.done || !set.suggested || !f?.suggested) return;
     if (set.weight !== f.weight || set.reps !== f.reps) {
       set.weight = f.weight;
@@ -987,7 +998,7 @@ function choiceHtml(info, entry, ei) {
   const chosen = entry.choice === choice;
   return `
     <div class="section"><div class="list">
-      <button class="row center accent" data-action="goal-choice" data-ei="${ei}" data-choice="${chosen ? '' : choice}">
+      <button class="row center accent" data-action="goal-choice" data-ei="${ei}" data-ex="${esc(entry.exerciseId)}" data-choice="${chosen ? '' : choice}">
         ${HAP}<div class="row-main"><span class="row-title">${esc(chosen ? undo : pick)}</span></div>
       </button>
     </div></div>`;
@@ -1371,8 +1382,10 @@ registerActions({
   // Eigene Wahl: neu aufbauen, beim alten Gewicht bleiben … (leer = Vorschlag)
   'goal-choice': (el) => {
     const w = Store.getActive();
-    const ei = +el.dataset.ei;
-    const entry = w?.entries[ei];
+    if (!w) return;
+    // Im Blatt zählt die Übung, nicht die Position (die kann sich verschieben)
+    const ei = el.dataset.ex ? w.entries.findIndex((e) => e.exerciseId === el.dataset.ex) : +el.dataset.ei;
+    const entry = w.entries[ei];
     if (!entry) return;
     if (el.dataset.choice) entry.choice = el.dataset.choice; else delete entry.choice;
     refreshSuggestions(w, ei);

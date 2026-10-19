@@ -116,11 +116,19 @@ export function targetView(t, unit, { sets = [], prev = [] } = {}) {
 }
 
 // ---------- Nach der Übung ----------
+// Leiter für das Ergebnis: Bezug ist das heutige Gewicht. Bei einer
+// geschafften Stufe zeigt „next“ schon das neue Gewicht – bei großen Sprüngen
+// zählten die heutigen Sätze dann nicht mehr als Arbeitssätze.
+function outcomeLadder(o) {
+  const ref = o.next.kind === 'increase' ? { ...o.next, weight: o.today.top, top: o.next.reached } : o.next;
+  return { ref, L: ladder(ref, o.today.done) };
+}
+
 export function outcomeView(o, unit) {
   if (!o) return null;
   const { next, today, delta } = o;
   const kg = (v) => formatWeight(v, unit);
-  const L = ladder(next, today.done);
+  const { L } = outcomeLadder(o);
   if (next.kind === 'increase' || next.kind === 'addLoad') {
     return {
       tone: 'up',
@@ -219,8 +227,15 @@ export function goalPanelHtml(t, unit, { sets = [], prev = [], outcome = null } 
   if (!t && !outcome) return '';
   const v = outcome ? outcomeView(outcome, unit) : targetView(t, unit, { sets, prev });
   const target = outcome ? outcome.next : t;
-  const showLadder = outcome || SAME_WEIGHT.has(t.kind);
-  const L = showLadder ? ladder(target, outcome ? outcome.today.done : liveSets(sets, prev)) : null;
+  let L = null;
+  let ladderTop = target.top;
+  if (outcome) {
+    const o = outcomeLadder(outcome);
+    L = o.L;
+    ladderTop = o.ref.top;
+  } else if (SAME_WEIGHT.has(t.kind)) {
+    L = ladder(t, liveSets(sets, prev));
+  }
   const progress = v.levelUp ? 1 : (L ? L.progress : 0);
   const hasRing = v.levelUp || (L && L.segs.length);
   const badge = hasRing
@@ -231,7 +246,7 @@ export function goalPanelHtml(t, unit, { sets = [], prev = [], outcome = null } 
       <div class="gp-set ${s.done ? 'on' : ''}">
         <span class="gp-set-name">Satz ${i + 1}</span>
         <span class="gp-track"><i style="--f:${(v.levelUp ? 1 : s.fill).toFixed(3)}"></i></span>
-        <span class="gp-set-val num">${s.reps}<small>/${target.top}</small></span>
+        <span class="gp-set-val num">${s.reps}<small>/${ladderTop}</small></span>
       </div>`).join('')}
     </div>` : '';
   return `

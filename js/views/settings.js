@@ -159,6 +159,8 @@ registerActions({
           destructive: false,
         }))) { render(); return; }
         Store.convertWeights(toLb ? 2.20462 : 0.453592);
+      } else {
+        Store.resetIncrements();
       }
     }
     const raw = el.dataset.value;

@@ -364,9 +364,14 @@ export const Store = {
     write(KEYS.workouts, read(KEYS.workouts, []).map(fix));
     const active = Store.getActive();
     if (active) write(KEYS.active, fix(active));
-    // Eigene Gewichtssprünge passen nach dem Umrechnen nicht mehr (2,5 kg ≠
-    // 5,5 lb) – zurück auf „Automatisch“
-    write(KEYS.exercises, Store.getExercises().map((e) => (e.increment ? { ...e, increment: null } : e)));
+    Store.resetIncrements();
+  },
+  // Eigene Gewichtssprünge passen nach dem Wechsel der Einheit nicht mehr
+  // (2,5 kg ≠ 5,5 lb) – zurück auf „Automatisch“
+  resetIncrements() {
+    if (Store.getExercises().some((e) => e.increment)) {
+      write(KEYS.exercises, Store.getExercises().map((e) => (e.increment ? { ...e, increment: null } : e)));
+    }
   },
 
   // ---------- Sicherung ----------
