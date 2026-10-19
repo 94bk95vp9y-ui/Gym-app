@@ -19,6 +19,10 @@ import { lineChart } from '../ui/chart.js';
 import { enableReorder } from '../ui/reorder.js';
 import { chev, chips, iconTile, emptyState, TINT } from '../ui/components.js';
 import { openExercisePicker, openExerciseEditor, filterExercises, groupedHtml } from './picker.js';
+import { progressionOf } from '../core/progression.js';
+import {
+  goalTagHtml, goalPanelHtml, goalSettingsHtml, animateGoal,
+} from './goal.js';
 import { startRoutine, startBlank } from './workout.js';
 
 const ui = { seg: 'plans', query: '', group: 'all' };
@@ -151,14 +155,15 @@ registerPage('plan', {
     const rows = r.exerciseIds.filter((eid) => Store.getExercise(eid)).map((eid, i) => {
       const ex = Store.getExercise(eid);
       const info = last.get(eid);
+      const tag = goalTagHtml(progressionOf(ex).target, unit());
       return `
         <button class="row plan-ex" data-action="open-exercise" data-id="${eid}">
           <span class="num-badge">${i + 1}</span>
           <div class="row-main">
             <span class="row-title">${esc(ex.name)}</span>
-            <span class="row-sub">${info ? `Zuletzt ${esc(formatSet(info.best, unit()))}` : esc(ex.muscleGroup)}</span>
+            <span class="row-sub">${plural(plannedSets(r, eid), 'Satz', 'Sätze')} · ${info ? `zuletzt ${esc(formatSet(info.best, unit()))}` : esc(ex.muscleGroup)}</span>
           </div>
-          <span class="row-value">${plural(plannedSets(r, eid), 'Satz', 'Sätze')}</span>${chev}
+          ${tag}${chev}
         </button>`;
     }).join('');
     return `
@@ -173,10 +178,10 @@ registerPage('plan', {
 });
 
 // ---------- Übung ----------
-function exerciseStatsHtml(ex) {
+function exerciseStatsHtml(ex, middle = '') {
   const h = exerciseHistory(ex.id);
   if (!h.sessions.length) {
-    return emptyState({ icon: Icon.chart, title: 'Noch nicht trainiert', text: 'Nach dem ersten Training siehst du hier Bestleistung, Verlauf und Entwicklung.' });
+    return emptyState({ icon: Icon.chart, title: 'Noch nicht trainiert', text: 'Nach dem ersten Training siehst du hier Bestleistung, Verlauf und Entwicklung.' }) + middle;
   }
   const u = unit();
   const best = h.best;
@@ -199,11 +204,25 @@ function exerciseStatsHtml(ex) {
         <div class="history-row"><span>${esc(formatDate(s.date))}</span><span>${esc(formatSetList(s.sets, u))}${s.sets.some((x) => x.pr) ? '<span class="pr-mark">PR</span>' : ''}</span></div>`).join('')}
       </div>
     </div>`;
-  return `<div class="tiles">${stats}</div>${chart}${history}`;
+  return `<div class="tiles">${stats}</div>${middle}${chart}${history}`;
+}
+
+// Steigerung: was beim nächsten Training ansteht, die Leiter vom letzten
+// Mal und die Einstellungen der Übung
+function progressionHtml(ex) {
+  const { target, last } = progressionOf(ex);
+  if (!target) return '';
+  return `
+    <div class="section">
+      <div class="section-head"><h2>Steigerung</h2><span class="meta">nächstes Training</span></div>
+      <div class="card goal-card">${goalPanelHtml(target, unit(), { sets: last ? last.done : [] })}</div>
+    </div>
+    <div class="section">${goalSettingsHtml(ex)}</div>`;
 }
 
 registerPage('exercise', {
   title: ({ id }) => Store.getExercise(id)?.name || 'Übung',
+  mount: (content) => animateGoal(content),
   right: ({ id }) => `<button class="nav-btn" data-action="exercise-edit" data-id="${id}">Bearbeiten</button>`,
   render: ({ id }) => {
     const ex = Store.getExercise(id);
@@ -215,7 +234,7 @@ registerPage('exercise', {
         <h1 class="detail-title">${esc(ex.name)}</h1>
         ${chips([ex.muscleGroup])}
       </div>
-      ${exerciseStatsHtml(ex)}
+      ${exerciseStatsHtml(ex, progressionHtml(ex))}
       <div class="section">
         <div class="section-head"><h2>Notiz zur Ausführung</h2></div>
         <textarea class="input" rows="3" data-input="ex-note" data-id="${ex.id}" placeholder="z. B. Ellbogen nah am Körper, Rücken gerade">${esc(ex.notes || '')}</textarea>

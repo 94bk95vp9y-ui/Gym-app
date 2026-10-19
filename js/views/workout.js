@@ -2,10 +2,13 @@
 // Vorschlagswerten und der Zusammenfassung am Ende.
 import { Store, REST_OPTIONS } from '../core/store.js';
 import {
-  workoutFromRoutine, blankWorkout, newEntry, lastSessionFor, overloadSuggestion, refreshPrFlags,
+  workoutFromRoutine, blankWorkout, newEntry, lastSessionFor, refreshPrFlags,
   isEntryComplete, workoutProgress, workoutDoneSets, workoutVolume, workoutDuration, exerciseNames, entryName,
   planDiff, routineFromWorkout, exerciseHistory, compareToPrevious,
 } from '../core/training.js';
+import {
+  progressionOf, outcomeOf, withChoice, targetSets, learnRanges, historyFor, CHOICES,
+} from '../core/progression.js';
 import { fatigueOf, muscleGroupLookup } from '../core/fatigue.js';
 import {
   formatNumber, parseNumber, formatSet, formatSetList, formatWeight, formatClock, formatRest,
@@ -29,6 +32,9 @@ import {
   emptyState, iconTile, chev, deltaPill, TINT,
 } from '../ui/components.js';
 import { openExercisePicker } from './picker.js';
+import {
+  targetView, outcomeView, outcomePill, goalCardHtml, goalPanelHtml, goalSettingsHtml, goalLineHtml, animateGoal,
+} from './goal.js';
 
 const root = document.getElementById('workout-root');
 // expanded: fertige Übungen, die der Nutzer wieder aufgeklappt hat
@@ -186,9 +192,16 @@ function fatigueNote(lastSession, workout, ei, groupOf) {
   return `Heute ${plural(now.priorSets, 'Satz', 'Sätze')} ${group} davor, letztes Mal ${then.priorSets} – ${tail}`;
 }
 
-function fieldHtml(set, ei, si, field) {
+// Vorschlag über dem letzten Mal: das Feld, in dem heute mehr drin ist
+function goalClass(set, prev, field) {
+  if (!set.suggested || set.done || !prev) return '';
+  if (field === 'weight') return set.weight > (prev.weight || 0) ? 'aim up' : '';
+  return set.weight === (prev.weight || 0) && set.reps > prev.reps ? 'aim' : '';
+}
+
+function fieldHtml(set, ei, si, field, prev = null) {
   const value = field === 'weight' ? (set.weight > 0 ? formatNumber(set.weight) : '') : (set.reps > 0 ? String(set.reps) : '');
-  const sug = set.suggested && !set.done ? 'suggested' : '';
+  const sug = set.suggested && !set.done ? `suggested ${goalClass(set, prev, field)}` : '';
   const label = `${field === 'weight' ? 'Gewicht' : 'Wiederholungen'} Satz ${si + 1}`;
   if (useKeypad()) {
     return `<button class="set-field ${sug}" data-action="w-field" data-field="${field}" data-ei="${ei}" data-si="${si}" aria-label="${label}"><span class="sf-val">${value || '<span class="sf-ph">0</span>'}</span></button>`;
@@ -204,8 +217,8 @@ function setRowHtml(set, ei, si, prev) {
     <div class="swipe-body set-cols set-row ${set.done ? 'done' : ''}" data-ei="${ei}" data-si="${si}">
       <button class="set-num ${set.pr ? 'pr' : ''}" data-action="w-set-menu" data-ei="${ei}" data-si="${si}" aria-label="Satz ${si + 1}">${set.pr ? 'PR' : si + 1}</button>
       ${prev ? `<button class="set-prev" data-action="w-prev" data-ei="${ei}" data-si="${si}" aria-label="Werte vom letzten Mal übernehmen">${HAP}${esc(prevSetText(prev))}</button>` : '<span class="set-prev">—</span>'}
-      ${fieldHtml(set, ei, si, 'weight')}
-      ${fieldHtml(set, ei, si, 'reps')}
+      ${fieldHtml(set, ei, si, 'weight', prev)}
+      ${fieldHtml(set, ei, si, 'reps', prev)}
       <button class="set-check" data-action="w-toggle" data-ei="${ei}" data-si="${si}" aria-label="Satz ${si + 1} abhaken">${HAP}${Icon.check}</button>
     </div>
     </div>`;
@@ -223,14 +236,39 @@ function currentIndex(w) {
   return w.entries.findIndex((e) => !isEntryComplete(e));
 }
 
+// Steigerung einer Übung im laufenden Training: Ziel (mit eigener Wahl wie
+// „neu aufbauen“), der Verlauf davor und – wenn alle Sätze erledigt sind –
+// das Ergebnis samt nächstem Ziel.
+function progressInfo(w, entry) {
+  const ex = Store.getExercise(entry.exerciseId);
+  const { target, sessions, last } = progressionOf(ex, { excludeId: w.id });
+  return {
+    ex,
+    base: target,
+    target: withChoice(target, entry.choice),
+    sessions,
+    prevSets: last ? last.done : [],
+    outcome: isEntryComplete(entry) ? outcomeOf(ex, entry, w, sessions) : null,
+  };
+}
+
+function goalView(info, entry) {
+  return info.outcome
+    ? outcomeView(info.outcome, unit())
+    : targetView(info.target, unit(), { sets: entry.sets, prev: info.prevSets });
+}
+
+function goalHtml(info, entry, ei) {
+  return goalCardHtml(goalView(info, entry), { action: 'w-goal', attrs: `data-ei="${ei}"` });
+}
+
 function exerciseCardHtml(w, entry, ei, ctx) {
   const ex = Store.getExercise(entry.exerciseId);
   const last = lastSessionFor(entry.exerciseId, w.id);
   const prevSets = last ? last.entry.sets.filter((s) => s.done && s.reps > 0) : [];
-  const overload = ex ? overloadSuggestion(ex, w.id) : null;
+  const info = progressInfo(w, entry);
   const note = ex?.notes?.trim();
   const fatigue = fatigueNote(last, w, ei, ctx.groupOf);
-  const showOverload = overload && entry.sets.some((s) => !s.done);
   const complete = isEntryComplete(entry);
   const collapsed = complete && !W.expanded.has(entry.exerciseId);
   const cls = [complete ? 'complete' : '', collapsed ? 'collapsed' : '', ei === ctx.current ? 'current' : ''].join(' ');
@@ -242,14 +280,14 @@ function exerciseCardHtml(w, entry, ei, ctx) {
           <span class="ex-titles">
             <h3 class="ex-name">${esc(entryName(entry, ctx.names))}</h3>
             <span class="ex-group">${esc([ex?.muscleGroup, plural(entry.sets.length, 'Satz', 'Sätze')].filter(Boolean).join(' · '))}</span>
-            <span class="ex-summary">${esc(summaryText(entry, ctx.unit))}</span>
+            <span class="ex-summary">${esc(summaryText(entry, ctx.unit))}${outcomePill(info.outcome, ctx.unit)}</span>
           </span>
         </button>
         <button class="icon-btn" data-action="w-ex-menu" data-ei="${ei}" aria-label="Optionen">${Icon.more}</button>
       </div>
       <div class="ex-body"><div class="ex-body-in">
         ${note ? `<button class="ex-note" data-action="w-note" data-ei="${ei}">${esc(note)}</button>` : ''}
-        ${showOverload ? `<p class="ex-hint up">Mehr Gewicht: ${esc(formatWeight(overload.to, ctx.unit))} statt ${esc(formatWeight(overload.from, ctx.unit))} – zweimal ${overload.threshold}+ Wdh geschafft.</p>` : ''}
+        <div class="goal-slot">${goalHtml(info, entry, ei)}</div>
         ${fatigue ? `<p class="ex-hint">${esc(fatigue)}</p>` : ''}
         <div class="set-table">
           <div class="set-cols set-headrow"><span>Satz</span><span>Vorher</span><span>${ctx.unit}</span><span>Wdh</span><span></span></div>
@@ -317,11 +355,12 @@ function updateProgress(w) {
 function updateCard(w, ei) {
   const entry = w.entries[ei];
   const card = qs(`.ex-card[data-ei="${ei}"]`, root);
-  if (!card) return;
+  if (!card) return null;
   const complete = isEntryComplete(entry);
+  const info = progressInfo(w, entry);
   card.classList.toggle('complete', complete);
   qs('.ex-state', card).innerHTML = complete ? Icon.check : String(ei + 1);
-  qs('.ex-summary', card).textContent = summaryText(entry, unit());
+  qs('.ex-summary', card).innerHTML = esc(summaryText(entry, unit())) + outcomePill(info.outcome, unit());
   if (!complete) card.classList.remove('collapsed');
   entry.sets.forEach((s, si) => {
     const num = qs(`.set-row[data-si="${si}"] .set-num`, card);
@@ -329,10 +368,42 @@ function updateCard(w, ei) {
     num.classList.toggle('pr', !!s.pr);
     num.textContent = s.pr ? 'PR' : String(si + 1);
   });
+  const slot = qs('.goal-slot', card);
+  if (slot) patchGoal(slot, goalHtml(info, entry, ei));
+  W.goalSheet?.refresh();
+  return info;
 }
 
-// Fertige Übung zuklappen und die nächste offene ins Bild holen
-function advanceFocus(w, finishedIndex) {
+// Ziel-Karte auf den neuen Stand bringen. Bleibt die Leiste gleich lang,
+// werden nur Inhalt und Füllung getauscht – so wächst sie sichtbar nach.
+function patchGoal(slot, html) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html.trim();
+  const next = tpl.content.firstElementChild;
+  const old = slot.firstElementChild;
+  const oldSegs = old ? qsa('.goal-bar i', old) : [];
+  const newSegs = next ? qsa('.goal-bar i', next) : [];
+  if (!old || !next || oldSegs.length !== newSegs.length) {
+    slot.replaceChildren(tpl.content);
+    return;
+  }
+  old.className = next.className;
+  const bar = qs('.goal-bar', old);
+  [...old.children].forEach((c) => { if (c !== bar) c.remove(); });
+  let afterBar = false;
+  [...next.children].forEach((c) => {
+    if (c.classList.contains('goal-bar')) { afterBar = true; return; }
+    if (bar && !afterBar) old.insertBefore(c, bar); else old.appendChild(c);
+  });
+  newSegs.forEach((n, i) => {
+    oldSegs[i].className = n.className;
+    oldSegs[i].style.setProperty('--f', n.style.getPropertyValue('--f'));
+  });
+}
+
+// Fertige Übung zuklappen und die nächste offene ins Bild holen. Nach einer
+// geschafften Stufe bleibt die Karte etwas länger offen.
+function advanceFocus(w, finishedIndex, delay = 650) {
   const next = currentIndex(w);
   qsa('.ex-card', root).forEach((c) => c.classList.toggle('current', +c.dataset.ei === next));
   if (finishedIndex === undefined) return;
@@ -345,7 +416,7 @@ function advanceFocus(w, finishedIndex) {
     qs('.ex-head-main', done)?.setAttribute('aria-expanded', 'false');
     const target = next >= 0 ? qs(`.ex-card[data-ei="${next}"]`, root) : null;
     target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, 650);
+  }, delay);
 }
 
 // Der nächste offene Satz – für die Pausenleiste
@@ -710,8 +781,12 @@ async function finish() {
   if (!ok) return;
   const cur = Store.getActive();
   cur.finishedAt = new Date(finishTime(cur)).toISOString();
-  cur.entries.forEach((e) => e.sets.forEach((s) => { delete s.suggested; delete s.doneAt; }));
+  cur.entries.forEach((e) => {
+    delete e.choice;
+    e.sets.forEach((s) => { delete s.suggested; delete s.doneAt; });
+  });
   Store.finishActiveWorkout(cur);
+  learnRanges(cur);
   Sound.finish();
   minimizeWorkout();
   setTimeout(() => openSummary(cur.id), 260);
@@ -774,6 +849,20 @@ function openSummary(id) {
   const supplementsOpen = Store.getActiveSupplements().length
     && !dayStatus(Store.getSupplements(), Store.getSupplementLog(), dayKey()).complete;
 
+  // Wie ging es je Übung weiter? Die Stufen, die geschafft sind, kommen
+  // zusätzlich als Fakt nach oben.
+  const outcomes = new Map(done.map((e) => {
+    const ex = Store.getExercise(e.exerciseId);
+    return [e, ex ? outcomeOf(ex, e, w, historyFor(ex.id, { excludeId: w.id, before: w.startedAt })) : null];
+  }));
+  const levelUps = done.filter((e) => ['increase', 'addLoad'].includes(outcomes.get(e)?.next.kind));
+  if (levelUps.length) {
+    facts.unshift({
+      icon: Icon.stairs,
+      text: `${plural(levelUps.length, 'Übung', 'Übungen')} bereit für mehr Gewicht`,
+      sub: levelUps.map((e) => entryName(e, names)).join(', '),
+    });
+  }
   const exerciseRows = done.map((e) => {
     const hasPr = e.sets.some((s) => s.done && s.pr);
     return `
@@ -781,6 +870,7 @@ function openSummary(id) {
         <div class="row-main">
           <span class="row-title">${esc(entryName(e, names))}${hasPr ? `<span class="pr-mark">${Icon.medal}PR</span>` : ''}</span>
           <span class="row-sub num">${esc(formatSetList(e.sets, u))}</span>
+          ${goalLineHtml(outcomes.get(e), u)}
         </div>
         ${deltaPill(compareToPrevious(e, w), u)}
       </div>`;
@@ -859,6 +949,91 @@ function openSummary(id) {
   });
 }
 
+// ---------- Steigerung: Details und eigene Wahl ----------
+// Noch unberührte Vorschläge an ein geändertes Ziel anpassen (andere Wahl,
+// anderer Wiederholungsbereich oder Gewichtssprung). Was schon eingetippt
+// oder abgehakt ist, bleibt.
+function refreshSuggestions(w, ei) {
+  const entry = w.entries[ei];
+  const ex = Store.getExercise(entry.exerciseId);
+  if (!ex) return false;
+  const { target, last } = progressionOf(ex, { excludeId: w.id });
+  const fresh = targetSets(withChoice(target, entry.choice), last, entry.sets.length);
+  let changed = false;
+  entry.sets.forEach((set, i) => {
+    const f = fresh[i];
+    if (set.done || !set.suggested || !f?.suggested) return;
+    if (set.weight !== f.weight || set.reps !== f.reps) {
+      set.weight = f.weight;
+      set.reps = f.reps;
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+const CHOICE_LABELS = {
+  stay: (t, u) => [`Heute bei ${formatWeight(t.from, u)} bleiben`, `Doch steigern auf ${formatWeight(t.weight, u)}`],
+  reset: (t, u) => [`Mit ${formatWeight(t.reset, u)} neu aufbauen`, `Bei ${formatWeight(t.from, u)} bleiben`],
+  normal: (t, u) => [t.lighter ? `Normal mit ${formatWeight(t.from, u)} weitermachen` : 'Normal weitermachen', 'Doch leichter einsteigen'],
+};
+
+function choiceHtml(info, entry, ei) {
+  const base = info.base;
+  if (info.outcome || !base) return '';
+  const choice = Object.keys(CHOICES).find((c) => CHOICES[c] === base.kind);
+  if (!choice || (choice === 'reset' && !base.reset)) return '';
+  const [pick, undo] = CHOICE_LABELS[choice](base, unit());
+  const chosen = entry.choice === choice;
+  return `
+    <div class="section"><div class="list">
+      <button class="row center accent" data-action="goal-choice" data-ei="${ei}" data-choice="${chosen ? '' : choice}">
+        ${HAP}<div class="row-main"><span class="row-title">${esc(chosen ? undo : pick)}</span></div>
+      </button>
+    </div></div>`;
+}
+
+function openGoalSheet(ei) {
+  const w = Store.getActive();
+  const entry = w?.entries[ei];
+  if (!entry) return;
+  const id = entry.exerciseId;
+  const body = () => {
+    const cur = Store.getActive();
+    const index = cur ? cur.entries.findIndex((e) => e.exerciseId === id) : -1;
+    if (index < 0) return '';
+    const e = cur.entries[index];
+    const info = progressInfo(cur, e);
+    return `
+      ${goalPanelHtml(info.target, unit(), { sets: e.sets, prev: info.prevSets, outcome: info.outcome })}
+      ${choiceHtml(info, e, index)}
+      ${info.ex ? `<div class="section">${goalSettingsHtml(info.ex)}</div>` : ''}`;
+  };
+  const sheet = openSheet({
+    title: entryName(entry),
+    className: 'goal-sheet',
+    body: body(),
+    onMount: (sh) => animateGoal(sh.body),
+    onClose: () => { W.goalSheet = null; },
+  });
+  W.goalSheet = { refresh: () => sheet.setBody(body()) };
+}
+
+// Einstellungen einer Übung geändert (Wiederholungsbereich, Gewichtssprung):
+// offene Vorschläge im laufenden Training nachziehen
+window.addEventListener('progression-changed', (e) => {
+  const w = Store.getActive();
+  if (!w) return;
+  let changed = false;
+  w.entries.forEach((entry, ei) => {
+    if (e.detail?.id && entry.exerciseId !== e.detail.id) return;
+    if (refreshSuggestions(w, ei)) changed = true;
+  });
+  if (changed) Store.setActive(w);
+  if (W.open) paint();
+  W.goalSheet?.refresh();
+});
+
 // ---------- Satz abhaken ----------
 function rowEl(ei, si) {
   return qs(`.ex-card[data-ei="${ei}"] .set-row[data-si="${si}"]`, root);
@@ -891,17 +1066,21 @@ function toggleSet(ei, si) {
   Store.setActive(w);
   if (row) {
     row.classList.toggle('done', set.done);
-    qsa('.set-in, .set-field', row).forEach((i) => i.classList.remove('suggested'));
+    qsa('.set-in, .set-field', row).forEach((i) => i.classList.remove('suggested', 'aim', 'up'));
     const check = qs('.set-check', row);
     check.classList.remove('bump');
     void check.offsetWidth;
     check.classList.add('bump');
   }
-  updateCard(w, ei);
+  const info = updateCard(w, ei);
   updateProgress(w);
   syncAllDone(w);
-  advanceFocus(w, set.done && isEntryComplete(w.entries[ei]) ? ei : undefined);
+  // Alle Sätze oben angekommen: Stufe geschafft, nächstes Mal mehr Gewicht
+  const levelUp = set.done && ['increase', 'addLoad'].includes(info?.outcome?.next.kind);
+  advanceFocus(w, set.done && isEntryComplete(w.entries[ei]) ? ei : undefined, levelUp ? 1800 : 650);
+  if (levelUp) qs(`.ex-card[data-ei="${ei}"] .goal`, root)?.classList.add('celebrate');
   if (set.done) {
+    showGain(row, set, prevFor(w, ei, si));
     document.activeElement?.blur?.();
     if (workoutProgress(w).done === workoutProgress(w).total) {
       const bar = qs('#rest-slot .rest', root);
@@ -915,6 +1094,9 @@ function toggleSet(ei, si) {
       Sound.record();
       haptic(2);
       celebratePr(row);
+    } else if (levelUp) {
+      Sound.levelUp();
+      haptic(2);
     } else {
       Sound.setDone();
       haptic();
@@ -924,6 +1106,24 @@ function toggleSet(ei, si) {
     haptic();
   }
   return true;
+}
+
+// Mehr als letztes Mal in diesem Satz: kurz „+1 Wdh“ bzw. „+2,5 kg“
+// aufsteigen lassen
+function showGain(row, set, prev) {
+  if (!row || !prev) return;
+  const u = unit();
+  let text = '';
+  if (set.weight > (prev.weight || 0)) text = `+${formatNumber(set.weight - (prev.weight || 0))}\u00a0${u}`;
+  else if (set.weight === (prev.weight || 0) && set.reps > prev.reps) text = `+${set.reps - prev.reps}\u00a0Wdh`;
+  if (!text) return;
+  qsa('.gain-float', row).forEach((x) => x.remove());
+  const el = document.createElement('span');
+  el.className = 'gain-float';
+  el.setAttribute('aria-hidden', 'true');
+  el.textContent = text;
+  row.appendChild(el);
+  setTimeout(() => el.remove(), 1400);
 }
 
 function celebratePr(row) {
@@ -1062,7 +1262,7 @@ function applyFieldText(text, fresh) {
   }
   if (set.suggested) {
     set.suggested = false;
-    qsa('.set-field', row).forEach((i) => i.classList.remove('suggested'));
+    qsa('.set-field', row).forEach((i) => i.classList.remove('suggested', 'aim', 'up'));
   }
   if (set.done) {
     refreshPrFlags(w, ei);
@@ -1166,6 +1366,23 @@ registerActions({
 
   'w-field': (el) => openField(+el.dataset.ei, +el.dataset.si, el.dataset.field),
 
+  'w-goal': (el) => openGoalSheet(+el.dataset.ei),
+
+  // Eigene Wahl: neu aufbauen, beim alten Gewicht bleiben … (leer = Vorschlag)
+  'goal-choice': (el) => {
+    const w = Store.getActive();
+    const ei = +el.dataset.ei;
+    const entry = w?.entries[ei];
+    if (!entry) return;
+    if (el.dataset.choice) entry.choice = el.dataset.choice; else delete entry.choice;
+    refreshSuggestions(w, ei);
+    Store.setActive(w);
+    if (isKeypadOpen()) closeKeypad();
+    if (W.open) paint();
+    W.goalSheet?.refresh();
+    haptic();
+  },
+
   // Antippen von „Vorher“ übernimmt Gewicht und Wiederholungen vom letzten Mal
   'w-prev': (el) => {
     const ei = +el.dataset.ei;
@@ -1188,7 +1405,7 @@ registerActions({
       const text = field === 'weight' ? (set.weight > 0 ? formatNumber(set.weight) : '') : String(set.reps);
       if (f.tagName === 'INPUT') f.value = text;
       else qs('.sf-val', f).innerHTML = text ? esc(text) : '<span class="sf-ph">0</span>';
-      f.classList.remove('suggested');
+      f.classList.remove('suggested', 'aim', 'up');
       popIn(f);
     });
     if (set.done) updateCard(w, ei);
@@ -1274,7 +1491,7 @@ registerInputs({
     set[el.dataset.field] = el.dataset.field === 'reps' ? Math.floor(value) : value;
     if (set.suggested) {
       set.suggested = false;
-      qsa(`.set-row[data-ei="${ei}"][data-si="${si}"] .set-in`, root).forEach((i) => i.classList.remove('suggested'));
+      qsa(`.set-row[data-ei="${ei}"][data-si="${si}"] .set-in`, root).forEach((i) => i.classList.remove('suggested', 'aim', 'up'));
     }
     if (set.done) {
       refreshPrFlags(w, ei);

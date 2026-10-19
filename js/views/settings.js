@@ -98,7 +98,7 @@ registerPage('settings', {
           <span class="stepper"><button data-action="set-goal" data-delta="-1" aria-label="Weniger">${HAP}${Icon.minus}</button><span>${s.weeklyGoal}</span><button data-action="set-goal" data-delta="1" aria-label="Mehr">${HAP}${Icon.plus}</button></span></div>
         <button class="row" data-action="set-rest">${iconTile(Icon.timer, TINT.orange)}<div class="row-main"><span class="row-title">Satzpause</span><span class="row-sub">Standard – pro Übung änderbar</span></div>
           <span class="row-value">${formatRest(s.restSeconds)}</span>${chev}</button>
-        ${toggleRow('progressiveOverload', 'Gewichts-Empfehlung', 'Mehr Gewicht, sobald du zweimal alle Sätze mit 10+ Wdh geschafft hast', s.progressiveOverload, Icon.trendUp, TINT.green)}
+        ${toggleRow('progressiveOverload', 'Steigerungs-Ziele', 'Für jede Übung: erst mehr Wdh, dann mehr Gewicht – mit Plateau- und Pausen-Erkennung', s.progressiveOverload, Icon.stairs, TINT.green)}
         ${toggleRow('appKeypad', 'Zahlenfeld der App', 'Große Tasten mit ± statt der iPhone-Tastatur', s.appKeypad, Icon.keypad, TINT.indigo)}
         ${toggleRow('keepAwake', 'Bildschirm anlassen', 'Während des Trainings sperrt sich das iPhone nicht', s.keepAwake, Icon.phone, TINT.gray)}
       </div>

@@ -9,8 +9,8 @@ danach auch offline.
 ## Funktionen
 
 **Heute**
-- Nächstes Training (Plan-Rotation) mit Übungsvorschau und Start-Knopf;
-  „Wechseln“ öffnet die Planauswahl direkt am Knopf
+- Nächstes Training (Plan-Rotation) mit Start-Knopf; „Wechseln“ öffnet die
+  Planauswahl direkt am Knopf
 - Laufendes oder heute erledigtes Training
 - Supplements des Tages zum Abhaken, Hinweis bei knappem Vorrat
 - Wochenstreifen mit Wochenziel, Mobility als kleine Kachel, Hinweis auf
@@ -34,9 +34,23 @@ danach auch offline.
 - Spalte „Vorher“ – antippen übernimmt die Werte vom letzten Mal
 - Satz nach links wischen zum Löschen, mit „Rückgängig“
 - Pausentimer nach jedem Satz (Standard oder pro Übung), zeigt den nächsten Satz
-- Rekord-Erkennung, Gewichts-Empfehlung, Hinweis bei anderer Vorbelastung
+- Rekord-Erkennung, Hinweis bei anderer Vorbelastung
 - Zusammenfassung: Kennzahlen, Rekorde, jede Übung im Vergleich zum letzten
   Mal, Plan-Änderungen übernehmen bzw. freies Training als Plan speichern
+
+**Steigerung (Ziel je Übung)**
+- Doppelprogression: erst mehr Wiederholungen, dann mehr Gewicht – sobald
+  jeder Arbeitssatz das obere Ende des Wiederholungsbereichs erreicht
+- Wiederholungsbereich und Gewichtssprung je Übung automatisch (Übungsart,
+  eigener Verlauf) oder selbst gewählt; großer Sprung (z. B. leichte
+  Kurzhanteln) erst nach ein paar Wdh mehr
+- Plateau-Erkennung mit Vorschlag zum Neuaufbau, leichterer Wiedereinstieg
+  nach drei und mehr Wochen Pause
+- Im Training: Ziel-Karte mit Fortschritt bis zum nächsten Gewicht,
+  markierte Zielfelder, „+1 Wdh“ beim Abhaken, „Stufe geschafft“; Antippen
+  der Karte zeigt Details und erlaubt eine eigene Wahl
+- Ausblick in der Zusammenfassung, Etiketten auf der Plan-Seite, eigener
+  Abschnitt auf der Übungsseite
 
 **Supplements**
 - Abhaken nach Tageszeit, Kalender mit einem Ring pro Tag zum Nachtragen,
@@ -45,8 +59,8 @@ danach auch offline.
 - Tägliche Erinnerung über den iPhone-Kalender (`reminders/*.ics`)
 
 **Verlauf**
-- Kalender und Liste aller Trainings mit Detailansicht und Vergleich zum
-  letzten Mal
+- Kalender und Liste aller Trainings (erst die letzten sechs Monate, ältere
+  auf Wunsch) mit Detailansicht und Vergleich zum letzten Mal
 - Statistik: Woche, Trainings pro Woche mit Ziellinie, Kraftentwicklung,
   Sätze pro Muskel, Rekorde
 
@@ -56,7 +70,7 @@ danach auch offline.
 - Geführter Player mit 3D-Figur, Atemführung und Sprachansage
 
 **Einstellungen**
-- kg/lb, Wochenziel, Satzpause, Gewichts-Empfehlung, Zahlenfeld, Bildschirm
+- kg/lb, Wochenziel, Satzpause, Steigerungs-Ziele, Zahlenfeld, Bildschirm
   anlassen
 - Hell, Dunkel oder wie das iPhone, Akzentfarbe, Transparenz reduzieren,
   Haptik, Töne

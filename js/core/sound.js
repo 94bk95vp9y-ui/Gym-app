@@ -164,6 +164,15 @@ export const Sound = {
     });
   },
 
+  // Stufe geschafft (nächstes Mal mehr Gewicht): drei Stufen nach oben,
+  // heller und kürzer als der Rekord.
+  levelUp() {
+    withAudio((ac) => {
+      noise(ac, 0, { dur: 0.018, peak: 0.22, freq: 2800 });
+      [587, 784, 1175].forEach((f, i) => pluck(ac, i * 0.085, { from: f, dur: i === 2 ? 0.5 : 0.16, peak: i === 2 ? 0.26 : 0.24 }));
+    });
+  },
+
   // Pause vorbei: zwei ruhige Schläge, nicht alarmierend.
   restOver() {
     withAudio((ac) => {

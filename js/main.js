@@ -92,6 +92,16 @@ window.addEventListener('orientationchange', () => setTimeout(calibrateSafeArea,
 render();
 restoreWorkout();
 
+// Den Browser bitten, die Daten nicht von selbst zu löschen, wenn der
+// Speicher knapp wird. Ob und wann Safari das gewährt, entscheidet der
+// Browser selbst – es gibt keine Rückfrage und keinen Nachteil.
+const storage = navigator.storage;
+if (storage?.persist) {
+  Promise.resolve(storage.persisted ? storage.persisted() : false)
+    .then((done) => done || storage.persist())
+    .catch(() => {});
+}
+
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./service-worker.js').catch(() => {});

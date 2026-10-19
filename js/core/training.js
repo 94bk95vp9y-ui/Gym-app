@@ -1,22 +1,9 @@
 // Trainingslogik ohne DOM: Vorschläge, Rekorde, Statistik, Plan-Rotation.
 import { Store, uid } from './store.js';
-import { fatigueOf, muscleGroupLookup } from './fatigue.js';
 import { estimate1RM, bestSet, setScore } from './format.js';
+import { analyze, progressDelta, progressionOf, targetSets } from './progression.js';
 
 const DAY = 86400000;
-
-// ---------- Gewichts-Empfehlung ----------
-// Klassische Doppelprogression: wer eine Übung in den letzten 2 Einheiten bei
-// GLEICHEM Gewicht durchweg mit 10+ Wiederholungen geschafft hat, ist bereit
-// für mehr. Große Grundübungen bekommen einen größeren Sprung.
-export const OVERLOAD_REP_THRESHOLD = 10;
-const BIG_LIFT_GROUPS = ['Beine', 'Rücken', 'Brust'];
-
-export function overloadStep(muscleGroup, unit) {
-  const big = BIG_LIFT_GROUPS.includes(muscleGroup);
-  if (unit === 'lb') return big ? 10 : 5;
-  return big ? 5 : 2.5;
-}
 
 // Letzte abgeschlossene Einheit, in der diese Übung wirklich trainiert wurde –
 // samt Trainingskontext, um die Vorbelastung bestimmen zu können.
@@ -40,62 +27,15 @@ export function previousSessionFor(exerciseId, workout) {
   return null;
 }
 
-// Bester Satz heute gegen den besten Satz der vorigen Einheit. Gewicht zählt
-// vor Wiederholungen: 82,5 × 6 nach 80 × 8 ist ein Plus von 2,5 kg.
-// Schwerster Satz (bei gleichem Gewicht der mit mehr Wiederholungen)
-function heaviestSet(sets) {
-  return (sets || []).filter((s) => s.done && s.reps > 0)
-    .reduce((best, s) => (!best || (s.weight || 0) > (best.weight || 0)
-      || ((s.weight || 0) === (best.weight || 0) && s.reps > best.reps) ? s : best), null);
-}
-
-// Schwerster Satz heute gegen den schwersten der vorigen Einheit. Gewicht
-// zählt vor Wiederholungen: 82,5 × 6 nach 80 × 8 ist ein Plus von 2,5 kg.
-// (Nach geschätztem 1RM auszuwählen und dann nach Gewicht zu vergleichen,
-// hätte leichte Wiederholungssätze als „−10 kg“ gewertet.)
+// Heute gegen die vorige Einheit: zuerst das Gewicht (82,5 × 6 nach 80 × 8
+// ist ein Plus von 2,5 kg), bei gleichem Gewicht die Wdh Satz für Satz –
+// 10, 10, 9 nach 10, 9, 8 sind 2 Wdh mehr, auch wenn der beste Satz gleich
+// blieb.
 export function compareToPrevious(entry, workout) {
-  const today = heaviestSet(entry.sets);
+  const today = analyze(entry, workout);
   if (!today) return null;
   const prev = previousSessionFor(entry.exerciseId, workout);
-  const before = prev ? heaviestSet(prev.entry.sets) : null;
-  if (!before) return { kind: 'new', delta: 0 };
-  if ((today.weight || 0) !== (before.weight || 0)) {
-    return { kind: 'weight', delta: Math.round(((today.weight || 0) - (before.weight || 0)) * 100) / 100 };
-  }
-  if (today.reps !== before.reps) return { kind: 'reps', delta: today.reps - before.reps };
-  return { kind: 'same', delta: 0 };
-}
-
-export function overloadSuggestion(exercise, excludeWorkoutId) {
-  if (!exercise) return null;
-  const settings = Store.getSettings();
-  if (!settings.progressiveOverload) return null;
-  const groupOf = muscleGroupLookup(Store.getExercises());
-  const candidates = [];
-  for (const w of Store.getWorkouts()) {
-    if (w.id === excludeWorkoutId) continue;
-    const entryIndex = w.entries.findIndex((e) => e.exerciseId === exercise.id && e.sets.some((s) => s.done));
-    if (entryIndex >= 0) candidates.push({ entry: w.entries[entryIndex], bucket: fatigueOf(w, entryIndex, groupOf).bucket });
-    if (candidates.length >= 6) break;
-  }
-  if (candidates.length < 2) return null;
-
-  // Nur Einheiten mit vergleichbarer Vorbelastung heranziehen.
-  const sameBucket = candidates.filter((c) => c.bucket === candidates[0].bucket);
-  const sessions = (sameBucket.length >= 2 ? sameBucket : candidates).slice(0, 2).map((c) => c.entry);
-
-  const analyzed = sessions.map((entry) => {
-    const done = entry.sets.filter((s) => s.done && s.weight > 0);
-    if (!done.length) return null;
-    const weight = done[0].weight;
-    const sameWeight = done.every((s) => s.weight === weight);
-    const hit = done.every((s) => s.reps >= OVERLOAD_REP_THRESHOLD);
-    return sameWeight && hit ? { weight } : null;
-  });
-  if (!analyzed[0] || !analyzed[1] || analyzed[0].weight !== analyzed[1].weight) return null;
-
-  const step = overloadStep(exercise.muscleGroup, settings.unit);
-  return { from: analyzed[0].weight, to: Math.round((analyzed[0].weight + step) * 10) / 10, threshold: OVERLOAD_REP_THRESHOLD };
+  return progressDelta(today, prev ? analyze(prev.entry, prev.workout) : null);
 }
 
 // ---------- Sätze vorbereiten ----------
@@ -105,24 +45,12 @@ export function plannedSets(routine, exerciseId) {
   return routine?.setCounts?.[exerciseId] ?? 2;
 }
 
-// Werte vom letzten Mal, Satz für Satz (grau als Vorschlag, bis bestätigt).
-// Ist die Gewichts-Empfehlung fällig, steht direkt das neue Gewicht drin –
-// mit den Wiederholungen, die bei gleicher Leistung (geschätztes 1RM) zu
-// erwarten sind, statt der alten Zahl.
+// Vorschlagswerte: die Sätze vom letzten Mal, angepasst an das Ziel der
+// Steigerung (1 Wdh mehr, mehr Gewicht, leichter nach einer Pause …).
+// Grau, bis sie bestätigt sind.
 export function defaultSets(exercise, excludeWorkoutId, count) {
-  const last = lastSessionFor(exercise.id, excludeWorkoutId);
-  const lastDone = last ? last.entry.sets.filter((s) => s.done && s.reps > 0) : [];
-  const overload = overloadSuggestion(exercise, excludeWorkoutId);
-  const total = Math.max(1, count ?? Math.min(8, lastDone.length || 3));
-  return Array.from({ length: total }, (_, i) => {
-    const src = lastDone[Math.min(i, lastDone.length - 1)];
-    if (!src) return { weight: 0, reps: 0, done: false, suggested: false };
-    if (overload && src.weight > 0) {
-      const reps = Math.max(1, Math.floor(30 * (estimate1RM(src.weight, src.reps) / overload.to - 1)));
-      return { weight: overload.to, reps: Math.min(src.reps, reps), done: false, suggested: true };
-    }
-    return { weight: src.weight, reps: src.reps, done: false, suggested: true };
-  });
+  const { target, last } = progressionOf(exercise, { excludeId: excludeWorkoutId });
+  return targetSets(target, last, count);
 }
 
 export function newEntry(exercise, workoutId, count) {
