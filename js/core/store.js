@@ -101,6 +101,8 @@ const DEFAULT_SETTINGS = {
   mobilityBudget: 10,
   mobilityVoice: true,
   mobilityPrep: 10,
+  // Optionale Teile von Mobility-Plänen, z. B. { 'lower-body:kicks': true }
+  mobilityOptional: {},
   backupReminder: true,
   lastBackupAt: null,
   backupSnoozedUntil: null,

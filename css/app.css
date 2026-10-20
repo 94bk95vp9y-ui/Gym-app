@@ -436,6 +436,7 @@ html:not(.ios) .hap, html.no-haptics .hap { display: none; }
 .mob-rules { margin-bottom: 14px; }
 .mob-rules ul { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
 .mob-rules li + li { margin-top: 4px; }
+.mob-off { opacity: 0.4; }
 
 .card {
   background: var(--card);

@@ -69,6 +69,9 @@ danach auch offline.
   statisch und Anspannen-Loslassen dehnen, aktive Beweglichkeit, Kicks in
   Zeitlupe, Kraft in Dehnposition – komplett, kurz (Dehnteil halbiert) oder
   nach dem Beintag (Kraftteil nur ein Satz); mit den Regeln aus dem Plan
+- Mobility-Plan Unterkörper (jeden Tag gleich): Aufwärmen, aktive Kontrolle,
+  Kraft in Dehnposition, Dehnen mit Anspannen-Loslassen; Nerv-Gleiten und
+  Kicks lassen sich in der Vorschau zuschalten
 - Kurze tägliche Routine (Hüfte & Beine plus Tagesfokus, Dauer einstellbar)
 - Beinplan in vier Blöcken (Aufwärmen, mit Gewicht in tiefer Position,
   statisch dehnen, aktive Beweglichkeit) – mit Gewicht oder für die anderen

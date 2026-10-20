@@ -2,7 +2,9 @@
 // Beine plus wechselnder Tagesfokus, passend zur eingestellten Dauer) und die
 // zwei tiefen Einheiten für die Beine.
 import { Store } from '../core/store.js';
-import { CORE, FOCUS, DEEP, LEG_PLAN, KICK_PLAN, KICK_RULES, fitToBudget, routineSeconds } from './plans.js';
+import {
+  CORE, FOCUS, DEEP, LEG_PLAN, KICK_PLAN, KICK_RULES, LOWER_PLAN, LOWER_RULES, fitToBudget, routineSeconds,
+} from './plans.js';
 import { exercise } from './library.js';
 
 const DAY = 86400000;
@@ -49,9 +51,29 @@ export function kickRoutines() {
   return KICK_PLAN.map((d) => ({ ...d, kind: 'plan', rules: KICK_RULES, items: d.items.filter((x) => exercise(x.id)) }));
 }
 
+// Optionale Teile eines Plans (z. B. Kicks) – an/aus pro Plan gemerkt
+const optKey = (planId, group) => `${planId}:${group}`;
+export function optionalOn(planId, group) {
+  return !!(Store.getSettings().mobilityOptional || {})[optKey(planId, group)];
+}
+export function setOptional(planId, group, on) {
+  const map = { ...(Store.getSettings().mobilityOptional || {}), [optKey(planId, group)]: !!on };
+  Store.updateSettings({ mobilityOptional: map });
+}
+
+// Mobility-Plan Unterkörper; allItems enthält auch die abgeschalteten Teile
+export function lowerRoutines() {
+  return LOWER_PLAN.map((d) => {
+    const all = d.items.filter((x) => exercise(x.id));
+    return {
+      ...d, kind: 'plan', rules: LOWER_RULES, allItems: all, items: all.filter((x) => !x.optional || optionalOn(d.id, x.optional)),
+    };
+  });
+}
+
 export function routineById(id) {
   if (id === 'daily') return dailyRoutine();
-  return [...kickRoutines(), ...planRoutines(), ...deepRoutines()].find((r) => r.id === id) || null;
+  return [...lowerRoutines(), ...kickRoutines(), ...planRoutines(), ...deepRoutines()].find((r) => r.id === id) || null;
 }
 
 export function routineTotal(routine) {

@@ -1504,9 +1504,9 @@ const KICK_EXTRA = [
     kind: 'active',
     type: 'flow',
     sides: true,
-    seconds: 45,
+    seconds: 54,
     reps: 9,
-    tempo: 'Bein 5–10 cm heben, 2 Sek halten, langsam ablegen – 8–10 pro Seite',
+    tempo: 'Bein 5–10 cm heben, 2 Sek halten, in 2 Sek ablegen – 8–10 pro Seite',
     why: 'Der Hüftbeuger muss das Bein in seiner kürzesten Position heben – genau dort fehlt die Kraft für einen hohen Frontkick.',
     feel: 'Vorn an der Hüfte (arbeitet) und hinten am Oberschenkel',
     cues: [
@@ -1519,7 +1519,7 @@ const KICK_EXTRA = [
     harder: 'Hände weiter vorn Richtung Knöchel.',
     cam: { az: 72, el: 14 },
     highlight: ['thighL'],
-    loop: 5,
+    loop: 6,
     thumbAt: 2.5,
     base: {
       pelvis: [0, 0.15, -0.05], pUp: [0, 1, 0.05], cUp: [0, 1, 0.22], hUp: [0, 1, 0.1],
@@ -1532,6 +1532,7 @@ const KICK_EXTRA = [
       { t: 0.5, p: { footL: [0.11, 0.07, 0.82], toeL: [0.12, 0.2, 0.88] } },
       { t: 1.5, p: { footL: [0.11, 0.17, 0.81], toeL: [0.12, 0.3, 0.86] } },
       { t: 3.5, p: { footL: [0.11, 0.17, 0.81], toeL: [0.12, 0.3, 0.86] } },
+      { t: 5.5, p: { footL: [0.11, 0.07, 0.82], toeL: [0.12, 0.2, 0.88] } },
     ],
   },
   {
@@ -1837,12 +1838,226 @@ const KICK_EXTRA = [
   },
 ];
 
+// ---------- Mobility-Plan Unterkörper ----------
+// Hüftkreisen im Vierfüßlerstand, langsam: ein Kreis vorwärts, einer zurück
+function slowCircles() {
+  const b = BASE_BY_ID.get('hip-circles');
+  const f = 9 / b.loop;
+  const fwd = b.frames.map((fr) => ({ t: fr.t * f, p: fr.p }));
+  const back = b.frames.slice(1).reverse().map((fr) => ({ t: 18 - fr.t * f, p: fr.p }));
+  return {
+    ...b,
+    id: 'hip-cars-slow',
+    name: 'Hüftkreisen kontrolliert',
+    tempo: 'Ein Kreis dauert 8–10 Sekunden – 3 pro Richtung',
+    cues: [
+      'Vierfüßlerstand, Rücken gerade wie eine Tischplatte, Bauch leicht fest.',
+      'Knie nach vorn zur Brust, seitlich nach außen öffnen und hoch, dann nach hinten drehen, bis die Fußsohle zur Decke zeigt.',
+      'Zurück unter die Hüfte – danach dieselbe Bahn rückwärts.',
+    ],
+    mistakes: ['Becken kippt zur Seite.', 'Rücken rundet sich oder fällt ins Hohlkreuz.', 'Zu schnell.'],
+    easier: 'Kleinerer Kreis, dafür sauber.',
+    loop: 18,
+    frames: [...fwd, ...back],
+  };
+}
+
+const SUPINE_LEG = {
+  pelvis: [0, 0.12, 0], pUp: [0, 0, -1], pFwd: [0, 1, 0], cUp: [0, 0, -1], cFwd: [0, 1, 0],
+  footR: [-0.1, 0.07, 0.93], kneeR: [-0.1, 0.4, 0.45], toeR: [-0.1, 0.22, 0.97],
+};
+const STRAP_BOTH = [{ type: 'strap', from: 'handL', to: 'ballL' }, { type: 'strap', from: 'handR', to: 'ballL' }];
+const LIFT_UP = { footL: [0.1, 0.9, 0.37], toeL: [0.1, 0.98, 0.22], kneeL: [0.1, 0.7, 0.55], handL: [0.13, 0.46, -0.18], handR: [-0.01, 0.46, -0.18] };
+const LIFT_FREE = { footL: [0.1, 0.84, 0.47], toeL: [0.1, 0.94, 0.33], kneeL: [0.1, 0.7, 0.6], handL: [0.13, 0.5, -0.08], handR: [-0.01, 0.5, -0.08] };
+const LIFT_DOWN = { footL: [0.1, 0.07, 0.93], toeL: [0.1, 0.22, 0.97], kneeL: [0.1, 0.4, 0.45], handL: [0.13, 0.3, -0.05], handR: [-0.01, 0.3, -0.05] };
+
+const BACK_WALL_BASE = {
+  ...STAND,
+  pelvis: [0, 0.97, 0.02], cUp: [0, 1, 0.12],
+  handL: [0.22, 1.2, 0.5], handR: [-0.22, 1.2, 0.5], elbowL: [0.45, 1.0, 0.3], elbowR: [-0.45, 1.0, 0.3],
+};
+const BACK_DOWN = { footL: [0.11, 0.08, 0], kneeL: [0.11, 0.5, 0.3], toeL: [0.13, 0.03, 0.17] };
+const BACK_UP = { footL: [0.11, 0.32, -0.36], kneeL: [0.11, 0.5, 0.2], toeL: [0.11, 0.2, -0.25], pUp: [0, 1, 0.08] };
+
+const SPLIT_DB = (pelvisY) => ({
+  pelvis: [0, pelvisY, -0.03],
+  handL: [0.24, pelvisY - 0.1, -0.02], handR: [-0.24, pelvisY - 0.1, -0.02],
+});
+
+const ECC_TOP = { pelvis: [0, 1.16, -0.03], footL: [0.11, 0.3, -0.03], toeL: [0.13, 0.19, 0.1] };
+const ECC_LOW = { pelvis: [0, 1.02, -0.08], footL: [0.11, 0.15, -0.09], toeL: [0.13, 0.19, 0.08] };
+const ECC_R_UP = { footR: [-0.11, 0.42, -0.24], kneeR: [-0.11, 0.6, 0.4], toeR: [-0.12, 0.36, -0.1] };
+const ECC_R_ON = { footR: [-0.11, 0.3, -0.03], toeR: [-0.13, 0.19, 0.1], kneeR: [-0.11, 0.6, 0.4] };
+
+const LOWER_EXTRA = [
+  slowCircles(),
+  {
+    id: 'nerve-floss',
+    name: 'Nerv-Gleiten',
+    regions: ['hamstrings'],
+    kind: 'dynamic',
+    type: 'flow',
+    sides: true,
+    seconds: 20,
+    tempo: 'Fließend, ca. 1 Sekunde pro Richtung, am Ende nicht halten – 10 pro Seite',
+    why: 'Lässt den Ischiasnerv an der Beinrückseite freier gleiten. Nur nötig, wenn das Ziehen stärker wird oder in Wade oder Kniekehle wandert, sobald du den Fuß anziehst und das Kinn zur Brust nimmst.',
+    feel: 'Sanftes Gleiten hinten am Bein – höchstens 3–4 von 10',
+    cues: [
+      'Rückenlage, Oberschenkel senkrecht, mit beiden Händen dahinter halten.',
+      'Knie strecken, Fuß zum Schienbein ziehen, Kopf liegt ab.',
+      'Knie beugen, Fußspitze strecken, Kinn zur Brust – fließend hin und her.',
+    ],
+    mistakes: ['Am Ende halten wie bei einer Dehnung.', 'Zu weit gehen – kribbelt es nach, kleiner bewegen.'],
+    easier: 'Knie nur halb strecken.',
+    harder: 'Nicht steigern – es soll sanft bleiben.',
+    cam: { az: 90, el: 14 },
+    highlight: ['thighL', 'shinL'],
+    loop: 2,
+    thumbAt: 1,
+    base: {
+      ...SUPINE_LEG, kneeL: [0.1, 1.2, -0.1],
+      handL: [0.15, 0.45, 0.03], handR: [0.03, 0.45, 0.03], elbowL: [0.4, 0.2, -0.2], elbowR: [-0.25, 0.2, -0.2],
+    },
+    frames: [
+      { t: 0, p: { footL: [0.1, 0.52, 0.47], toeL: [0.1, 0.49, 0.64], hUp: [0, 0.6, -1] } },
+      { t: 1, p: { footL: [0.1, 0.9, 0.33], toeL: [0.1, 1.02, 0.22], hUp: [0, 0, -1] } },
+    ],
+  },
+  {
+    id: 'leg-raise-back',
+    name: 'Beinheben nach hinten mit Halt',
+    regions: ['hipflex', 'hiprot'],
+    kind: 'active',
+    type: 'flow',
+    sides: true,
+    seconds: 61,
+    reps: 8,
+    tempo: '2 Sek heben, oben 3 Sek halten, 2 Sek ablassen – 8 pro Seite',
+    why: 'Kräftigt das Gesäß in seiner kürzesten Position und macht die Hüftstreckung aktiv nutzbar – das Gegenstück zur Hüftbeuger-Dehnung.',
+    feel: 'Im Gesäß, nicht im unteren Rücken',
+    cues: [
+      'Gesicht zur Wand, beide Hände auf Brusthöhe an der Wand, Bauch leicht fest.',
+      'Gesäß anspannen und das gestreckte Bein in 2 Sekunden nach hinten heben – nur so weit, wie kein Hohlkreuz entsteht (20–30 cm).',
+      'Oben 3 Sekunden halten, in 2 Sekunden ablassen.',
+    ],
+    mistakes: ['Hohlkreuz.', 'Oberkörper kippt nach vorn.', 'Bein dreht nach außen.'],
+    easier: 'Kleinere Bewegung.',
+    harder: 'Gewichtsmanschette am Knöchel oder Miniband um die Knöchel.',
+    cam: { az: 120, el: 10 },
+    highlight: ['hipBallL', 'pelvis'],
+    props: [{ type: 'wall', z: 0.55 }],
+    mat: { hidden: true },
+    loop: 7.6,
+    thumbAt: 4,
+    base: BACK_WALL_BASE,
+    frames: [
+      { t: 0, p: BACK_DOWN },
+      { t: 0.6, p: BACK_DOWN },
+      { t: 2.6, p: BACK_UP },
+      { t: 5.6, p: BACK_UP },
+    ],
+  },
+  {
+    id: 'liftoff-strap',
+    name: 'Lift-offs aus der Dehnung',
+    regions: ['hamstrings', 'hipflex'],
+    kind: 'active',
+    type: 'flow',
+    sides: true,
+    seconds: 95,
+    reps: 5,
+    tempo: 'Hochziehen, Gurt lösen, 5 Sek selbst halten, ablegen, 10 Sek Pause – 5 pro Seite',
+    why: 'Schließt die Lücke zwischen der Höhe, die du mit Hilfe erreichst, und der Höhe, die du selbst halten kannst – genau die zählt beim Kick.',
+    feel: 'Vorn an der Hüfte (arbeitet) und hinten am Oberschenkel (dehnt)',
+    cues: [
+      'Rückenlage, Gurt um den Fußballen, das gestreckte Bein hochziehen, bis es deutlich zieht (6 von 10).',
+      'Vorderseite des Beins anspannen, als wolltest du es selbst weiter zur Brust ziehen.',
+      'Gurt locker lassen und 5 Sekunden versuchen, die Höhe zu halten. Ablegen, 10 Sekunden Pause.',
+    ],
+    mistakes: ['Becken hebt ab.', 'Knie beugt sich.', 'Das untere Bein hebt vom Boden ab.'],
+    easier: 'Etwas tiefer starten.',
+    harder: 'Mit dem Gurt höher starten, sobald das Bein 5 Sekunden ohne Absinken oben bleibt.',
+    cam: { az: 90, el: 14 },
+    highlight: ['thighL'],
+    props: STRAP_BOTH,
+    loop: 19,
+    thumbAt: 5,
+    base: SUPINE_LEG,
+    frames: [
+      { t: 0, p: LIFT_DOWN },
+      { t: 2, p: LIFT_UP },
+      { t: 2.6, p: { ...LIFT_UP, handL: LIFT_FREE.handL, handR: LIFT_FREE.handR } },
+      { t: 7.6, p: LIFT_FREE },
+      { t: 9.6, p: LIFT_DOWN },
+    ],
+  },
+  {
+    ...KICK_EXTRA.find((e) => e.id === 'split-squat-deep'),
+    id: 'split-squat-db',
+    name: 'Tiefer Split Squat mit Kurzhanteln',
+    tempo: '3 Sek senkrecht absenken, unten 2 Sek halten und Gesäß anspannen, hochdrücken – 8–12 pro Seite',
+    cues: [
+      'Großer Schritt, etwa eine Beinlänge. Füße hüftbreit nebeneinander, hinterer Fuß auf dem Ballen, Kurzhanteln seitlich.',
+      'In 3 Sekunden senkrecht nach unten, bis das hintere Knie fast den Boden berührt.',
+      'Unten 2 Sekunden halten, Gesäß des hinteren Beins anspannen, Becken leicht nach hinten kippen – dann über den vorderen Fuß hochdrücken.',
+    ],
+    mistakes: ['Oberkörper kippt nach vorn.', 'Vorderes Knie fällt nach innen.', 'Hohlkreuz statt Gesäßspannung.', 'Füße auf einer Linie.'],
+    easier: 'Ohne Kurzhanteln.',
+    harder: 'Schwerere Kurzhanteln.',
+    props: [{ type: 'dumbbells' }],
+    loop: 7.1,
+    thumbAt: 4,
+    frames: [
+      { t: 0, p: SPLIT_DB(0.88) },
+      { t: 0.3, p: SPLIT_DB(0.88) },
+      { t: 3.3, p: SPLIT_DB(0.53) },
+      { t: 5.3, p: SPLIT_DB(0.53) },
+    ],
+  },
+  {
+    id: 'calf-raise-eccentric',
+    name: 'Wadenheber, langsam ablassen',
+    regions: ['calves'],
+    kind: 'active',
+    type: 'flow',
+    sides: true,
+    seconds: 72,
+    reps: 12,
+    tempo: 'Mit beiden hoch, auf einem Bein in 3 Sek ablassen, unten 1 Sek halten – 10–15 pro Seite',
+    why: 'Kräftigt die Wade in der tiefsten Dehnung und verbessert die Beweglichkeit im Sprunggelenk.',
+    feel: 'Wade des Standbeins, unten bis in die Achillessehne',
+    cues: [
+      'Mit den Fußballen auf der Stufe, eine Hand am Geländer.',
+      'Mit beiden Beinen auf die Zehenspitzen, dann ein Bein lösen.',
+      'Auf dem anderen Bein in 3 Sekunden so tief wie möglich ablassen, Knie gestreckt, 1 Sekunde halten – mit beiden wieder hoch.',
+    ],
+    mistakes: ['Unten wippen.', 'Zu schnell ablassen.', 'Knie beugt sich.'],
+    easier: 'Mit beiden Beinen ablassen.',
+    harder: 'Kurzhantel in der freien Hand.',
+    cam: { az: 78, el: 10 },
+    highlight: ['shinL'],
+    props: [STEP, ...RAIL],
+    mat: { hidden: true },
+    loop: 6,
+    thumbAt: 3.5,
+    base: { ...CALF_TOP, kneeL: [0.11, 0.6, 0.4] },
+    frames: [
+      { t: 0, p: { ...ECC_TOP, ...ECC_R_ON } },
+      { t: 0.6, p: { ...ECC_TOP, ...ECC_R_UP } },
+      { t: 3.6, p: { ...ECC_LOW, ...ECC_R_UP } },
+      { t: 4.6, p: { ...ECC_LOW, ...ECC_R_UP } },
+      { t: 5.6, p: { ...ECC_TOP, ...ECC_R_ON } },
+    ],
+  },
+];
+
 // Alles zusammen, mit Einordnung
 export const EXERCISES = [
   ...BASE_EXERCISES.map((ex) => ({ ...ex, ...(META[ex.id] || {}) })),
   ...EXTRA,
   ...PLAN_EXTRA,
   ...KICK_EXTRA,
+  ...LOWER_EXTRA,
 ];
 const BY_ID = new Map(EXERCISES.map((e) => [e.id, e]));
 // Stufen in beide Richtungen verknüpfen: up = nächste Stufe, down = leichtere

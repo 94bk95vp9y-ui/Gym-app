@@ -74,7 +74,7 @@ function buildSteps(items, prep) {
     const sets = item.sets || 1;
     steps.push({ kind: 'prep', ex, item, index, side: 'L', mode, duration: prep, set: 1, sets });
     for (let set = 1; set <= sets; set += 1) {
-      if (set > 1) steps.push({ kind: 'rest', ex, item, index, side: 'L', mode, duration: SET_REST, set, sets });
+      if (set > 1) steps.push({ kind: 'rest', ex, item, index, side: 'L', mode, duration: item.rest ?? SET_REST, set, sets });
       (ex.sides ? ['L', 'R'] : ['L']).forEach((side, si) => {
         if (si > 0) steps.push({ kind: 'switch', ex, item, index, side, mode, duration: SWITCH_SECONDS, set, sets });
         steps.push({ kind: 'work', ex, item, index, side, mode, duration, set, sets, pnf });
@@ -217,7 +217,7 @@ function enterStep(first = false) {
   p.dom.phase.textContent = {
     prep: `Gleich · ${step.index + 1} von ${total}`,
     switch: `Seite wechseln${setText}`,
-    rest: `Kurze Pause · gleich Satz ${step.set}/${step.sets}`,
+    rest: `${step.duration >= 30 ? 'Pause' : 'Kurze Pause'} · gleich Satz ${step.set}/${step.sets}`,
     work: `${step.index + 1} von ${total} · ${modeText}${setText}`,
   }[step.kind];
   p.el.classList.toggle('paused', p.paused);

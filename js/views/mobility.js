@@ -5,9 +5,9 @@ import { Icon } from '../ui/icons.js';
 import { render } from '../ui/router.js';
 import { openSheet, closeAllSheets } from '../ui/sheet.js';
 import { relativeDay, plural } from '../core/format.js';
-import { itemSeconds } from '../mobility/plans.js';
+import { itemSeconds, OPTIONAL_LABELS } from '../mobility/plans.js';
 import {
-  dailyRoutine, deepRoutines, planRoutines, kickRoutines, routineById, routineTotal, lastSession, doneToday, weekCount, mins, prepSeconds,
+  dailyRoutine, deepRoutines, planRoutines, kickRoutines, lowerRoutines, routineById, optionalOn, setOptional, routineTotal, lastSession, doneToday, weekCount, mins, prepSeconds,
 } from '../mobility/routines.js';
 import { thumb, fillThumbs } from '../mobility/figures.js';
 import { startRoutine, planExercise } from '../mobility/player.js';
@@ -54,6 +54,9 @@ function openMobility() {
   const sheet = openSheet({
     title: 'Mobility',
     body: `
+      <div class="section-label">Mobility-Plan Unterkörper</div>
+      <div class="list">${lowerRoutines().map(routineRow).join('')}</div>
+      <p class="section-foot">Jeden Tag derselbe Ablauf: Aufwärmen, aktive Kontrolle, Kraft in Dehnposition, Dehnen. Nerv-Gleiten und Kicks schaltest du in der Vorschau zu.</p>
       <div class="section-label">Tägliche Kick-Routine</div>
       <div class="list">${kickRoutines().map(routineRow).join('')}</div>
       <p class="section-foot">Dein Plan für hohe Kicks: jeden Tag gleich, getrennt vom Gym. „Kurz“ halbiert das Dehnen, „Nach Beintag“ macht den Kraftteil nur einmal.</p>
@@ -97,36 +100,60 @@ function openPreview(id) {
   if (!r) return;
   const prep = prepSeconds();
   let section = null;
-  const rows = r.items.map((item) => {
+  const seenGroup = new Set();
+  const rows = (r.allItems || r.items).map((item) => {
     const ex = planExercise(item);
     if (!ex) return '';
     const head = item.section && item.section !== section ? `<div class="group-head" style="position:static;padding:12px 4px 6px">${esc(item.section)}</div>` : '';
     if (item.section) section = item.section;
+    // Optionale Teile: ein Schalter vor dem ersten Eintrag der Gruppe
+    const group = item.optional;
+    const on = group ? optionalOn(r.id, group) : true;
+    let toggle = '';
+    if (group && !seenGroup.has(group)) {
+      seenGroup.add(group);
+      toggle = `
+      <div class="row mob-opt" style="gap:12px">
+        <div class="row-main"><span class="row-title strong">Optional: ${esc(OPTIONAL_LABELS[group] || group)}</span>
+          <span class="row-sub">In die Einheit aufnehmen</span></div>
+        <span class="toggle"><input type="checkbox" switch data-opt-group="${esc(group)}" ${on ? 'checked' : ''} /><span class="toggle-track"></span></span>
+      </div>`;
+    }
     const secs = Math.max(0, itemSeconds(item, prep) - prep);
     const how = item.mode === 'pnf' ? 'Anspannen-Loslassen'
       : item.mode === 'active' || ex.kind === 'active' ? 'Aktiv'
         : ex.kind === 'breath' ? 'Atmen'
           : ex.kind === 'dynamic' || ex.type !== 'hold' ? 'Bewegen' : 'Halten';
-    return `${head}
-      <div class="row" style="gap:12px">
+    return `${head}${toggle}
+      <div class="row${group && !on ? ' mob-off' : ''}" style="gap:12px"${group ? ` data-opt-row="${esc(group)}"` : ''}>
         ${thumb(ex.id)}
         <div class="row-main"><span class="row-title">${esc(ex.name)}</span>
           <span class="row-sub">${how}${item.sets > 1 ? ` · ${item.sets} Sätze` : ''}${ex.sides ? ' · je Seite' : ''}</span></div>
         <span class="row-value num">${mins(secs)}</span>
       </div>`;
   }).join('');
+  const goLabel = () => `${Icon.play} Starten · ${mins(routineTotal(routineById(id)))}`;
   openSheet({
     title: r.kind === 'deep' ? r.short : r.name,
     full: true,
     left: { label: 'Zurück' },
     right: null,
     body: `${r.description ? `<p class="muted" style="margin:0 4px 14px;font-size:15px">${esc(r.description)}</p>` : ''}${rulesHtml(r.rules)}<div class="list">${rows}</div>`,
-    footer: `<button class="btn btn-primary btn-block" data-mob-go>${Icon.play} Starten · ${mins(routineTotal(r))}</button>`,
+    footer: `<button class="btn btn-primary btn-block" data-mob-go>${goLabel()}</button>`,
     onMount: (s) => {
       fillThumbs(s.body);
-      s.el.querySelector('[data-mob-go]').addEventListener('click', () => {
+      const go = s.el.querySelector('[data-mob-go]');
+      go.addEventListener('click', () => {
         closeAllSheets();
         play(id);
+      });
+      s.body.addEventListener('change', (e) => {
+        const input = e.target.closest('[data-opt-group]');
+        if (!input) return;
+        const group = input.dataset.optGroup;
+        setOptional(id, group, input.checked);
+        s.body.querySelectorAll(`[data-opt-row="${group}"]`).forEach((row) => row.classList.toggle('mob-off', !input.checked));
+        go.innerHTML = goLabel();
       });
     },
   });
