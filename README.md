@@ -23,6 +23,9 @@ danach auch offline.
 - Übungsdetail: Bestleistung, geschätztes 1RM als Verlauf (mit dem Finger
   abfahren), Notiz zur Ausführung, eigene Satzpause
 - Lange drücken auf einen Plan: starten, bearbeiten, duplizieren, löschen
+- Gewicht je Übung als Gesamtgewicht, je Seite (z. B. Smith-Maschine) oder
+  je Hantel eintragen – Gewichtssprung und Vorschläge rechnen in derselben
+  Einheit (je Seite: +1,25 kg pro Seite statt +5 kg)
 
 **Training läuft**
 - Wächst aus der angetippten Karte heraus, minimiert schrumpft es in die

@@ -1,7 +1,9 @@
 // Trainingslogik ohne DOM: Vorschläge, Rekorde, Statistik, Plan-Rotation.
 import { Store, uid } from './store.js';
 import { estimate1RM, bestSet, setScore } from './format.js';
-import { analyze, progressDelta, progressionOf, targetSets } from './progression.js';
+import {
+  analyze, progressDelta, progressionOf, targetSets, loadOf,
+} from './progression.js';
 
 const DAY = 86400000;
 
@@ -146,9 +148,15 @@ export function workoutDoneSets(workout) {
   return workout.entries.reduce((n, e) => n + e.sets.filter((s) => s.done).length, 0);
 }
 
+// Volumen: Gewicht × Wdh. Bei „je Seite“ zählt das Gewicht doppelt (beide
+// Seiten); Stange bzw. Schlitten kennt die App nicht. „Je Hantel“ zählt
+// einfach – auch einarmige Übungen werden so eingetragen.
 export function workoutVolume(workout) {
-  return workout.entries.reduce((sum, e) =>
-    sum + e.sets.filter((s) => s.done).reduce((n, s) => n + (s.weight || 0) * (s.reps || 0), 0), 0);
+  return workout.entries.reduce((sum, e) => {
+    const ex = Store.getExercise(e.exerciseId);
+    const factor = ex && loadOf(ex) === 'side' ? 2 : 1;
+    return sum + factor * e.sets.filter((s) => s.done).reduce((n, s) => n + (s.weight || 0) * (s.reps || 0), 0);
+  }, 0);
 }
 
 export function workoutDuration(workout) {

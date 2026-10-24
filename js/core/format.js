@@ -127,6 +127,13 @@ export function unitLabel(unit) {
   return unit === 'lb' ? 'lb' : 'kg';
 }
 
+// Einheit samt Art des Eintrags: "kg je Seite", kompakt "kg/Seite"
+export function loadUnit(unit, load, compact = false) {
+  if (load === 'side') return compact ? `${unit}/Seite` : `${unit} je Seite`;
+  if (load === 'each') return compact ? `${unit}/Hantel` : `${unit} je Hantel`;
+  return unit;
+}
+
 // Countdown-Anzeige: "1:05"
 export function formatClock(seconds) {
   const s = Math.max(0, Math.round(seconds));

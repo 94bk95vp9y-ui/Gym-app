@@ -4,7 +4,7 @@ import {
   nextPlan, lastDoneMap, planMinutes, planMuscles, plannedSets, lastPerformanceMap, exerciseHistory,
 } from '../core/training.js';
 import {
-  formatSet, formatSetList, formatNumber, formatRest, formatDate, relativeDay, plural, unitLabel,
+  formatSet, formatSetList, formatNumber, formatRest, formatDate, relativeDay, plural, unitLabel, loadUnit,
 } from '../core/format.js';
 import { buildPlanPrompt, parsePlanText, normalizeExerciseName } from '../core/plan-import.js';
 import { esc, qs, registerActions, registerInputs } from '../ui/dom.js';
@@ -19,7 +19,7 @@ import { lineChart } from '../ui/chart.js';
 import { enableReorder } from '../ui/reorder.js';
 import { chev, chips, iconTile, emptyState, TINT } from '../ui/components.js';
 import { openExercisePicker, openExerciseEditor, filterExercises, groupedHtml } from './picker.js';
-import { progressionOf } from '../core/progression.js';
+import { progressionOf, loadOf } from '../core/progression.js';
 import {
   goalTagHtml, goalPanelHtml, goalSettingsHtml, animateGoal,
 } from './goal.js';
@@ -101,7 +101,7 @@ function exerciseRow(last) {
       <button class="row" data-action="open-exercise" data-menu="exercise" data-id="${ex.id}">
         <div class="row-main">
           <span class="row-title">${esc(ex.name)}</span>
-          ${info ? `<span class="row-sub">${esc(formatSet(info.best, unit()))} · ${relativeDay(info.date)}</span>` : ''}
+          ${info ? `<span class="row-sub">${esc(formatSet(info.best, loadUnit(unit(), loadOf(ex), true)))} · ${relativeDay(info.date)}</span>` : ''}
         </div>${chev}
       </button>`;
   };
@@ -161,7 +161,7 @@ registerPage('plan', {
           <span class="num-badge">${i + 1}</span>
           <div class="row-main">
             <span class="row-title">${esc(ex.name)}</span>
-            <span class="row-sub">${plural(plannedSets(r, eid), 'Satz', 'Sätze')} · ${info ? `zuletzt ${esc(formatSet(info.best, unit()))}` : esc(ex.muscleGroup)}</span>
+            <span class="row-sub">${plural(plannedSets(r, eid), 'Satz', 'Sätze')} · ${info ? `zuletzt ${esc(formatSet(info.best, loadUnit(unit(), loadOf(ex), true)))}` : esc(ex.muscleGroup)}</span>
           </div>
           ${tag}${chev}
         </button>`;
@@ -183,7 +183,7 @@ function exerciseStatsHtml(ex, middle = '') {
   if (!h.sessions.length) {
     return emptyState({ icon: Icon.chart, title: 'Noch nicht trainiert', text: 'Nach dem ersten Training siehst du hier Bestleistung, Verlauf und Entwicklung.' }) + middle;
   }
-  const u = unit();
+  const u = loadUnit(unit(), loadOf(ex), true);
   const best = h.best;
   const tile = (label, value, sub) => `<div class="tile"><span class="tile-label">${label}</span><div class="tile-value">${value}</div><span class="tile-sub">${sub}</span></div>`;
   const stats = h.loaded

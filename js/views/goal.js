@@ -2,9 +2,9 @@
 // mit einer Leiter je Satz und den Einstellungen der Übung. Gerechnet wird in
 // core/progression.js – hier geht es nur um Darstellung und Bedienung.
 import { Store } from '../core/store.js';
-import { formatNumber, formatWeight, unitLabel } from '../core/format.js';
+import { formatNumber, formatWeight, unitLabel, loadUnit } from '../core/format.js';
 import {
-  REP_PRESETS, STEP_OPTIONS, ladder, repsAt, profileOf, progressionOf, levelsOf,
+  REP_PRESETS, STEP_OPTIONS, ladder, repsAt, profileOf, progressionOf, levelsOf, loadOf, defaultLoad,
 } from '../core/progression.js';
 import { esc, registerActions } from '../ui/dom.js';
 import { Icon } from '../ui/icons.js';
@@ -43,8 +43,10 @@ export function liveSets(sets, prev) {
 const SAME_WEIGHT = new Set(['build', 'hold', 'plateau', 'addLoad']);
 
 // ---------- Ziel vor bzw. während der Übung ----------
-export function targetView(t, unit, { sets = [], prev = [] } = {}) {
+export function targetView(t, baseUnit, { sets = [], prev = [] } = {}) {
   if (!t) return null;
+  const unit = loadUnit(baseUnit, t.load);
+  const pct = (w, from) => Math.round((1 - (w + (t.load === 'side' ? t.offset || 0 : 0)) / (from + (t.load === 'side' ? t.offset || 0 : 0))) * 100);
   const [lo, hi] = t.range;
   const kg = (v) => formatWeight(v, unit);
   switch (t.kind) {
@@ -61,7 +63,7 @@ export function targetView(t, unit, { sets = [], prev = [] } = {}) {
         tone: 'up',
         icon: Icon.trendUp,
         title: `Mehr Gewicht: ${strong(kg(t.weight))}`,
-        chip: `+${formatNumber(t.step)}${NB}${unit}`,
+        chip: `+${formatNumber(t.step)}${NB}${loadUnit(baseUnit, t.load, true)}`,
         sub: `Letztes Mal alle Sätze mit ${t.reached}+ Wdh`,
       };
     case 'addLoad':
@@ -77,7 +79,7 @@ export function targetView(t, unit, { sets = [], prev = [] } = {}) {
         tone: 'calm',
         icon: Icon.restore,
         title: t.lighter ? `Wiedereinstieg mit ${strong(kg(t.weight))}` : `Wiedereinstieg: ${strong('etwas weniger Wdh')}`,
-        chip: t.lighter ? `−${Math.round((1 - t.weight / t.from) * 100)}${NB}%` : '',
+        chip: t.lighter ? `−${pct(t.weight, t.from)}${NB}%` : '',
         sub: `${pauseText(t.days)} Pause – erst mal locker reinkommen.`,
       };
     case 'reset':
@@ -85,7 +87,7 @@ export function targetView(t, unit, { sets = [], prev = [] } = {}) {
         tone: 'calm',
         icon: Icon.restore,
         title: `Neu aufbauen mit ${strong(kg(t.weight))}`,
-        chip: `−${Math.round((1 - t.weight / t.from) * 100)}${NB}%`,
+        chip: `−${pct(t.weight, t.from)}${NB}%`,
         sub: `Die Wdh steigen jetzt schnell – bald bist du über ${kg(t.from)}.`,
         actions: [{ label: 'Rückgängig', choice: '', plain: true }],
       };
@@ -124,9 +126,10 @@ function outcomeLadder(o) {
   return { ref, L: ladder(ref, o.today.done) };
 }
 
-export function outcomeView(o, unit) {
+export function outcomeView(o, baseUnit) {
   if (!o) return null;
   const { next, today, delta } = o;
+  const unit = loadUnit(baseUnit, next.load);
   const kg = (v) => formatWeight(v, unit);
   const { L } = outcomeLadder(o);
   if (next.kind === 'increase' || next.kind === 'addLoad') {
@@ -152,8 +155,9 @@ export function outcomeView(o, unit) {
 }
 
 // Kleines Etikett für die zugeklappte Übung
-export function outcomePill(o, unit) {
+export function outcomePill(o, baseUnit) {
   if (!o) return '';
+  const unit = loadUnit(baseUnit, o.next.load, true);
   if (o.next.kind === 'increase') return `<span class="goal-pill up">${Icon.arrowUp}${esc(formatWeight(o.next.weight, unit))}</span>`;
   if (o.next.kind === 'addLoad') return `<span class="goal-pill up">${Icon.arrowUp}Gewicht</span>`;
   if (o.delta?.kind === 'weight' && o.delta.delta > 0) return `<span class="goal-pill up">+${esc(formatNumber(o.delta.delta))}${NB}${esc(unit)}</span>`;
@@ -166,7 +170,7 @@ export function goalLineHtml(o, unit) {
   const v = outcomeView(o, unit);
   if (!v) return '';
   const title = v.levelUp
-    ? `Nächstes Mal ${strong(o.next.kind === 'increase' ? formatWeight(o.next.weight, unit) : 'Zusatzgewicht')}`
+    ? `Nächstes Mal ${strong(o.next.kind === 'increase' ? formatWeight(o.next.weight, loadUnit(unit, o.next.load)) : 'Zusatzgewicht')}`
     : v.title;
   return `<span class="goal-line tone-${v.tone}">${v.levelUp ? Icon.arrowUp : segsHtml(v.segs, 'goal-mini')}<span>${title}</span></span>`;
 }
@@ -174,7 +178,7 @@ export function goalLineHtml(o, unit) {
 // Etikett in Listen (Plan): was beim nächsten Training ansteht
 export function goalTagHtml(t, unit) {
   if (!t) return '';
-  if (t.kind === 'increase') return `<span class="goal-tag up">${Icon.arrowUp}${esc(formatWeight(t.weight, unit))}</span>`;
+  if (t.kind === 'increase') return `<span class="goal-tag up">${Icon.arrowUp}${esc(formatWeight(t.weight, loadUnit(unit, t.load, true)))}</span>`;
   if (t.kind === 'addLoad') return `<span class="goal-tag up">${Icon.arrowUp}Zusatzgewicht</span>`;
   if (t.kind === 'plateau') return `<span class="goal-tag warn">${Icon.plateau}Plateau</span>`;
   if (t.kind === 'comeback') return `<span class="goal-tag calm">${Icon.restore}Wiedereinstieg</span>`;
@@ -213,7 +217,7 @@ function ruleText(t, unit) {
     return `Jedes Mal eine Wdh mehr – wer mehr schafft, bekommt größere Ziele. Schaffst du in jedem Satz ${hi} Wdh, ist Zusatzgewicht dran – oder eine schwerere Variante.`;
   }
   const big = t.top > hi
-    ? ` ${kg(t.step)} sind bei ${kg(t.weight)} ein großer Sprung (+${Math.round((t.step / t.weight) * 100)} %) – deshalb erst bei ${t.top} statt ${hi} Wdh.`
+    ? ` ${kg(t.step)} sind bei ${kg(t.weight)} ein großer Sprung (+${Math.round((t.step / (t.weight + (t.offset || 0))) * 100)} %) – deshalb erst bei ${t.top} statt ${hi} Wdh.`
     : '';
   const start = t.kind === 'increase'
     ? `Mit ${kg(t.weight)} sind etwa ${Math.min(hi, repsAt(t.from + (t.offset || 0), t.reached, t.weight + (t.offset || 0)))} Wdh drin. `
@@ -259,11 +263,17 @@ export function goalPanelHtml(t, unit, { sets = [], prev = [], outcome = null } 
         </div>
       </div>
       ${rows}
-      ${target.kind !== 'first' ? `<p class="gp-rule">${esc(ruleText(target, unit))}</p>` : ''}
+      ${target.kind !== 'first' ? `<p class="gp-rule">${esc(ruleText(target, loadUnit(unit, target.load)))}</p>` : ''}
     </div>`;
 }
 
 // Einstellungen der Übung: Wiederholungsbereich und Gewichtssprung
+const LOAD_TEXT = {
+  total: { label: 'Gesamt', sub: 'Stange bzw. Maschine samt allen Scheiben', menu: 'Gesamtgewicht' },
+  side: { label: 'Je Seite', sub: 'Nur die Scheiben auf einer Seite', menu: 'Je Seite' },
+  each: { label: 'Je Hantel', sub: 'Gewicht einer Kurzhantel', menu: 'Je Hantel' },
+};
+
 export function goalSettingsHtml(ex) {
   const profile = profileOf(ex);
   if (!profile) return '';
@@ -272,6 +282,7 @@ export function goalSettingsHtml(ex) {
   const {
     range, rangeAuto, step, stepAuto,
   } = levelsOf(ex, profile, sessions, Store.getSettings().unit);
+  const load = loadOf(ex, profile);
   return `
     <div class="list icons">
       <button class="row" data-action="goal-range" data-id="${ex.id}">
@@ -281,11 +292,17 @@ export function goalSettingsHtml(ex) {
       </button>
       <button class="row" data-action="goal-step" data-id="${ex.id}">
         ${iconTile(Icon.plus, TINT.blue)}
-        <div class="row-main"><span class="row-title">Gewichtssprung</span><span class="row-sub">${stepAuto ? 'Automatisch' : 'Eigene Wahl'}</span></div>
+        <div class="row-main"><span class="row-title">Gewichtssprung</span><span class="row-sub">${stepAuto ? 'Automatisch' : 'Eigene Wahl'}${load !== 'total' ? ` · ${LOAD_TEXT[load].label.toLowerCase()}` : ''}</span></div>
         <span class="row-value">${esc(formatWeight(step, unit))}</span>${chev}
       </button>
+      ${profile.equipment !== 'bodyweight' ? `
+      <button class="row" data-action="goal-load" data-id="${ex.id}">
+        ${iconTile(Icon.dumbbell, TINT.orange)}
+        <div class="row-main"><span class="row-title">Gewicht eintragen</span><span class="row-sub">${LOAD_TEXT[load].sub}</span></div>
+        <span class="row-value">${LOAD_TEXT[load].label}</span>${chev}
+      </button>` : ''}
     </div>
-    <p class="field-hint">„Automatisch“ richtet sich nach der Übungsart und deinem Verlauf.</p>`;
+    <p class="field-hint">„Automatisch“ richtet sich nach der Übungsart und deinem Verlauf. Der Gewichtssprung gilt so, wie du einträgst – bei „je Seite“ also pro Seite.</p>`;
 }
 
 // Ring und Leitern beim Öffnen von null aus füllen
@@ -329,14 +346,33 @@ registerActions({
       })),
     ], { title: 'Wiederholungsbereich' });
   },
+  'goal-load': (el) => {
+    const ex = Store.getExercise(el.dataset.id);
+    const profile = profileOf(ex);
+    if (!profile) return;
+    const current = loadOf(ex, profile);
+    const auto = defaultLoad(ex, profile);
+    // Ein eigener Gewichtssprung passt nach dem Umstellen nicht mehr
+    const pick = (mode) => {
+      if (mode === current) return;
+      Store.updateExercise(ex.id, { load: mode === auto ? null : mode, increment: null });
+      changed(ex.id);
+    };
+    openMenu(el, ['total', 'side', 'each'].map((mode) => ({
+      label: LOAD_TEXT[mode].menu + (mode === auto ? ' (Vorgabe)' : ''),
+      sub: LOAD_TEXT[mode].sub,
+      checked: mode === current,
+      handler: () => pick(mode),
+    })), { title: 'Gewicht eintragen' });
+  },
   'goal-step': (el) => {
     const ex = Store.getExercise(el.dataset.id);
     const profile = profileOf(ex);
     if (!profile) return;
     const unitId = Store.getSettings().unit;
-    const unit = unitLabel(unitId);
     const sessions = progressionOf(ex).sessions;
     const auto = levelsOf({ ...ex, increment: null }, profile, sessions, unitId).step;
+    const unit = loadUnit(unitLabel(unitId), loadOf(ex, profile));
     openMenu(el, [
       { label: 'Automatisch', sub: formatWeight(auto, unit), checked: !(ex.increment > 0), handler: () => { Store.updateExercise(ex.id, { increment: null }); changed(ex.id); } },
       '-',

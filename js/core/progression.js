@@ -45,8 +45,8 @@ const EQUIPMENT = [
   ['machine', /maschine|hackenschmidt|smith|multipresse|machine/],
   ['cable', /kabel|seilzug|face pull|cable/],
   ['kettlebell', /kettlebell/],
-  ['dumbbell', /kurzhantel|hammercurl|konzentration|arnold|goblet|spider|kickback|schrägbank-curl|pullover|bulgarian|ausfallschritt|lunge|step-up|seitheben|dumbbell/],
-  ['bodyweight', /klimmz|pull-up|chin|dips|liegestütz|push-up|crunch|sit-up|beinheben|toes to bar|russian|dead bug|käfer|nordic|sissy|hyperextension|rückenstrecker|bauchroller|ab wheel|glute bridge/],
+  ['dumbbell', /kurzhantel|\bkh\b|hammercurl|konzentration|arnold|goblet|spider|kickback|schrägbank-curl|pullover|bulgarian|ausfallschritt|lunge|step-up|seitheben|dumbbell/],
+  ['bodyweight', /klimmz|pull-up|\bchin|dips|liegestütz|push-up|crunch|sit-up|beinheben|toes to bar|russian|dead bug|käfer|nordic|sissy|hyperextension|rückenstrecker|bauchroller|ab wheel|glute bridge/],
   ['barbell', /langhantel|sz-|kniebeuge|kreuzheben|rack pull|militärpresse|good morning|t-bar|stirndrücken|french press|bankdrücken|hip thrust|landmine|umsetzen|reißen|thruster|box squat|nackenheben|shrugs|aufrechtes rudern|scott|barbell|squat|deadlift|bench/],
   ['machine', /presse|latzug|strecker|beuger|butterfly|adduktor|abduktor|rudern|wadenheben|press/],
 ];
@@ -69,13 +69,52 @@ const DEFAULT_STEP = {
 const RANGE_RULES = [
   [/nordic/, [3, 8]],
   [/australian/, [8, 15]],
-  [/klimmz|chin|pull-up/, [5, 12]],
+  // \b: sonst passt „chin“ auch auf „Maschine“
+  [/klimmz|\bchin|pull-up/, [5, 12]],
   [/liegestütz|push-up/, [10, 25]],
   [/dips/, [6, 12]],
   [/seitheben|face pull|reverse butterfly|vorgebeugt|kickback|adduktor|abduktor|frontheben|swing/, [12, 20]],
   [/curl|strecker|beuger|fliegende|butterfly|trizepsdrücken|stirndrücken|french|überkopf|überzüge|pullover|shrugs|nackenheben|bizeps|trizeps|sissy|hyperextension|glute bridge/, [10, 15]],
 ];
 const BIG_BARBELL = /kniebeuge|kreuzheben|bankdrücken|militärpresse|schulterdrücken|rack pull|umsetzen|reißen|thruster|box squat|squat|deadlift|bench/;
+
+// ---------- Wie das Gewicht eingetragen wird ----------
+// total: Gesamtgewicht (Langhantel samt Stange, Maschine laut Steckplatz)
+// side:  nur die Scheiben auf einer Seite (Smith-Maschine, Beinpresse …) –
+//        die echte Last ist doppelt so hoch plus Stange bzw. Schlitten
+// each:  eine Kurzhantel (bei zwei Hanteln das Gewicht einer davon)
+// Der Gewichtssprung gilt immer in derselben Einheit wie der Eintrag: bei
+// „je Seite“ also pro Seite (+1,25 kg je Seite = +2,5 kg insgesamt).
+export const LOAD_MODES = ['total', 'side', 'each'];
+// Vorgabe „je Seite“ nur, wo es praktisch jeder so einträgt; alles andere
+// stellt man bei der Übung um.
+const PER_SIDE = /smith|multipresse|pro seite|je seite/;
+
+export function defaultLoad(exercise, profile = profileOf(exercise)) {
+  if (!profile || profile.equipment === 'bodyweight') return 'total';
+  const n = String(exercise?.name || '').toLowerCase();
+  if (PER_SIDE.test(n)) return 'side';
+  if (profile.equipment === 'dumbbell') return 'each';
+  return 'total';
+}
+
+export function loadOf(exercise, profile = profileOf(exercise)) {
+  return LOAD_MODES.includes(exercise?.load) ? exercise.load : defaultLoad(exercise, profile);
+}
+
+// Gewichtssprung je Seite [kg, lb]: die kleinsten Scheiben paarweise; Beine
+// und Hüfte vertragen das Doppelte
+const SIDE_STEP = { upper: [1.25, 2.5], lower: [2.5, 5] };
+// Was bei „je Seite“ ohne Scheiben schon bewegt wird, umgerechnet auf eine
+// Seite: halbe Langhantel (20 kg), bei Smith-Maschine und Beinpresse ein
+// grober Richtwert – die App kennt das Gerät nicht. Nur für Verhältnisse
+// (Sprunggröße, 10 % leichter), nicht für angezeigte Werte.
+const SIDE_BASE = { barbell: [10, 22.5], other: [5, 10] };
+
+function isLowerBody(exercise, n = String(exercise?.name || '').toLowerCase()) {
+  const group = exercise?.muscleGroup || '';
+  return LOWER_BODY.test(n) || /presse.*bein|beinpresse|hackenschmidt|lunge|ausfallschritt|split/.test(n) || group === 'Beine' || group === 'Po';
+}
 
 export function profileOf(exercise) {
   if (!exercise) return null;
@@ -195,11 +234,20 @@ export function rangeOf(exercise, profile, sessions, markOf = undefined) {
   };
 }
 
+// Mitbewegte Last, die im Eintrag fehlt: Körpergewicht bei Klimmzügen und
+// Co., Stange bzw. Schlitten bei „je Seite“
+export function baseLoad(exercise, profile, unit = 'kg') {
+  const u = unit === 'lb' ? 1 : 0;
+  if (profile.equipment === 'bodyweight') return BODY_LOAD[u ? 'lb' : 'kg'];
+  if (loadOf(exercise, profile) === 'side') return SIDE_BASE[profile.equipment === 'barbell' ? 'barbell' : 'other'][u];
+  return 0;
+}
+
 // Bereich und Gewichtssprung zusammen – die Steigerungsmarke hängt vom
 // Sprung ab, die Anpassung des Bereichs von der Marke
 export function levelsOf(exercise, profile, sessions, unit = 'kg') {
   const { step, auto: stepAuto } = stepOf(exercise, profile, sessions, unit);
-  const offset = profile.equipment === 'bodyweight' ? BODY_LOAD[unit === 'lb' ? 'lb' : 'kg'] : 0;
+  const offset = baseLoad(exercise, profile, unit);
   const last = sessions[0];
   const markOf = (r) => (last?.loaded ? topFor(r, last.top, step, offset) : r[1]);
   const { range, auto: rangeAuto } = rangeOf(exercise, profile, sessions, markOf);
@@ -222,7 +270,11 @@ export function stepOf(exercise, profile, sessions, unit) {
   const options = STEP_OPTIONS[unit === 'lb' ? 'lb' : 'kg'];
   const own = Number(exercise.increment);
   if (Number.isFinite(own) && own > 0) return { step: own, auto: false };
-  const fallback = profile.step[unit === 'lb' ? 1 : 0];
+  const u = unit === 'lb' ? 1 : 0;
+  const load = loadOf(exercise, profile);
+  // Je Seite: kleine Scheiben gibt es überall – kein Raster aus dem Verlauf
+  if (load === 'side') return { step: SIDE_STEP[isLowerBody(exercise) ? 'lower' : 'upper'][u], auto: true };
+  const fallback = profile.step[u];
   if (profile.equipment === 'barbell') return { step: fallback, auto: true };
   const tops = [...new Set(sessions.filter((s) => s.loaded).map((s) => s.top))].sort((a, b) => a - b);
   let min = Infinity;
@@ -273,11 +325,13 @@ function roundStep(value, step) {
 // Stufe leichter. Wird der Abschlag dadurch deutlich größer als gewollt
 // (leichte Kurzhanteln: eine Stufe sind schnell 25 %), gibt es kein
 // leichteres Gewicht – dann lieber weniger Wdh.
-export function lighter(weight, factor, step) {
-  let w = roundStep(weight * factor, step);
+// offset: mitbewegte Last (Stange, Körper) – 10 % weniger beziehen sich auf
+// die ganze Last, nicht nur auf die eingetragenen Scheiben
+export function lighter(weight, factor, step, offset = 0) {
+  let w = roundStep((weight + offset) * factor - offset, step);
   if (w >= weight) w = round2(weight - step);
   const maxCut = Math.max(0.2, 1 - factor + 0.1);
-  if (w <= 0 || (weight - w) / weight > maxCut) return null;
+  if (w <= 0 || (weight - w) / (weight + offset) > maxCut) return null;
   return w;
 }
 
@@ -326,7 +380,7 @@ export function suggest(exercise, sessions, { unit = 'kg', now = Date.now() } = 
     range, rangeAuto, step, stepAuto, offset,
   } = levelsOf(exercise, profile, sessions, unit);
   const base = {
-    range, rangeAuto, step, stepAuto, offset, equipment: profile.equipment,
+    range, rangeAuto, step, stepAuto, offset, equipment: profile.equipment, load: loadOf(exercise, profile),
   };
   const last = sessions[0];
   if (!last) return { ...base, kind: 'first', weight: 0, from: 0, loaded: profile.equipment !== 'bodyweight', top: range[1] };
@@ -336,7 +390,7 @@ export function suggest(exercise, sessions, { unit = 'kg', now = Date.now() } = 
 
   if (days >= COMEBACK_DAYS) {
     const factor = days >= LONG_BREAK_DAYS ? 0.8 : 0.9;
-    const weight = last.loaded ? lighter(last.top, factor, step) : null;
+    const weight = last.loaded ? lighter(last.top, factor, step, sideBase(base)) : null;
     return {
       ...t, kind: 'comeback', factor, lighter: weight !== null, weight: weight ?? last.top, top: topFor(range, weight ?? last.top, step, offset),
     };
@@ -366,9 +420,15 @@ export function suggest(exercise, sessions, { unit = 'kg', now = Date.now() } = 
 
   const stall = plateauOf(sessions, top);
   const focus = focusOf(sessions, top);
-  if (stall) return { ...t, kind: 'plateau', top, focus, falling: stall.falling, reset: lighter(last.top, 0.9, step) };
+  if (stall) return { ...t, kind: 'plateau', top, focus, falling: stall.falling, reset: lighter(last.top, 0.9, step, sideBase(base)) };
 
   return { ...t, kind: 'build', top, pace, focus };
+}
+
+// Für „leichter“ zählt nur die Stange bei „je Seite“ – das Körpergewicht
+// bleibt außen vor, sonst gäbe es bei Klimmzügen mit Gürtel kaum Abschlag
+function sideBase(t) {
+  return t.load === 'side' ? t.offset || 0 : 0;
 }
 
 // In welchem Arbeitssatz das „+1“ steht: im ersten, der noch nicht oben ist –
@@ -424,7 +484,8 @@ export function targetSets(target, last, count, slots = null) {
   sets.forEach((s) => { delete s.work; delete s.at; });
   if (!target || !work.length) return sets;
 
-  const scaled = (w) => (w === target.from ? target.weight : roundStep(w * (target.weight / target.from), target.step));
+  const b = sideBase(target);
+  const scaled = (w) => (w === target.from ? target.weight : roundStep((w + b) * ((target.weight + b) / (target.from + b)) - b, target.step));
   const off = target.offset || 0;
   const repsFor = (s, w2) => Math.min(target.range[1], repsAt(s.weight + off, s.reps, w2 + off));
   switch (target.kind) {
@@ -477,7 +538,8 @@ export function targetSets(target, last, count, slots = null) {
 function lightenWarmups(sets, work, target) {
   sets.forEach((s) => {
     if (work.includes(s) || !(s.weight > 0) || s.weight < target.weight) return;
-    s.weight = Math.max(target.step, roundStep(s.weight * (target.weight / target.from), target.step));
+    const b = sideBase(target);
+    s.weight = Math.max(target.step, roundStep((s.weight + b) * ((target.weight + b) / (target.from + b)) - b, target.step));
   });
 }
 

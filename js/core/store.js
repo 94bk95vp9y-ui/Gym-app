@@ -153,9 +153,23 @@ function migrateSettings() {
   write(KEYS.settings, next);
 }
 
+// Bis Oktober 2026 passte die Klimmzug-Regel („chin“) versehentlich auf
+// „Maschine“ – der dabei gelernte Wiederholungsbereich wird einmal verworfen
+// und mit dem nächsten Training neu bestimmt.
+function migrateMachineRanges() {
+  const settings = read(KEYS.settings, null);
+  if (!settings || settings.machineRangeFix) return;
+  const list = read(KEYS.exercises, []);
+  if (list.some((e) => e.autoRange && /maschine/i.test(e.name || ''))) {
+    write(KEYS.exercises, list.map((e) => (e.autoRange && /maschine/i.test(e.name || '') ? { ...e, autoRange: null } : e)));
+  }
+  write(KEYS.settings, { ...settings, machineRangeFix: true });
+}
+
 seedIfEmpty();
 mergeCatalog();
 migrateSettings();
+migrateMachineRanges();
 
 let sortedWorkouts = { source: null, sorted: [] };
 

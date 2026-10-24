@@ -7,12 +7,12 @@ import {
   planDiff, routineFromWorkout, exerciseHistory, compareToPrevious,
 } from '../core/training.js';
 import {
-  progressionOf, outcomeOf, withChoice, targetSets, learnRanges, historyFor, CHOICES,
+  progressionOf, outcomeOf, withChoice, targetSets, learnRanges, historyFor, CHOICES, loadOf,
 } from '../core/progression.js';
 import { fatigueOf, muscleGroupLookup } from '../core/fatigue.js';
 import {
   formatNumber, parseNumber, formatSet, formatSetList, formatWeight, formatClock, formatRest,
-  formatVolume, formatDate, elapsedLabel, plural, unitLabel, relativeDay, bestSet,
+  formatVolume, formatDate, elapsedLabel, plural, unitLabel, relativeDay, bestSet, loadUnit,
 } from '../core/format.js';
 import { dayKey, dayStatus } from '../core/supplements.js';
 import { Sound } from '../core/sound.js';
@@ -225,7 +225,14 @@ function setRowHtml(set, ei, si, prev) {
 }
 
 // Kurzfassung einer fertigen Übung: „3 Sätze · 100 kg × 8“
+// Einheit der Übung: "kg", "kg/Seite" oder "kg/Hantel"
+function entryUnit(entry, u) {
+  const ex = Store.getExercise(entry.exerciseId);
+  return loadUnit(u, ex ? loadOf(ex) : 'total', true);
+}
+
 function summaryText(entry, u) {
+  u = entryUnit(entry, u);
   const done = entry.sets.filter((s) => s.done);
   const top = bestSet(done);
   return `${plural(done.length, 'Satz', 'Sätze')}${top ? ` · ${formatSet(top, u)}` : ''}`;
@@ -290,7 +297,7 @@ function exerciseCardHtml(w, entry, ei, ctx) {
         <div class="goal-slot">${goalHtml(info, entry, ei)}</div>
         ${fatigue ? `<p class="ex-hint">${esc(fatigue)}</p>` : ''}
         <div class="set-table">
-          <div class="set-cols set-headrow"><span>Satz</span><span>Vorher</span><span>${ctx.unit}</span><span>Wdh</span><span></span></div>
+          <div class="set-cols set-headrow"><span>Satz</span><span>Vorher</span><span>${esc(entryUnit(entry, ctx.unit))}</span><span>Wdh</span><span></span></div>
           ${entry.sets.map((s, si) => setRowHtml(s, ei, si, prevSets.length ? prevSets[Math.min(si, prevSets.length - 1)] : null)).join('')}
         </div>
         <button class="add-set" data-action="w-add-set" data-ei="${ei}">${Icon.plus} Satz</button>
@@ -994,7 +1001,7 @@ function choiceHtml(info, entry, ei) {
   if (info.outcome || !base) return '';
   const choice = Object.keys(CHOICES).find((c) => CHOICES[c] === base.kind);
   if (!choice || (choice === 'reset' && !base.reset)) return '';
-  const [pick, undo] = CHOICE_LABELS[choice](base, unit());
+  const [pick, undo] = CHOICE_LABELS[choice](base, loadUnit(unit(), base.load));
   const chosen = entry.choice === choice;
   return `
     <div class="section"><div class="list">
