@@ -12,6 +12,8 @@ let master = null;
 let enabled = true;
 let volume = 0.7;
 let style = 'click';
+let primed = false;
+let ignoreMute = false;
 
 export const SOUND_STYLES = [
   { id: 'click', label: 'Klick' },
@@ -19,31 +21,99 @@ export const SOUND_STYLES = [
   { id: 'marimba', label: 'Marimba' },
 ];
 
+// Lautstärke: die Töne sind kurz, auf dem iPhone-Lautsprecher gehen sie
+// sonst unter. Ein Kompressor davor fängt Spitzen ab, damit nichts verzerrt.
+const GAIN = 2.6;
+
 export function setSoundEnabled(on) { enabled = !!on; }
 
 export function setSoundVolume(value) {
   volume = Math.max(0, Math.min(1, value));
-  if (master) master.gain.value = volume * 1.4;
+  if (master) master.gain.value = volume * GAIN;
 }
 
 export function setSoundStyle(id) {
   style = SOUND_STYLES.some((s) => s.id === id) ? id : 'click';
 }
 
-// iOS erlaubt Audio nur aus einer Nutzergeste heraus, deshalb wird der
-// Kontext erst beim ersten Ton angelegt und danach bei Bedarf fortgesetzt.
-function audio() {
-  if (!enabled || volume <= 0) return null;
+// iPhone: Web-Audio ist stumm, solange der Stumm-Schalter an ist. Mit der
+// Audio-Session „playback“ (Safari 17+) klingen die Töne trotzdem – dafür
+// kann Musik aus anderen Apps pausieren. Deshalb nur auf Wunsch.
+export function setSoundIgnoreMute(on) {
+  ignoreMute = !!on;
+  applySession();
+}
+function applySession() {
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = ignoreMute ? 'playback' : 'ambient';
+  } catch { /* ältere Safari-Versionen */ }
+}
+export const canIgnoreMute = () => typeof navigator !== 'undefined' && !!navigator.audioSession;
+
+function create() {
   const Ctx = window.AudioContext || window.webkitAudioContext;
   if (!Ctx) return null;
-  if (!ctx) {
+  if (!ctx || ctx.state === 'closed') {
+    applySession();
     ctx = new Ctx();
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -12;
+    comp.knee.value = 8;
+    comp.ratio.value = 6;
+    comp.attack.value = 0.002;
+    comp.release.value = 0.12;
+    comp.connect(ctx.destination);
     master = ctx.createGain();
-    master.gain.value = volume * 1.4;
-    master.connect(ctx.destination);
+    master.gain.value = volume * GAIN;
+    master.connect(comp);
+    primed = false;
   }
-  if (ctx.state === 'suspended') ctx.resume();
   return ctx;
+}
+
+// iOS gibt Audio nur innerhalb einer Berührung frei – und hält den Kontext
+// nach dem Sperrbildschirm, einem Anruf oder Siri an („suspended“ bzw.
+// „interrupted“). Deshalb bei jeder Berührung prüfen und fortsetzen; beim
+// ersten Mal einen stillen Puffer abspielen, der den Kontext entsperrt.
+function unlock() {
+  if (!enabled || volume <= 0) return;
+  const ac = create();
+  if (!ac) return;
+  if (ac.state !== 'running') ac.resume().catch(() => {});
+  if (!primed) {
+    try {
+      const src = ac.createBufferSource();
+      src.buffer = ac.createBuffer(1, 1, ac.sampleRate);
+      src.connect(ac.destination);
+      src.start(0);
+      primed = true;
+    } catch { /* nächster Versuch bei der nächsten Berührung */ }
+  }
+}
+if (typeof document !== 'undefined') {
+  ['touchend', 'click', 'keydown'].forEach((type) => document.addEventListener(type, unlock, { capture: true, passive: true }));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') primed = false;
+  });
+}
+
+function audio() {
+  if (!enabled || volume <= 0) return null;
+  const ac = create();
+  if (!ac) return null;
+  if (ac.state !== 'running') ac.resume().catch(() => {});
+  return ac;
+}
+
+// Ton testen (Einstellungen): spielt den Abhak-Klang und meldet, ob der
+// Audio-Kontext läuft
+export async function testSound() {
+  unlock();
+  const ac = audio();
+  if (!ac) return 'unsupported';
+  STYLES[style].done(ac);
+  await new Promise((r) => setTimeout(r, 120));
+  return ac.state;
 }
 
 // Gefilterter Rauschimpuls – der eigentliche "Klack".

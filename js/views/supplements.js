@@ -8,7 +8,7 @@ import {
 } from '../core/supplements.js';
 import { plural } from '../core/format.js';
 import { Sound } from '../core/sound.js';
-import { esc, qs, qsa, registerActions, registerInputs } from '../ui/dom.js';
+import { esc, qs, qsa, registerActions, registerInputs, replay } from '../ui/dom.js';
 import { Icon } from '../ui/icons.js';
 import { registerPage, render, goTo } from '../ui/router.js';
 import {
@@ -389,9 +389,7 @@ function setTaken(ids, day, taken) {
       row.classList.toggle('taken', taken);
       row.setAttribute('aria-pressed', String(taken));
       const check = qs('.check', row);
-      check.classList.remove('bump');
-      void check.offsetWidth;
-      check.classList.add('bump');
+      replay(check, 'bump');
     });
   });
   const st = dayStatus(Store.getSupplements(), Store.getSupplementLog(), dayKey());

@@ -1,11 +1,21 @@
+// Formatierer einmal anlegen statt bei jedem Aufruf (Listen formatieren
+// Hunderte Daten – jedes toLocale… baut sonst einen neuen)
+const fmt = (options) => new Intl.DateTimeFormat('de-DE', options);
+const DATE = fmt({ weekday: 'short', day: 'numeric', month: 'short' });
+const DATE_TIME = fmt({ day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const LONG_DATE = fmt({ weekday: 'long', day: 'numeric', month: 'long' });
+const DAY_MONTH = fmt({ day: 'numeric', month: 'short' });
+const TIME = fmt({ hour: '2-digit', minute: '2-digit' });
+const VOLUME = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 0 });
+// Ungültige Daten werfen bei Intl einen Fehler – lieber leer anzeigen
+const day = (f, d) => (Number.isNaN(d.getTime()) ? '' : f.format(d));
+
 export function formatDate(iso) {
-  const d = new Date(iso);
-  return d.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' });
+  return day(DATE, new Date(iso));
 }
 
 export function formatDateTime(iso) {
-  const d = new Date(iso);
-  return d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return day(DATE_TIME, new Date(iso));
 }
 
 export function formatDuration(ms) {
@@ -59,9 +69,11 @@ const NBSP = '\u00a0';
 
 // Zahlen wie im Deutschen üblich: Komma statt Punkt, höchstens zwei
 // Nachkommastellen, keine überflüssigen Nullen ("82,5" statt "82.50").
+// Ein Formatierer für alle Aufrufe – toLocaleString legt sonst jedes Mal
+// einen neuen an, und eine Seite formatiert Hunderte Zahlen.
+const NUMBER = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 2, useGrouping: false });
 export function formatNumber(value) {
-  const n = Math.round((Number(value) || 0) * 100) / 100;
-  return n.toLocaleString('de-DE', { maximumFractionDigits: 2, useGrouping: false });
+  return NUMBER.format(Math.round((Number(value) || 0) * 100) / 100);
 }
 
 // Eingaben dürfen Komma oder Punkt enthalten – das iPhone bietet je nach
@@ -154,17 +166,17 @@ export function formatMinutes(ms) {
 
 // Volumen mit Tausenderpunkt: "12.450"
 export function formatVolume(value) {
-  return Math.round(value).toLocaleString('de-DE');
+  return VOLUME.format(Math.round(value));
 }
 
 export function formatLongDate(date = new Date()) {
-  return date.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+  return day(LONG_DATE, date);
 }
 
 export function formatDayMonth(iso) {
-  return new Date(iso).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' });
+  return day(DAY_MONTH, new Date(iso));
 }
 
 export function formatTime(iso) {
-  return new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  return day(TIME, new Date(iso));
 }

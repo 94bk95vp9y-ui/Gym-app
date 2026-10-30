@@ -45,11 +45,25 @@ export function collapseAway(el, done) {
   setTimeout(done, 230);
 }
 
+// Eine CSS-Animation neu starten, ohne den Browser zum sofortigen Layout zu
+// zwingen (der übliche Trick mit offsetWidth vermisst die ganze Seite neu –
+// bei jedem Abhaken spürbar). Läuft die Animation noch, beginnt sie von
+// vorn; sonst kommt die Klasse ein Bild später wieder dazu.
+export function replay(el, cls) {
+  if (!el) return;
+  if (!el.classList.contains(cls)) { el.classList.add(cls); return; }
+  const running = el.getAnimations ? el.getAnimations().filter((a) => a.animationName) : [];
+  if (running.length) {
+    running.forEach((a) => { a.currentTime = 0; a.play(); });
+    return;
+  }
+  el.classList.remove(cls);
+  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add(cls)));
+}
+
 export function popIn(el) {
   if (!el || prefersReducedMotion()) return;
-  el.classList.remove('pop-in');
-  void el.offsetWidth;
-  el.classList.add('pop-in');
+  replay(el, 'pop-in');
   el.addEventListener('animationend', () => el.classList.remove('pop-in'), { once: true });
 }
 
@@ -89,9 +103,7 @@ export function rollText(el, text) {
   [...text].forEach((c, i) => {
     if (spans[i].textContent === c) return;
     spans[i].textContent = c;
-    spans[i].classList.remove('roll');
-    void spans[i].offsetWidth;
-    spans[i].classList.add('roll');
+    replay(spans[i], 'roll');
   });
 }
 

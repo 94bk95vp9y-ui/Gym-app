@@ -88,7 +88,7 @@ danach auch offline.
 - kg/lb, Wochenziel, Satzpause, Steigerungs-Ziele, Zahlenfeld, Bildschirm
   anlassen
 - Hell, Dunkel oder wie das iPhone, Akzentfarbe, Transparenz reduzieren,
-  Haptik, Töne
+  Haptik, Töne (mit „Ton testen“ und optional auch bei Stumm-Schalter)
 - Sicherung erstellen/wiederherstellen (JSON), Erinnerung an die Sicherung
 
 ## Bedienung wie in iOS

@@ -24,23 +24,29 @@ const KEYS = {
 };
 
 // Geparste Werte zwischenspeichern: ein Neuaufbau der Ansicht liest dieselben
-// Schlüssel oft, und bei einem Jahr Trainingsdaten kostet jedes JSON.parse
-// Zeit. Maßgeblich bleibt der Rohtext – hat er sich geändert, wird neu gelesen.
+// Schlüssel oft, und bei einem Jahr Trainingsdaten kostet schon das Holen und
+// Vergleichen des Rohtexts spürbar Zeit. Geschrieben wird nur über write() –
+// der Zwischenspeicher ist also aktuell. Ändert ein anderes Fenster die Daten
+// (zweiter Tab), meldet das der storage-Event, und der Schlüssel wird neu
+// gelesen.
 const cache = new Map();
 
 function read(key, fallback) {
+  const hit = cache.get(key);
+  if (hit) return hit.value ?? fallback;
   try {
     const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    const hit = cache.get(key);
-    if (hit && hit.raw === raw) return hit.value;
-    const value = JSON.parse(raw);
-    cache.set(key, { raw, value });
-    return value;
+    const value = raw ? JSON.parse(raw) : null;
+    cache.set(key, { value });
+    return value ?? fallback;
   } catch {
     return fallback;
   }
 }
+
+window.addEventListener('storage', (e) => {
+  if (e.key === null) cache.clear(); else cache.delete(e.key);
+});
 
 // Schlägt das Speichern fehl (Speicher voll), wird der Zwischenspeicher
 // verworfen – sonst gälte im Speicher etwas anderes als auf dem Gerät – und
@@ -54,7 +60,7 @@ function write(key, value) {
     window.dispatchEvent(new CustomEvent('storage-failed', { detail: { key, err } }));
     throw err;
   }
-  cache.set(key, { raw, value });
+  cache.set(key, { value });
 }
 
 function remove(key) {
@@ -98,6 +104,8 @@ const DEFAULT_SETTINGS = {
   solidBars: false,
   // Eigenes Zahlenfeld im Training statt der iPhone-Tastatur
   appKeypad: true,
+  // Töne auch bei eingeschaltetem Stumm-Schalter (kann Musik pausieren)
+  soundIgnoreMute: false,
   mobilityBudget: 10,
   mobilityVoice: true,
   mobilityPrep: 10,

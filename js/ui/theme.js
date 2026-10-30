@@ -1,6 +1,6 @@
 // Hell/Dunkel, Akzentfarbe und Töne aus den Einstellungen anwenden.
 import { Store, ACCENTS } from '../core/store.js';
-import { setSoundEnabled, setSoundVolume } from '../core/sound.js';
+import { setSoundEnabled, setSoundVolume, setSoundIgnoreMute } from '../core/sound.js';
 import { setHapticsEnabled } from './haptics.js';
 
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -55,6 +55,7 @@ export function applySettings() {
   applyTheme();
   setSoundEnabled(s.sound);
   setSoundVolume(s.soundVolume);
+  setSoundIgnoreMute(s.soundIgnoreMute);
   setHapticsEnabled(s.haptics);
 }
 

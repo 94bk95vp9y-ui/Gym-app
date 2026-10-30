@@ -1,7 +1,7 @@
 // Übungsauswahl (Mehrfachauswahl mit Suche) und Übungs-Editor – geteilt von
 // Plan-Editor und laufendem Training.
 import { Store, MUSCLE_GROUPS, uid } from '../core/store.js';
-import { esc, qs } from '../ui/dom.js';
+import { esc, qs, replay } from '../ui/dom.js';
 import { Icon } from '../ui/icons.js';
 import { openSheet } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
@@ -74,7 +74,7 @@ export function openExercisePicker({ title = 'Übungen', fixed = [], fixedLabel 
       row.classList.toggle('taken', on);
       const check = qs('.check', row);
       check.classList.toggle('on', on);
-      if (on) { check.classList.remove('bump'); void check.offsetWidth; check.classList.add('bump'); }
+      if (on) replay(check, 'bump');
       sheet.setRight({ label: rightLabel(), style: 'primary', action: (s) => { s.close(); if (chosen.length) onDone(chosen); } });
       return;
     }

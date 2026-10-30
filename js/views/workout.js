@@ -17,7 +17,7 @@ import {
 import { dayKey, dayStatus } from '../core/supplements.js';
 import { Sound } from '../core/sound.js';
 import {
-  esc, qs, qsa, registerActions, registerInputs, collapseAway, popIn, countUp, prefersReducedMotion, rollText,
+  esc, qs, qsa, registerActions, registerInputs, collapseAway, popIn, countUp, prefersReducedMotion, rollText, replay,
 } from '../ui/dom.js';
 import { EASE } from '../ui/motion.js';
 import { Icon } from '../ui/icons.js';
@@ -89,16 +89,19 @@ export async function startBlank() {
 
 // Das Training wächst aus der angetippten Karte bzw. der Live-Leiste heraus
 // und schrumpft beim Minimieren wieder hinein – nur über transform und
-// opacity, damit es auch auf dem iPhone flüssig bleibt.
+// opacity, damit es auch auf dem iPhone flüssig bleibt. Die Ecken bleiben
+// während der Animation gleich rund: ein wechselnder Radius müsste die ganze
+// Fläche bei jedem Bild neu zeichnen.
+const ZOOM_CORNER = '40px';
 const ZOOM_MS = 520;
 
-function zoomFrames(rect, radius) {
+function zoomFrames(rect) {
   const vw = window.innerWidth;
   const s = Math.max(0.2, rect.width / vw);
   const tx = rect.left + rect.width / 2 - vw / 2;
   return {
-    small: { transform: `translate(${tx}px, ${rect.top}px) scale(${s})`, borderRadius: `${radius / s}px`, opacity: 0 },
-    big: { transform: 'translate(0, 0) scale(1)', borderRadius: '0px', opacity: 1 },
+    small: { transform: `translate(${tx}px, ${rect.top}px) scale(${s})`, opacity: 0 },
+    big: { transform: 'translate(0, 0) scale(1)', opacity: 1 },
   };
 }
 
@@ -107,8 +110,7 @@ function zoomSource(el) {
   const card = el.closest('.hero, .plan-card, .live-bar') || el;
   const r = card.getBoundingClientRect();
   if (!r.width || r.bottom < 0 || r.top > window.innerHeight) return null;
-  const radius = parseFloat(getComputedStyle(card).borderTopLeftRadius) || 24;
-  return { rect: r, radius };
+  return { rect: r };
 }
 
 export function openWorkout({ instant = false, from = null } = {}) {
@@ -125,11 +127,12 @@ export function openWorkout({ instant = false, from = null } = {}) {
     requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('open')));
   }
   if (src) {
-    const { small, big } = zoomFrames(src.rect, src.radius);
+    const { small, big } = zoomFrames(src.rect);
     el.style.transformOrigin = 'top center';
     el.style.overflow = 'hidden';
+    el.style.borderRadius = ZOOM_CORNER;
     const anim = el.animate([small, { opacity: 1, offset: 0.3 }, big], { duration: ZOOM_MS, easing: EASE.nav });
-    anim.finished.catch(() => {}).then(() => { el.style.overflow = ''; });
+    anim.finished.catch(() => {}).then(() => { el.style.overflow = ''; el.style.borderRadius = ''; });
   }
   startTicker();
   requestWakeLock();
@@ -149,9 +152,10 @@ export function minimizeWorkout() {
   // Ziel: die Live-Leiste bzw. die Karte auf „Heute“
   const target = prefersReducedMotion() ? null : zoomSource(document.querySelector('#live-slot .live-bar') || document.querySelector('#content .hero'));
   if (target) {
-    const { small, big } = zoomFrames(target.rect, target.radius);
+    const { small, big } = zoomFrames(target.rect);
     el.style.transformOrigin = 'top center';
     el.style.overflow = 'hidden';
+    el.style.borderRadius = ZOOM_CORNER;
     el.classList.add('instant');
     const anim = el.animate([big, { opacity: 1, offset: 0.7 }, small], { duration: ZOOM_MS - 60, easing: EASE.nav, fill: 'forwards' });
     anim.finished.catch(() => {}).then(() => { if (!W.open) root.innerHTML = ''; });
@@ -347,7 +351,8 @@ function paint() {
       <div id="rest-slot"></div>
       <div id="done-slot"></div>
     </div>`;
-  qs('#w-content', root).scrollTop = scroll;
+  // Nur zurückscrollen, wenn nötig – das Setzen erzwingt sofort ein Layout
+  if (scroll > 0) qs('#w-content', root).scrollTop = scroll;
   if (wasOpen) requestAnimationFrame(() => qs('.workout', root)?.classList.remove('instant'));
   W.restShown = false;
   syncRest();
@@ -577,7 +582,7 @@ function syncRest() {
   rollText(qs('#rest-time', slot), formatClock(Math.ceil(remaining)));
   qs('.rest', slot)?.classList.toggle('ending', remaining <= 5);
   const fill = qs('#rest-fill', slot);
-  if (fill) fill.style.width = `${Math.min(100, (remaining / rest.duration) * 100)}%`;
+  if (fill) fill.style.setProperty('--f', String(Math.max(0, Math.min(1, remaining / rest.duration))));
 }
 
 // ---------- Bildschirm anlassen ----------
@@ -1067,9 +1072,7 @@ function toggleSet(ei, si) {
   const row = rowEl(ei, si);
   if (!set.done && !(set.reps > 0)) {
     if (row) {
-      row.classList.remove('shake');
-      void row.offsetWidth;
-      row.classList.add('shake');
+      replay(row, 'shake');
     }
     if (useKeypad()) openField(ei, si, 'reps');
     else qs('[data-field="reps"]', row)?.focus();
@@ -1088,9 +1091,7 @@ function toggleSet(ei, si) {
     row.classList.toggle('done', set.done);
     qsa('.set-in, .set-field', row).forEach((i) => i.classList.remove('suggested', 'aim', 'up'));
     const check = qs('.set-check', row);
-    check.classList.remove('bump');
-    void check.offsetWidth;
-    check.classList.add('bump');
+    replay(check, 'bump');
   }
   const info = updateCard(w, ei);
   updateProgress(w);
@@ -1149,9 +1150,7 @@ function showGain(row, set, prev) {
 function celebratePr(row) {
   const num = row && qs('.set-num', row);
   if (num) {
-    num.classList.remove('pr-pop');
-    void num.offsetWidth;
-    num.classList.add('pr-pop');
+    replay(num, 'pr-pop');
   }
   toast('Neuer Rekord');
 }

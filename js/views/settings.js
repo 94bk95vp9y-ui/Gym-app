@@ -2,7 +2,7 @@
 import { Store, ACCENTS, REST_OPTIONS, validateBackup } from '../core/store.js';
 import { dayKey } from '../core/supplements.js';
 import { formatRest, formatDateTime, relativeDay, plural } from '../core/format.js';
-import { Sound, setSoundVolume } from '../core/sound.js';
+import { Sound, setSoundVolume, testSound, canIgnoreMute } from '../core/sound.js';
 import { registerActions, registerInputs } from '../ui/dom.js';
 import { Icon } from '../ui/icons.js';
 import { haptic, HAP } from '../ui/haptics.js';
@@ -113,8 +113,11 @@ registerPage('settings', {
         ${toggleRow('haptics', 'Haptik', 'Kurzes Klopfen beim Abhaken und Tippen', s.haptics, Icon.haptic, TINT.purple)}
         ${toggleRow('sound', 'Töne', 'Beim Abhaken, bei Rekorden und am Ende der Pause', s.sound, Icon.voiceOn, TINT.red)}
         ${s.sound ? `<div class="row"><span class="icon-tile" style="background:transparent"></span><div class="row-main">
-          <input type="range" class="slider" min="0" max="100" step="5" value="${Math.round(s.soundVolume * 100)}" data-input="set-volume" data-change="set-volume" aria-label="Lautstärke" /></div></div>` : ''}
+          <input type="range" class="slider" min="0" max="100" step="5" value="${Math.round(s.soundVolume * 100)}" data-input="set-volume" data-change="set-volume" aria-label="Lautstärke" /></div></div>
+        ${canIgnoreMute() ? toggleRow('soundIgnoreMute', 'Auch bei Stumm-Schalter', 'Töne trotz Stummschaltung – Musik aus anderen Apps kann dabei pausieren', s.soundIgnoreMute, Icon.bell, TINT.orange) : ''}
+        <button class="row center accent" data-action="sound-test"><div class="row-main"><span class="row-title">Ton testen</span></div></button>` : ''}
       </div>
+      ${s.sound ? `<p class="section-foot" id="sound-hint">Hörst du nichts? Am iPhone schaltet der Stumm-Schalter (bzw. der Stumm-Modus) die Töne von Web-Apps ab${canIgnoreMute() ? ' – außer mit „Auch bei Stumm-Schalter“' : ''}. Bei gesperrtem Bildschirm laufen keine Töne.</p>` : ''}
 
       <div class="section-label">Mobility</div>
       <div class="list icons">
@@ -144,6 +147,15 @@ registerPage('settings', {
 });
 
 registerActions({
+  // Ton testen: abspielen und sagen, was los ist, wenn der Kontext nicht läuft
+  'sound-test': async () => {
+    const state = await testSound();
+    const hint = document.getElementById('sound-hint');
+    if (state === 'running') toast('Ton abgespielt – nichts gehört? Stumm-Schalter und Lautstärke prüfen');
+    else if (state === 'unsupported') toast('Dieses Gerät unterstützt keine Töne in Web-Apps');
+    else toast('Ton blockiert – einmal tippen und erneut testen');
+    hint?.classList.add('pop-in');
+  },
   'set-seg': async (el) => {
     haptic();
     const { key } = el.dataset;

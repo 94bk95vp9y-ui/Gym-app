@@ -151,10 +151,19 @@ export function workoutDoneSets(workout) {
 // Volumen: Gewicht × Wdh. Bei „je Seite“ zählt das Gewicht doppelt (beide
 // Seiten); Stange bzw. Schlitten kennt die App nicht. „Je Hantel“ zählt
 // einfach – auch einarmige Übungen werden so eingetragen.
+// Übungen mit „je Seite“ – einmal je Stand der Übungsliste bestimmt, die
+// Verlaufsliste fragt das für jedes Training ab
+let sideCache = { source: null, ids: new Set() };
+function sideIds() {
+  const list = Store.getExercises();
+  if (sideCache.source !== list) sideCache = { source: list, ids: new Set(list.filter((e) => loadOf(e) === 'side').map((e) => e.id)) };
+  return sideCache.ids;
+}
+
 export function workoutVolume(workout) {
+  const side = sideIds();
   return workout.entries.reduce((sum, e) => {
-    const ex = Store.getExercise(e.exerciseId);
-    const factor = ex && loadOf(ex) === 'side' ? 2 : 1;
+    const factor = side.has(e.exerciseId) ? 2 : 1;
     return sum + factor * e.sets.filter((s) => s.done).reduce((n, s) => n + (s.weight || 0) * (s.reps || 0), 0);
   }, 0);
 }

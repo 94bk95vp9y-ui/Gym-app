@@ -19,6 +19,8 @@ import {
   chev, dateBadge, emptyState, deltaPill,
 } from '../ui/components.js';
 
+const MONTH = new Intl.DateTimeFormat('de-DE', { month: 'long', year: 'numeric' });
+
 const ui = { seg: 'workouts', month: null, allMonths: false };
 // Viele Jahre Training ergeben Hunderte Zeilen – die Liste zeigt erst nur die
 // letzten Monate, ältere auf Wunsch.
@@ -82,7 +84,7 @@ function calendarHtml() {
   return `
     <div class="card" id="history-cal">
       <div class="cal-head">
-        <div><strong>${first.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}</strong>
+        <div><strong>${MONTH.format(first)}</strong>
           <div class="muted small">${plural(count, 'Training', 'Trainings')}</div></div>
         <div class="cal-nav">
           <button data-action="history-month" data-delta="-1" aria-label="Vorheriger Monat">${Icon.chevronLeft}</button>
@@ -104,7 +106,7 @@ function workoutsHtml() {
     const d = new Date(w.startedAt);
     const key = `${d.getFullYear()}-${d.getMonth()}`;
     if (months[months.length - 1]?.key !== key) {
-      months.push({ key, label: d.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }), items: [] });
+      months.push({ key, label: MONTH.format(d), items: [] });
     }
     months[months.length - 1].items.push(w);
   });
@@ -113,7 +115,7 @@ function workoutsHtml() {
   return `
     <div class="section">${calendarHtml()}</div>
     ${shown.map((m) => `
-      <div class="section">
+      <div class="section hist-month">
         <div class="section-head"><h2>${esc(m.label)}</h2><span class="meta">${plural(m.items.length, 'Training', 'Trainings')}</span></div>
         <div class="list">${m.items.map((w) => {
     const prs = workoutPrs(w);
