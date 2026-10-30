@@ -199,12 +199,20 @@ function goalClass(set, prev, field) {
   return set.weight === (prev.weight || 0) && set.reps > prev.reps ? 'aim' : '';
 }
 
+// Wie viele Wdh mehr als letztes Mal: "+1" als Abzeichen am Feld. Mehr
+// Gewicht zeigt das grüne Feld (und die Zielzeile) schon.
+function aimBadge(set, prev, field) {
+  if (field !== 'reps' || !goalClass(set, prev, field)) return '';
+  return `<span class="sf-badge" aria-hidden="true">+${set.reps - prev.reps}</span>`;
+}
+
 function fieldHtml(set, ei, si, field, prev = null) {
   const value = field === 'weight' ? (set.weight > 0 ? formatNumber(set.weight) : '') : (set.reps > 0 ? String(set.reps) : '');
-  const sug = set.suggested && !set.done ? `suggested ${goalClass(set, prev, field)}` : '';
-  const label = `${field === 'weight' ? 'Gewicht' : 'Wiederholungen'} Satz ${si + 1}`;
+  const aim = set.suggested && !set.done ? goalClass(set, prev, field) : '';
+  const sug = set.suggested && !set.done ? `suggested ${aim}` : '';
+  const label = `${field === 'weight' ? 'Gewicht' : 'Wiederholungen'} Satz ${si + 1}${aim ? ', mehr als letztes Mal' : ''}`;
   if (useKeypad()) {
-    return `<button class="set-field ${sug}" data-action="w-field" data-field="${field}" data-ei="${ei}" data-si="${si}" aria-label="${label}"><span class="sf-val">${value || '<span class="sf-ph">0</span>'}</span></button>`;
+    return `<button class="set-field ${sug}" data-action="w-field" data-field="${field}" data-ei="${ei}" data-si="${si}" aria-label="${label}"><span class="sf-val">${value || '<span class="sf-ph">0</span>'}</span>${aim ? aimBadge(set, prev, field) : ''}</button>`;
   }
   return `<input class="set-in ${sug}" type="text" inputmode="${field === 'weight' ? 'decimal' : 'numeric'}" ${field === 'reps' ? 'pattern="[0-9]*"' : ''} autocomplete="off" placeholder="0" value="${value}"
     data-input="w-set" data-field="${field}" data-ei="${ei}" data-si="${si}" aria-label="${label}" />`;
@@ -382,31 +390,25 @@ function updateCard(w, ei) {
   return info;
 }
 
-// Ziel-Karte auf den neuen Stand bringen. Bleibt die Leiste gleich lang,
-// werden nur Inhalt und Füllung getauscht – so wächst sie sichtbar nach.
+// Zielzeile auf den neuen Stand bringen. Bleiben die Satz-Punkte gleich
+// viele, werden nur Text und Punkte getauscht – so füllen sie sich sichtbar.
 function patchGoal(slot, html) {
   const tpl = document.createElement('template');
   tpl.innerHTML = html.trim();
   const next = tpl.content.firstElementChild;
   const old = slot.firstElementChild;
-  const oldSegs = old ? qsa('.goal-bar i', old) : [];
-  const newSegs = next ? qsa('.goal-bar i', next) : [];
-  if (!old || !next || oldSegs.length !== newSegs.length) {
+  const oldDots = old ? qsa('.goal-dots i', old) : [];
+  const newDots = next ? qsa('.goal-dots i', next) : [];
+  if (!old || !next || !oldDots.length || oldDots.length !== newDots.length || !qs('.goal-end', next)) {
     slot.replaceChildren(tpl.content);
     return;
   }
   old.className = next.className;
-  const bar = qs('.goal-bar', old);
-  [...old.children].forEach((c) => { if (c !== bar) c.remove(); });
-  let afterBar = false;
-  [...next.children].forEach((c) => {
-    if (c.classList.contains('goal-bar')) { afterBar = true; return; }
-    if (bar && !afterBar) old.insertBefore(c, bar); else old.appendChild(c);
-  });
-  newSegs.forEach((n, i) => {
-    oldSegs[i].className = n.className;
-    oldSegs[i].style.setProperty('--f', n.style.getPropertyValue('--f'));
-  });
+  qs('.goal-ic', old).innerHTML = qs('.goal-ic', next).innerHTML;
+  qs('.goal-txt', old).replaceWith(qs('.goal-txt', next));
+  const end = qs('.goal-end', next);
+  if (end.hasAttribute('aria-label')) qs('.goal-end', old).setAttribute('aria-label', end.getAttribute('aria-label'));
+  newDots.forEach((n, i) => { oldDots[i].className = n.className; });
 }
 
 // Fertige Übung zuklappen und die nächste offene ins Bild holen. Nach einer

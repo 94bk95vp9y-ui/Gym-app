@@ -11,7 +11,7 @@ import { Icon } from '../ui/icons.js';
 import { HAP } from '../ui/haptics.js';
 import { openMenu } from '../ui/sheet.js';
 import { render } from '../ui/router.js';
-import { ring, iconTile, chev, TINT } from '../ui/components.js';
+import { iconTile, chev, TINT } from '../ui/components.js';
 
 const NB = ' ';
 const strong = (text) => `<b>${esc(text)}</b>`;
@@ -43,77 +43,91 @@ export function liveSets(sets, prev) {
 const SAME_WEIGHT = new Set(['build', 'hold', 'plateau', 'addLoad']);
 
 // ---------- Ziel vor bzw. während der Übung ----------
+// Eine Zeile, zwei Fragen: Was mache ich heute? (fett) und wofür? (grau,
+// „Nächste Stufe: 3 × 12 → 65 kg“). Die Punkte rechts sind die Arbeitssätze –
+// voll, sobald ein Satz die Stufe schafft. Wo genau das Plus hingehört, steht
+// als „+1“ direkt am Satz.
+
+// Punkte aus der Leiter: on = Stufe geschafft, done = erledigt, darunter
+function dotsOf(segs, all = false) {
+  return (segs || []).slice(0, 8).map((s) => (all || s.fill >= 1 ? 'on' : s.done ? 'done' : ''));
+}
+
+function stageText(t, n, top, unit) {
+  return `Nächste Stufe: ${n}${NB}×${NB}${top} → ${nextWeightText(t, unit)}`;
+}
+
 export function targetView(t, baseUnit, { sets = [], prev = [] } = {}) {
   if (!t) return null;
   const unit = loadUnit(baseUnit, t.load);
-  const pct = (w, from) => Math.round((1 - (w + (t.load === 'side' ? t.offset || 0 : 0)) / (from + (t.load === 'side' ? t.offset || 0 : 0))) * 100);
   const [lo, hi] = t.range;
   const kg = (v) => formatWeight(v, unit);
+  const side = t.load === 'side' ? t.offset || 0 : 0;
+  const pct = (w, from) => Math.round((1 - (w + side) / (from + side)) * 100);
   switch (t.kind) {
     case 'first':
       return {
         tone: 'muted',
         icon: Icon.target,
-        compact: true,
-        title: `Erstes Mal: ${strong(`${lo}–${hi} saubere Wdh`)}`,
-        sub: t.loaded ? 'Wähle ein Gewicht, das dazu passt.' : '',
+        title: 'Erstes Mal',
+        sub: t.loaded ? `Gewicht für ${lo}–${hi} saubere Wdh wählen` : `${lo}–${hi} saubere Wdh`,
       };
     case 'increase':
       return {
         tone: 'up',
         icon: Icon.trendUp,
         title: `Mehr Gewicht: ${strong(kg(t.weight))}`,
-        chip: `+${formatNumber(t.step)}${NB}${loadUnit(baseUnit, t.load, true)}`,
-        sub: `Letztes Mal alle Sätze mit ${t.reached}+ Wdh`,
+        sub: `+${formatNumber(t.step)}${NB}${unit} · letztes Mal alle Sätze geschafft`,
       };
     case 'addLoad':
       return {
         tone: 'up',
         icon: Icon.trendUp,
         title: `Bereit für ${strong('Zusatzgewicht')}`,
-        sub: `Alle Sätze mit ${hi}+ Wdh – z. B. mit ${kg(t.step)} anfangen oder eine schwerere Variante.`,
-        segs: ladder(t, liveSets(sets, prev)).segs,
+        sub: `Alle Sätze mit ${hi}+ Wdh – z. B. mit ${kg(t.step)} anfangen`,
+        dots: dotsOf(ladder(t, liveSets(sets, prev)).segs),
       };
     case 'comeback':
       return {
         tone: 'calm',
         icon: Icon.restore,
         title: t.lighter ? `Wiedereinstieg mit ${strong(kg(t.weight))}` : `Wiedereinstieg: ${strong('etwas weniger Wdh')}`,
-        chip: t.lighter ? `−${pct(t.weight, t.from)}${NB}%` : '',
-        sub: `${pauseText(t.days)} Pause – erst mal locker reinkommen.`,
+        sub: `${pauseText(t.days)} Pause${t.lighter ? ` · −${pct(t.weight, t.from)}${NB}%` : ''} · locker reinkommen`,
       };
     case 'reset':
       return {
         tone: 'calm',
         icon: Icon.restore,
         title: `Neu aufbauen mit ${strong(kg(t.weight))}`,
-        chip: `−${pct(t.weight, t.from)}${NB}%`,
-        sub: `Die Wdh steigen jetzt schnell – bald bist du über ${kg(t.from)}.`,
+        sub: `−${pct(t.weight, t.from)}${NB}% · die Wdh steigen jetzt schnell`,
         actions: [{ label: 'Rückgängig', choice: '', plain: true }],
       };
     default:
       break;
   }
   const L = ladder(t, liveSets(sets, prev));
-  const next = nextWeightText(t, unit);
-  const title = L.need > 0 ? `Noch ${strong(`${L.need} Wdh`)} bis ${strong(next)}` : `${strong(next)} in Reichweite`;
+  const n = L.segs.length || sets.length || 3;
+  const stage = stageText(t, n, t.top, unit);
   if (t.kind === 'plateau') {
     return {
       tone: 'warn',
       icon: Icon.plateau,
-      title: t.falling ? `Leistung sinkt seit ${strong('3 Einheiten')}` : `Seit ${strong('6 Einheiten')} kein Fortschritt`,
-      sub: t.reset ? 'Mit etwa 10 % weniger neu aufbauen bringt oft den Durchbruch.' : 'Tipp: eine leichtere Woche oder eine andere Variante.',
-      segs: L.segs,
-      actions: t.reset ? [{ label: `Mit ${kg(t.reset)} neu aufbauen`, choice: 'reset' }] : [],
+      title: t.falling ? 'Leistung sinkt' : 'Plateau',
+      sub: t.reset ? `Seit ${t.falling ? 3 : 6} Einheiten kein Plus` : `Seit ${t.falling ? 3 : 6} Einheiten kein Plus – leichtere Woche oder andere Variante`,
+      actions: t.reset ? [{ label: 'Neu aufbauen', choice: 'reset' }] : [],
     };
   }
   if (t.kind === 'hold') {
     return {
-      tone: 'accent', icon: Icon.flag, title, chip: `${rangeText(t.range)}${NB}Wdh`, sub: `Heute ${t.weight > 0 ? kg(t.weight) : 'das Niveau'} halten – wie letztes Mal reicht.`, segs: L.segs,
+      tone: 'accent', icon: Icon.flag, title: `Heute ${t.weight > 0 ? strong(kg(t.weight)) : 'das Niveau'} halten`, sub: stage, dots: dotsOf(L.segs),
     };
   }
   return {
-    tone: 'accent', icon: Icon.arrowUp, title, chip: `${rangeText(t.range)}${NB}Wdh`, sub: t.pace === 2 ? 'Ziel: 2 Wdh mehr – du legst gerade gut zu' : 'Ziel: 1 Wdh mehr als letztes Mal', segs: L.segs,
+    tone: 'accent',
+    icon: Icon.arrowUp,
+    title: `Heute ${strong(`${t.pace === 2 ? 2 : 1} Wdh mehr`)}`,
+    sub: stage,
+    dots: dotsOf(L.segs),
   };
 }
 
@@ -136,22 +150,21 @@ export function outcomeView(o, baseUnit) {
     return {
       tone: 'up',
       icon: Icon.trophy,
-      title: next.kind === 'increase' ? `Stufe geschafft – nächstes Mal ${strong(kg(next.weight))}` : `Stufe geschafft – bereit für ${strong('Zusatzgewicht')}`,
-      sub: `Alle Sätze mit ${next.kind === 'increase' ? next.reached : next.range[1]}+ Wdh.`,
-      segs: L.segs.map((s) => ({ ...s, fill: 1 })),
-      done: true,
+      title: `${strong('Stufe geschafft!')}`,
+      sub: next.kind === 'increase' ? `Nächstes Mal ${kg(next.weight)}` : 'Nächstes Mal mit Zusatzgewicht',
+      dots: dotsOf(L.segs, true),
       levelUp: true,
     };
   }
-  const title = L.need > 0 ? `Noch ${strong(`${L.need} Wdh`)} bis ${strong(nextWeightText(next, unit))}` : `${strong(nextWeightText(next, unit))} in Reichweite`;
-  let v = { tone: 'muted', icon: Icon.arrowUp, sub: 'Genau wie letztes Mal – nächstes Mal 1 Wdh mehr.' };
-  if (delta?.kind === 'new') v = { tone: 'muted', icon: Icon.target, sub: 'Erste Einheit – ab jetzt gibt es Ziele.' };
-  else if (delta?.kind === 'weight' && delta.delta > 0) v = { tone: 'up', icon: Icon.trendUp, sub: `Neues Gewicht geschafft: ${kg(today.top)}` };
-  else if (delta?.kind === 'reps' && delta.delta > 0) v = { tone: 'accent', icon: Icon.flame, sub: `${delta.delta} Wdh mehr als letztes Mal` };
-  else if (delta?.kind === 'weight' && delta.delta < 0) v = { tone: 'muted', icon: Icon.restore, sub: 'Leichter gestartet – jetzt geht es wieder bergauf.' };
-  else if (delta?.kind === 'reps' && delta.delta < 0) v = { tone: 'muted', icon: Icon.arrowUp, sub: 'Heute etwas weniger – kommt vor.' };
-  if (next.kind === 'plateau') v = { tone: 'warn', icon: Icon.plateau, sub: 'Seit mehreren Einheiten kein Plus – nächstes Mal gibt es einen Vorschlag.' };
-  return { ...v, title, segs: L.segs, done: true };
+  const n = L.segs.length || today.work.length;
+  let v = { tone: 'muted', icon: Icon.check, title: 'Wie letztes Mal' };
+  if (delta?.kind === 'new') v = { tone: 'muted', icon: Icon.target, title: 'Erste Einheit geschafft' };
+  else if (delta?.kind === 'weight' && delta.delta > 0) v = { tone: 'up', icon: Icon.trendUp, title: `Neues Gewicht: ${strong(kg(today.top))}` };
+  else if (delta?.kind === 'reps' && delta.delta > 0) v = { tone: 'accent', icon: Icon.flame, title: `${strong(`+${delta.delta} Wdh`)} mehr als letztes Mal` };
+  else if (delta?.kind === 'weight' && delta.delta < 0) v = { tone: 'muted', icon: Icon.restore, title: 'Leichter gestartet' };
+  else if (delta?.kind === 'reps' && delta.delta < 0) v = { tone: 'muted', icon: Icon.arrowUp, title: 'Heute etwas weniger – kommt vor' };
+  if (next.kind === 'plateau') v = { tone: 'warn', icon: Icon.plateau, title: 'Seit mehreren Einheiten kein Plus' };
+  return { ...v, sub: stageText(next, n, next.top, unit), dots: dotsOf(L.segs) };
 }
 
 // Kleines Etikett für die zugeklappte Übung
@@ -165,14 +178,12 @@ export function outcomePill(o, baseUnit) {
   return '';
 }
 
-// Eine Zeile für die Zusammenfassung: geschaffte Stufe oder Weg zur nächsten
+// Eine Zeile für die Zusammenfassung: geschaffte Stufe oder die nächste Stufe
 export function goalLineHtml(o, unit) {
   const v = outcomeView(o, unit);
   if (!v) return '';
-  const title = v.levelUp
-    ? `Nächstes Mal ${strong(o.next.kind === 'increase' ? formatWeight(o.next.weight, loadUnit(unit, o.next.load)) : 'Zusatzgewicht')}`
-    : v.title;
-  return `<span class="goal-line tone-${v.tone}">${v.levelUp ? Icon.arrowUp : segsHtml(v.segs, 'goal-mini')}<span>${title}</span></span>`;
+  const text = v.levelUp ? strong(v.sub) : esc(v.sub);
+  return `<span class="goal-line tone-${v.tone}">${v.levelUp ? Icon.arrowUp : dotsHtml(v.dots, 'goal-mini')}<span>${text}</span></span>`;
 }
 
 // Etikett in Listen (Plan): was beim nächsten Training ansteht
@@ -186,26 +197,27 @@ export function goalTagHtml(t, unit) {
 }
 
 // ---------- Bausteine ----------
-function segsHtml(segs, cls = 'goal-bar') {
-  if (!segs?.length) return '';
-  return `<div class="${cls}" aria-hidden="true">${segs.slice(0, 8).map((s) => `<i class="${s.done ? 'on' : ''}" style="--f:${s.fill.toFixed(3)}"></i>`).join('')}</div>`;
+function dotsHtml(dots, cls = 'goal-dots') {
+  if (!dots?.length) return '';
+  return `<span class="${cls}" aria-hidden="true">${dots.map((d) => `<i class="${d}"></i>`).join('')}</span>`;
 }
 
-// attrs: zusätzliche data-Attribute (z. B. data-ei) für Karte und Knöpfe
+// attrs: zusätzliche data-Attribute (z. B. data-ei) für Zeile und Knöpfe
 export function goalCardHtml(v, { action = '', attrs = '' } = {}) {
   if (!v) return '';
   const actions = (v.actions || []).map((a) => `
     <button class="goal-act ${a.plain ? 'plain' : ''}" data-action="goal-choice" data-choice="${a.choice}" ${attrs}>${HAP}${esc(a.label)}</button>`).join('');
   const open = action ? `data-action="${action}" ${attrs} role="button" tabindex="0" aria-label="Details zur Steigerung"` : '';
+  const done = (v.dots || []).filter((d) => d === 'on').length;
+  const label = v.dots?.length ? ` aria-label="${done} von ${v.dots.length} Sätzen auf der Stufe"` : '';
   return `
-    <div class="goal tone-${v.tone} ${v.compact ? 'compact' : ''} ${v.levelUp ? 'level-up' : ''}" ${open}>
+    <div class="goal tone-${v.tone} ${v.levelUp ? 'level-up' : ''}" ${open}>
       <span class="goal-ic" aria-hidden="true">${v.icon}</span>
       <span class="goal-txt">
-        <span class="goal-top"><span class="goal-title">${v.title}</span>${v.chip ? `<span class="goal-chip num">${esc(v.chip)}</span>` : ''}</span>
+        <span class="goal-title">${v.title}</span>
         ${v.sub ? `<span class="goal-sub">${esc(v.sub)}</span>` : ''}
       </span>
-      ${segsHtml(v.segs)}
-      ${actions ? `<span class="goal-acts">${actions}</span>` : ''}
+      ${actions ? `<span class="goal-acts">${actions}</span>` : `<span class="goal-end"${label}>${dotsHtml(v.dots)}${chev}</span>`}
     </div>`;
 }
 
@@ -225,8 +237,8 @@ function ruleText(t, unit) {
   return `${start}Bleib bei ${kg(t.weight)}, bis jeder Satz ${t.top} Wdh schafft. Dann gibt es ${kg(t.step)} mehr – die Wdh fallen etwas, und es geht von vorn los.${big}`;
 }
 
-// Großes Detail: Ring, Ziel, Leiter je Satz, Regel. Für das Blatt im Training
-// und die Übungsseite.
+// Detail: dieselbe Aussage wie die Zeile, dazu eine Leiste je Satz und die
+// Regel. Für das Blatt im Training und die Übungsseite.
 export function goalPanelHtml(t, unit, { sets = [], prev = [], outcome = null } = {}) {
   if (!t && !outcome) return '';
   const v = outcome ? outcomeView(outcome, unit) : targetView(t, unit, { sets, prev });
@@ -240,29 +252,27 @@ export function goalPanelHtml(t, unit, { sets = [], prev = [], outcome = null } 
   } else if (SAME_WEIGHT.has(t.kind)) {
     L = ladder(t, liveSets(sets, prev));
   }
-  const progress = v.levelUp ? 1 : (L ? L.progress : 0);
-  const hasRing = v.levelUp || (L && L.segs.length);
-  const badge = hasRing
-    ? ring(progress * 100, 100, { size: 64, stroke: 7, label: v.levelUp ? Icon.trophy : `${Math.round(progress * 100)}<small>%</small>`, cls: `gp-ring tone-${v.tone}` })
-    : `<span class="gp-badge">${v.icon}</span>`;
   const rows = L && L.segs.length ? `
-    <div class="gp-sets">${L.segs.slice(0, 8).map((s, i) => `
-      <div class="gp-set ${s.done ? 'on' : ''}">
+    <div class="gp-sets">${L.segs.slice(0, 8).map((s, i) => {
+    const full = v.levelUp || s.fill >= 1;
+    return `
+      <div class="gp-set ${full ? 'on' : ''}">
         <span class="gp-set-name">Satz ${i + 1}</span>
         <span class="gp-track"><i style="--f:${(v.levelUp ? 1 : s.fill).toFixed(3)}"></i></span>
-        <span class="gp-set-val num">${s.reps}<small>/${ladderTop}</small></span>
-      </div>`).join('')}
+        <span class="gp-set-val num">${full ? Icon.check : ''}${s.reps}<small>/${ladderTop}</small></span>
+      </div>`;
+  }).join('')}
     </div>` : '';
   return `
     <div class="goal-panel tone-${v.tone}">
       <div class="gp-head">
-        ${badge}
+        <span class="gp-badge">${v.icon}</span>
         <div class="gp-text">
           <span class="gp-title">${v.title}</span>
           ${v.sub ? `<span class="gp-sub">${esc(v.sub)}</span>` : ''}
         </div>
       </div>
-      ${rows}
+      ${rows ? `<p class="gp-caption">Wdh je Satz – voll heißt: Stufe geschafft</p>${rows}` : ''}
       ${target.kind !== 'first' ? `<p class="gp-rule">${esc(ruleText(target, loadUnit(unit, target.load)))}</p>` : ''}
     </div>`;
 }
@@ -308,17 +318,10 @@ export function goalSettingsHtml(ex) {
 // Ring und Leitern beim Öffnen von null aus füllen
 export function animateGoal(scope) {
   if (!scope || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const fills = [...scope.querySelectorAll('.gp-ring .ring-fill')];
   const tracks = [...scope.querySelectorAll('.gp-track i')];
-  const offsets = fills.map((c) => c.getAttribute('stroke-dashoffset'));
   const values = tracks.map((t) => t.style.getPropertyValue('--f'));
-  fills.forEach((c) => {
-    c.style.transition = 'none';
-    c.style.strokeDashoffset = c.getAttribute('stroke-dasharray');
-  });
   tracks.forEach((t) => { t.style.transition = 'none'; t.style.setProperty('--f', '0'); });
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    fills.forEach((c, i) => { c.style.transition = ''; c.style.strokeDashoffset = offsets[i]; });
     tracks.forEach((t, i) => { t.style.transition = ''; t.style.setProperty('--f', values[i]); });
   }));
 }

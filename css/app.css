@@ -1245,10 +1245,12 @@ button.set-prev:active { background: var(--fill); }
 .w-actions .btn-row .btn { height: 48px; font-size: 16px; }
 .w-actions .btn-destructive { height: 44px; }
 
-/* ---------- Steigerung: Ziel je Übung ----------
-   Farbe nach Bedeutung: Grün = mehr Gewicht/geschafft, Akzent = Wdh
-   aufbauen, Orange = Plateau, Indigo = leichter (Pause, Neuaufbau). */
-.goal, .goal-panel, .goal-line, .gp-ring { --gc: var(--accent); --gt: var(--accent); }
+/* ---------- Steigerung: Zielzeile je Übung ----------
+   Eine ruhige Zeile: fett, was heute dran ist, grau die nächste Stufe,
+   rechts ein Punkt je Arbeitssatz. Farbe nach Bedeutung: Grün = mehr
+   Gewicht/geschafft, Akzent = Wdh aufbauen, Orange = Plateau, Indigo =
+   leichter (Pause, Neuaufbau). */
+.goal, .goal-panel, .goal-line { --gc: var(--accent); --gt: var(--accent); }
 .tone-up { --gc: var(--success-strong); --gt: var(--success); }
 .tone-warn { --gc: var(--warn-strong); --gt: var(--warn); }
 .tone-calm { --gc: var(--indigo); --gt: var(--indigo-text); }
@@ -1256,13 +1258,13 @@ button.set-prev:active { background: var(--fill); }
 .goal {
   position: relative;
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
+  grid-template-columns: 30px minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: 11px;
-  margin: 10px 12px 0;
-  padding: 11px 12px 11px 11px;
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--gc) 10%, var(--card));
+  column-gap: 10px;
+  margin: 8px 12px 2px;
+  padding: 8px 10px 8px 8px;
+  border-radius: 14px;
+  background: var(--fill);
   text-align: left;
   cursor: pointer;
   overflow: hidden;
@@ -1271,63 +1273,41 @@ button.set-prev:active { background: var(--fill); }
   transition: background-color 0.4s, transform 0.25s var(--spring-pop);
 }
 .goal:active { transform: scale(0.985); }
-.goal.tone-muted { background: var(--fill); }
+.goal.tone-up, .goal.tone-warn, .goal.tone-calm { background: color-mix(in srgb, var(--gc) 11%, var(--card)); }
 .goal-ic {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
   display: grid;
   place-items: center;
-  align-self: start;
-  background: var(--gc);
-  color: #fff;
-  box-shadow: 0 3px 8px color-mix(in srgb, var(--gc) 30%, transparent);
-  transition: background-color 0.4s;
+  background: color-mix(in srgb, var(--gc) 16%, transparent);
+  color: var(--gt);
+  transition: background-color 0.4s, color 0.4s;
 }
-.goal-ic svg { width: 18px; height: 18px; }
-.goal.tone-muted .goal-ic { background: var(--card); color: var(--text-2); box-shadow: none; }
-.goal-txt { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.goal-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.goal-ic svg { width: 16px; height: 16px; }
+.goal.tone-up .goal-ic, .goal.tone-warn .goal-ic, .goal.tone-calm .goal-ic { background: var(--gc); color: #fff; }
+.goal-txt { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .goal-title { font-size: 15px; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; }
 .goal-title b, .gp-title b, .goal-line b { font-family: var(--font-round); font-weight: 700; color: var(--gt); font-variant-numeric: tabular-nums; }
-.goal-sub { font-size: 13px; line-height: 1.35; color: var(--text-2); }
-.goal-chip {
-  flex: none;
-  margin: -1px -2px 0 0;
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 9px;
-  border-radius: 12px;
-  font-size: 13px;
-  font-weight: 700;
-  white-space: nowrap;
-  color: var(--gt);
-  background: color-mix(in srgb, var(--gc) 16%, transparent);
+.goal-sub { font-size: 13px; line-height: 1.3; color: var(--text-2); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.goal-end { display: flex; align-items: center; gap: 6px; color: var(--text-3); }
+.goal-end > svg { width: 14px; height: 14px; flex: none; }
+/* Ein Punkt je Arbeitssatz: Ring = offen, halb = erledigt, voll = Stufe */
+.goal-dots, .goal-mini { display: flex; gap: 4px; flex: none; }
+.goal-dots i, .goal-mini i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--gc) 55%, transparent);
+  transition: background-color 0.35s, box-shadow 0.35s, transform 0.45s var(--spring-pop);
 }
-.goal.tone-muted .goal-chip { background: var(--card); color: var(--text-2); }
-.goal-bar { grid-column: 2; display: flex; gap: 4px; margin-top: 9px; }
-.goal-bar i, .goal-mini i { position: relative; flex: 1; height: 6px; border-radius: 3px; overflow: hidden; background: color-mix(in srgb, var(--gc) 16%, transparent); }
-.goal-bar i::after, .goal-mini i::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: var(--gc);
-  opacity: 0.4;
-  transform-origin: left;
-  transform: scaleX(var(--f, 0));
-  transition: transform 0.7s var(--spring), opacity 0.3s;
-}
-.goal-bar i.on::after, .goal-mini i.on::after, .level-up .goal-bar i::after { opacity: 1; }
-.goal.tone-muted .goal-bar i { background: var(--fill-strong); }
-.goal-acts { grid-column: 2; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.goal-act { position: relative; height: 34px; padding: 0 15px; border-radius: 17px; background: var(--gc); color: #fff; font-size: 14px; font-weight: 600; transition: transform 0.2s var(--spring-pop); }
+.goal-dots i.done, .goal-mini i.done { background: color-mix(in srgb, var(--gc) 35%, transparent); box-shadow: none; }
+.goal-dots i.on, .goal-mini i.on { background: var(--gc); box-shadow: none; transform: scale(1.12); }
+.goal.tone-muted .goal-dots i { box-shadow: inset 0 0 0 1.5px var(--fill-strong); }
+.goal-acts { display: flex; gap: 6px; }
+.goal-act { position: relative; height: 30px; padding: 0 13px; border-radius: 15px; background: var(--gc); color: #fff; font-size: 13px; font-weight: 600; white-space: nowrap; transition: transform 0.2s var(--spring-pop); }
 .goal-act:active { transform: scale(0.95); }
-.goal-act.plain { height: 26px; padding: 0 2px; background: none; color: var(--gt); }
-.goal.compact { padding: 9px 12px 9px 10px; }
-.goal.compact .goal-ic { width: 28px; height: 28px; border-radius: 9px; }
-.goal.compact .goal-ic svg { width: 16px; height: 16px; }
+.goal-act.plain { padding: 0 4px; background: none; color: var(--gt); }
 /* Stufe geschafft: kurz aufleuchten, Icon springt */
 .goal.celebrate { animation: goal-level 0.9s var(--spring-pop); }
 .goal.celebrate .goal-ic { animation: goal-ic-pop 0.8s var(--spring-pop) 0.1s both; }
@@ -1349,6 +1329,29 @@ button.set-prev:active { background: var(--fill); }
 /* Vorschlag über dem letzten Mal: hier ist heute mehr drin */
 .set-in.suggested.aim, .set-field.suggested.aim { color: var(--accent); font-weight: 700; background: color-mix(in srgb, var(--accent) 10%, var(--fill)); }
 .set-in.suggested.aim.up, .set-field.suggested.aim.up { color: var(--success); background: color-mix(in srgb, var(--success-strong) 13%, var(--fill)); }
+/* „+1“ am Feld: hier ist heute mehr dran */
+.set-field { position: relative; }
+.sf-badge {
+  position: absolute;
+  top: -6px;
+  right: -3px;
+  min-width: 20px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--font-round);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+  box-shadow: 0 0 0 2px var(--card);
+}
+.set-field.aim.up .sf-badge { background: var(--success-strong); }
+.set-field:not(.suggested) .sf-badge, .set-field.editing .sf-badge { display: none; }
 
 /* „+1 Wdh“ steigt beim Abhaken kurz auf */
 .gain-float {
@@ -1402,29 +1405,26 @@ button.set-prev:active { background: var(--fill); }
 .goal-line { display: flex; align-items: center; gap: 7px; margin-top: 6px; font-size: 13px; line-height: 1.3; color: var(--text-2); }
 .goal-line > svg { width: 13px; height: 13px; flex: none; color: var(--gt); }
 .goal-line.tone-up { color: var(--text); }
-.goal-mini { display: flex; gap: 2px; flex: none; }
-.goal-mini i { flex: none; width: 9px; height: 5px; }
+.goal-mini { gap: 3px; }
+.goal-mini i { width: 7px; height: 7px; }
 
-/* Detail: Ring, Leiter je Satz, Regel */
+/* Detail: Aussage, Leiste je Satz, Regel */
 .goal-panel { padding: 2px 0; }
 .gp-head { display: flex; align-items: center; gap: 14px; }
-.gp-ring .ring-track { stroke: color-mix(in srgb, var(--gc) 16%, var(--fill)); }
-.gp-ring .ring-fill { stroke: var(--gc); transition: stroke-dashoffset 0.9s var(--spring); }
-.gp-ring .ring-label { font-size: 17px; color: var(--gt); }
-.gp-ring .ring-label small { font-size: 11px; margin-left: 1px; }
-.gp-ring .ring-label svg { position: static; width: 24px; height: 24px; transform: none; }
-.gp-badge { flex: none; width: 64px; height: 64px; border-radius: 20px; display: grid; place-items: center; background: var(--gc); color: #fff; box-shadow: 0 6px 16px color-mix(in srgb, var(--gc) 32%, transparent); }
-.gp-badge svg { width: 30px; height: 30px; }
+.gp-badge { flex: none; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: var(--gc); color: #fff; box-shadow: 0 6px 16px color-mix(in srgb, var(--gc) 32%, transparent); }
+.gp-badge svg { width: 26px; height: 26px; }
 .goal-panel.tone-muted .gp-badge { background: var(--fill); color: var(--text-2); box-shadow: none; }
 .gp-text { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .gp-title { font-size: 17px; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; }
 .gp-sub { font-size: 14px; line-height: 1.4; color: var(--text-2); }
-.gp-sets { display: grid; gap: 10px; margin-top: 18px; }
-.gp-set { display: grid; grid-template-columns: 50px minmax(0, 1fr) 50px; align-items: center; gap: 10px; font-size: 14px; color: var(--text-2); }
+.gp-caption { margin: 18px 0 0; font-size: 13px; color: var(--text-3); }
+.gp-sets { display: grid; gap: 10px; margin-top: 10px; }
+.gp-set { display: grid; grid-template-columns: 50px minmax(0, 1fr) 64px; align-items: center; gap: 10px; font-size: 14px; color: var(--text-2); }
 .gp-track { position: relative; height: 8px; border-radius: 4px; overflow: hidden; background: color-mix(in srgb, var(--gc) 14%, var(--fill)); }
 .gp-track i { position: absolute; inset: 0; border-radius: inherit; background: var(--gc); opacity: 0.45; transform-origin: left; transform: scaleX(var(--f, 0)); transition: transform 0.9s var(--spring); }
 .gp-set.on .gp-track i { opacity: 1; }
-.gp-set-val { text-align: right; font-family: var(--font-round); font-size: 15px; font-weight: 700; color: var(--text); }
+.gp-set-val svg { width: 13px; height: 13px; margin-right: 3px; vertical-align: -1px; color: var(--gt); }
+.gp-set-val { white-space: nowrap; text-align: right; font-family: var(--font-round); font-size: 15px; font-weight: 700; color: var(--text); }
 .gp-set-val small { font-size: 12px; font-weight: 600; color: var(--text-3); }
 .gp-rule { margin: 16px 0 0; font-size: 14px; line-height: 1.45; color: var(--text-2); }
 .goal-sheet .goal-panel { padding: 6px 4px 0; }
