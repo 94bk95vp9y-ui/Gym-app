@@ -13,21 +13,19 @@ import { thumb, fillThumbs } from '../mobility/figures.js';
 import { startRoutine, planExercise } from '../mobility/player.js';
 import { iconTile, TINT } from '../ui/components.js';
 
-// Kachel für „Heute“: Antippen öffnet die Auswahl, Play startet die tägliche Routine
+// Karte für „Heute“: Antippen öffnet die Auswahl, Play startet die tägliche Routine
 export function mobilityTileHtml() {
   const daily = dailyRoutine();
   const last = lastSession();
   const done = doneToday();
   return `
-    <div class="tile" data-action="mobility-open" role="button" tabindex="0">
-      <div class="tile-head">
-        ${iconTile(Icon.stretch, TINT.teal)}
-        ${done ? `<span class="tag success">${Icon.check}Heute</span>` : `<button class="play-btn sm" data-action="mobility-daily" aria-label="Tägliche Routine starten">${Icon.play}</button>`}
+    <div class="card mob-card" data-action="mobility-open" role="button" tabindex="0">
+      ${iconTile(Icon.stretch, TINT.teal, 'lg')}
+      <div class="row-main">
+        <span class="row-title strong">Mobility</span>
+        <span class="row-sub">${done ? 'Heute erledigt' : `Tägliche Routine · ${mins(routineTotal(daily))}`}${last && !done ? ` · zuletzt ${relativeDay(last.startedAt)}` : ''}</span>
       </div>
-      <div class="tile-foot">
-        <div class="tile-title">Mobility</div>
-        <div class="tile-sub">${done ? 'Heute erledigt' : 'Tägliche Routine'}<br>${mins(routineTotal(daily))}${last ? ` · ${relativeDay(last.startedAt)}` : ''}</div>
-      </div>
+      ${done ? `<span class="tag success">${Icon.check}Heute</span>` : `<button class="play-btn sm" data-action="mobility-daily" aria-label="Tägliche Routine starten">${Icon.play}</button>`}
     </div>`;
 }
 

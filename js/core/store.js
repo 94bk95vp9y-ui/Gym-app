@@ -77,11 +77,14 @@ export function uid() {
 const CATALOG_VERSION = 1;
 
 export const ACCENTS = [
-  { id: 'blue', label: 'Blau', light: '#0088FF', dark: '#0091FF' },
-  { id: 'indigo', label: 'Indigo', light: '#6155F5', dark: '#6D7CFF' },
-  { id: 'green', label: 'Grün', light: '#1F9D55', dark: '#30D158' },
-  { id: 'orange', label: 'Orange', light: '#E8590C', dark: '#FF9F0A' },
-  { id: 'graphite', label: 'Graphit', light: '#1C1C1E', dark: '#F2F2F7' },
+  // light/dark: Akzentfarbe je Erscheinungsbild; to/toDark: zweite Farbe für
+  // den Verlauf der Hauptkarte
+  { id: 'blue', label: 'Blau', light: '#0088FF', dark: '#0091FF', to: '#5E5CE6', toDark: '#5E5CE6' },
+  { id: 'indigo', label: 'Indigo', light: '#6155F5', dark: '#6D7CFF', to: '#A845D8', toDark: '#A45BE8' },
+  { id: 'green', label: 'Grün', light: '#1F9D55', dark: '#30D158', to: '#0B8E94', toDark: '#1FBFA8' },
+  { id: 'orange', label: 'Orange', light: '#E8590C', dark: '#FF9F0A', to: '#D6336C', toDark: '#FF7A45' },
+  { id: 'rose', label: 'Rosé', light: '#DB2D6A', dark: '#FF4D7D', to: '#9B3FD4', toDark: '#C45BE8' },
+  { id: 'graphite', label: 'Graphit', light: '#1C1C1E', dark: '#F2F2F7', to: '#4A4A52', toDark: '#C9C9D2' },
 ];
 
 export const REST_OPTIONS = [0, 45, 60, 90, 120, 150, 180, 240];
@@ -114,6 +117,10 @@ const DEFAULT_SETTINGS = {
   backupReminder: true,
   lastBackupAt: null,
   backupSnoozedUntil: null,
+  // Scheibenrechner: Gewicht der Langhantel und vorhandene Scheiben
+  // (null = übliche Werte der Einheit, siehe core/plates.js)
+  barWeight: null,
+  plates: null,
   // Zuletzt gewählte Erinnerungszeit je Tageszeit (HHMM)
   supplementReminders: {},
 };
@@ -393,9 +400,12 @@ export const Store = {
   // Eigene Gewichtssprünge passen nach dem Wechsel der Einheit nicht mehr
   // (2,5 kg ≠ 5,5 lb) – zurück auf „Automatisch“
   resetIncrements() {
-    if (Store.getExercises().some((e) => e.increment)) {
-      write(KEYS.exercises, Store.getExercises().map((e) => (e.increment ? { ...e, increment: null } : e)));
+    if (Store.getExercises().some((e) => e.increment || typeof e.bar === 'number')) {
+      write(KEYS.exercises, Store.getExercises().map((e) => (e.increment || typeof e.bar === 'number' ? { ...e, increment: null, bar: null } : e)));
     }
+    // Stange und Scheiben gibt es in der anderen Einheit in anderen Größen
+    const s = Store.getSettings();
+    if (s.barWeight !== null || s.plates !== null) write(KEYS.settings, { ...s, barWeight: null, plates: null });
   },
 
   // ---------- Sicherung ----------

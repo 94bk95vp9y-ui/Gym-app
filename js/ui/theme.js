@@ -20,6 +20,7 @@ export function applyTheme() {
   const color = dark ? accent.dark : accent.light;
   const [r, g, b] = hexToRgb(color);
   docEl.style.setProperty('--accent', color);
+  docEl.style.setProperty('--accent-2', (dark ? accent.toDark : accent.to) || color);
   docEl.style.setProperty('--accent-tint', `rgba(${r}, ${g}, ${b}, ${dark ? 0.2 : 0.1})`);
   // Helle Akzentfarbe (Graphit im Dunkelmodus) braucht dunkle Schrift
   const light = (r * 299 + g * 587 + b * 114) / 1000 > 160;

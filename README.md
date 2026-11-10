@@ -13,8 +13,13 @@ danach auch offline.
   Planauswahl direkt am Knopf
 - Laufendes oder heute erledigtes Training
 - Supplements des Tages zum Abhaken, Hinweis bei knappem Vorrat
-- Wochenstreifen mit Wochenziel, Mobility als kleine Kachel, Hinweis auf
-  eine fällige Sicherung
+- Wochenstreifen ganz oben: Ring zum Wochenziel, die sieben Tage und die
+  Serie der Wochen im Ziel
+- Hauptkarte zeigt, was heute im Plan ansteht: wo mehr Gewicht drin ist, wo
+  ein Plateau hakt und ob die Zielmuskeln noch erholen
+- Erholung: Körperkarte (vorn/hinten) mit dem Zustand jeder Muskelgruppe –
+  belastet, erholt sich, bereit; Antippen zeigt Details und die Faustregel
+- Mobility als Karte, Hinweis auf eine fällige Sicherung
 
 **Training**
 - Pläne anlegen und bearbeiten (Reihenfolge per Ziehen, Satzzahl pro Übung)
@@ -22,6 +27,9 @@ danach auch offline.
 - Übungsbibliothek mit 138 Übungen nach Muskelgruppe, eigene Übungen
 - Übungsdetail: Bestleistung, geschätztes 1RM als Verlauf (mit dem Finger
   abfahren), Notiz zur Ausführung, eigene Satzpause
+- Übungsdetail: Diagramm umschaltbar (1RM, schwerster Satz, Volumen),
+  Bestwerte nach Wiederholungen (z. B. „8+ Wdh: 80 kg“)
+- Plan-Karten zeigen, wie weit die Zielmuskeln erholt sind
 - Lange drücken auf einen Plan: starten, bearbeiten, duplizieren, löschen
 - Gewicht je Übung als Gesamtgewicht, je Seite (z. B. Smith-Maschine) oder
   je Hantel eintragen – Gewichtssprung und Vorschläge rechnen in derselben
@@ -38,8 +46,16 @@ danach auch offline.
 - Satz nach links wischen zum Löschen, mit „Rückgängig“
 - Pausentimer nach jedem Satz (Standard oder pro Übung), zeigt den nächsten Satz
 - Rekord-Erkennung, Hinweis bei anderer Vorbelastung
+- Scheibenrechner: bei Langhantel-Übungen (und allem, was „je Seite“
+  eingetragen wird) zeigt das Zahlenfeld, welche Scheiben auf jede Seite
+  kommen; Stange je Übung wählbar, vorhandene Scheiben in den Einstellungen
+- Aufwärmsätze: Rampe vor dem ersten schweren Satz (leere Stange, dann etwa
+  40/60/80 %), mit Scheiben je Satz – über „…“ an der Übung oder die
+  Scheiben-Zeile
 - Zusammenfassung: Kennzahlen, Rekorde, jede Übung im Vergleich zum letzten
-  Mal, Plan-Änderungen übernehmen bzw. freies Training als Plan speichern
+  Mal, Körperkarte der trainierten Muskeln, Plan-Änderungen übernehmen bzw.
+  freies Training als Plan speichern; Konfetti bei Rekord oder erreichtem
+  Wochenziel; „Teilen“ erzeugt ein Bild des Trainings
 
 **Steigerung (Ziel je Übung)**
 - Doppelprogression: erst mehr Wiederholungen, dann mehr Gewicht – sobald
@@ -64,8 +80,13 @@ danach auch offline.
 **Verlauf**
 - Kalender und Liste aller Trainings (erst die letzten sechs Monate, ältere
   auf Wunsch) mit Detailansicht und Vergleich zum letzten Mal
-- Statistik: Woche, Trainings pro Woche mit Ziellinie, Kraftentwicklung,
-  Sätze pro Muskel, Rekorde
+- Statistik: Woche mit Vergleich zur Vorwoche (bis zum selben Wochentag),
+  Wochenverlauf über zwölf Wochen (Trainings, Volumen, Sätze oder Zeit –
+  Säule antippen zeigt den Wert), Aktivität der letzten 20 Wochen als
+  Kästchenraster, Kraftentwicklung, Sätze pro Muskel mit Körperkarte,
+  Rekorde, Gesamtzahlen
+- Sätze pro Muskel zählen „fraktionell“: Zielmuskel 1, mitarbeitende Muskeln
+  ½ (z. B. Trizeps beim Bankdrücken)
 
 **Mobility**
 - Tägliche Kick-Routine (ca. 55–70 Min, jeden Tag gleich): Aufwärmen,
@@ -87,13 +108,15 @@ danach auch offline.
 **Einstellungen**
 - kg/lb, Wochenziel, Satzpause, Steigerungs-Ziele, Zahlenfeld, Bildschirm
   anlassen
+- Gewicht der Langhantel und vorhandene Scheiben
 - Hell, Dunkel oder wie das iPhone, Akzentfarbe, Transparenz reduzieren,
   Haptik, Töne (mit „Ton testen“ und optional auch bei Stumm-Schalter)
 - Sicherung erstellen/wiederherstellen (JSON), Erinnerung an die Sicherung
 
 ## Bedienung wie in iOS
 
-- Schwebende Tableiste und Kopfknöpfe aus Glas, Inhalte auf ruhigen Flächen
+- Schwebende Tableiste und Kopfknöpfe aus Glas, Inhalte auf ruhigen Flächen;
+  die Hauptkarte trägt einen Verlauf in der Akzentfarbe (sechs zur Wahl)
 - Seitenwechsel mit Parallaxe; vom linken Rand wischen geht zurück, die
   vorige Seite ist dabei schon zu sehen
 - Menüs öffnen direkt am Knopf, langes Drücken öffnet Kontextmenüs
@@ -128,12 +151,16 @@ js/main.js              Start, globale Ereignisse
 js/core/                Daten und Logik ohne Oberfläche
   store.js              localStorage, Migration, Sicherung
   training.js           Vorschläge, Rekorde, Vergleiche, Statistik, Plan-Rotation
+  progression.js        Steigerungs-Ziele (Doppelprogression, Plateau, Pause)
+  muscles.js            Muskel-Anteile je Übung, Sätze pro Muskel, Erholung
+  plates.js             Scheibenrechner, Aufwärmsätze
+  insights.js           Wochenreihen, Aktivität, Gesamtzahlen, Bestwerte
   supplements.js        Tage, Serie, Vorrat, Erinnerungen
   plan-import.js        KI-Prompt und Parser
   catalog.js            Übungskatalog
 js/ui/                  Router (Übergänge, Wisch-zurück), Sheets und Menüs,
                         Zahlenfeld, Wischen-zum-Löschen, Haptik, Diagramme,
-                        Icons, Bausteine
+                        Körperkarte, Konfetti, Teilen-Bild, Icons, Bausteine
 js/views/               Heute, Training, Workout, Supplements, Verlauf,
                         Einstellungen, Mobility
 js/mobility/            Routinen, Player, 3D-Figur (three.js), Modell-Skinning (skin.js)
@@ -147,6 +174,19 @@ service-worker.js       Offline-Cache
 (github.com/BoQsc/Godot-Male-Base-Mesh), laut Godot Asset Library unter
 CC0 (gemeinfrei). Das Repository selbst enthält keine Lizenzdatei.
 three.js und die Hilfsdateien in `js/vendor/` stehen unter der MIT-Lizenz.
+
+## Annahmen hinter den Auswertungen
+
+- **Erholung** ist eine Faustregel, keine Messung: je mehr Sätze ein Muskel
+  abbekommen hat, desto länger die angenommene Pause (ein bis drei Tage).
+  Schlaf, Ernährung und Tagesform kennt die App nicht.
+- **Mitarbeitende Muskeln** leitet die App aus Muskelgruppe und Namen der
+  Übung ab (z. B. Rudern → Bizeps). Bei eigenen Übungen mit ungewöhnlichem
+  Namen zählt nur der Zielmuskel.
+- **Scheiben** rechnet die App mit 20 kg (45 lb) für die Langhantel und
+  10 kg für SZ-Stangen, solange nichts anderes eingestellt ist – SZ-Stangen
+  wiegen je nach Modell unterschiedlich.
+- **Aufwärmsätze** sind Richtwerte und werden nicht mitgezählt.
 
 ## Daten sichern
 

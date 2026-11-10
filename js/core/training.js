@@ -372,43 +372,11 @@ export function weekStreak(goal = Store.getSettings().weeklyGoal) {
   return streak;
 }
 
-// Trainings pro Woche, die letzten n Wochen (älteste zuerst)
-export function weeklyCounts(n = 8) {
-  const out = [];
-  const monday = startOfWeek();
-  for (let i = n - 1; i >= 0; i -= 1) {
-    const from = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() - i * 7);
-    const to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 7);
-    const count = Store.getWorkouts().filter((w) => {
-      const d = new Date(w.startedAt);
-      return d >= from && d < to;
-    }).length;
-    out.push({ from, count });
-  }
-  return out;
-}
-
-// Harte Sätze pro Muskelgruppe in den letzten 7 Tagen. Etwa 10–20 Sätze pro
-// Muskel und Woche bringen den meisten Muskelaufbau (Dosis-Wirkungs-
-// Metaanalysen, z. B. Schoenfeld et al. 2017).
+// Harte Sätze pro Muskel und Woche (gezählt in core/muscles.js): etwa 10–20
+// bringen den meisten Muskelaufbau (Dosis-Wirkungs-Metaanalysen, z. B.
+// Schoenfeld et al. 2017).
 export const SET_TARGET_MIN = 10;
 export const SET_TARGET_MAX = 20;
-export const MUSCLE_MAP_GROUPS = ['Brust', 'Rücken', 'Schultern', 'Bizeps', 'Trizeps', 'Unterarme', 'Bauch', 'Beine', 'Po', 'Waden'];
-
-export function weeklySets(days = 7) {
-  const groupOf = new Map(Store.getExercises().map((e) => [e.id, e.muscleGroup]));
-  const from = Date.now() - days * DAY;
-  const out = Object.fromEntries(MUSCLE_MAP_GROUPS.map((g) => [g, 0]));
-  Store.getWorkouts().forEach((w) => {
-    if (new Date(w.startedAt).getTime() < from) return;
-    w.entries.forEach((e) => {
-      const g = groupOf.get(e.exerciseId);
-      if (!(g in out)) return;
-      out[g] += e.sets.filter((s) => s.done && (s.reps > 0 || s.weight > 0)).length;
-    });
-  });
-  return out;
-}
 
 export function isSameDay(iso, ref = new Date()) {
   const d = new Date(iso);

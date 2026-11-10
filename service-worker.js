@@ -1,4 +1,4 @@
-const CACHE = 'gym-cache-v32';
+const CACHE = 'gym-cache-v33';
 const ASSETS = [
   './',
   './index.html',
@@ -7,7 +7,10 @@ const ASSETS = [
   './js/core/catalog.js',
   './js/core/fatigue.js',
   './js/core/format.js',
+  './js/core/insights.js',
+  './js/core/muscles.js',
   './js/core/plan-import.js',
+  './js/core/plates.js',
   './js/core/progression.js',
   './js/core/sound.js',
   './js/core/store.js',
@@ -23,8 +26,10 @@ const ASSETS = [
   './js/mobility/routines.js',
   './js/mobility/skin.js',
   './models/figure.glb',
+  './js/ui/bodymap.js',
   './js/ui/chart.js',
   './js/ui/components.js',
+  './js/ui/confetti.js',
   './js/ui/dom.js',
   './js/ui/haptics.js',
   './js/ui/icons.js',
@@ -32,6 +37,7 @@ const ASSETS = [
   './js/ui/motion.js',
   './js/ui/reorder.js',
   './js/ui/router.js',
+  './js/ui/sharecard.js',
   './js/ui/sheet.js',
   './js/ui/swipe.js',
   './js/ui/theme.js',

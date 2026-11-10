@@ -53,7 +53,7 @@ export function applyKey(state, key, { decimal = false, step = 1, fallback = '' 
 
 // ---------- Oberfläche ----------
 // opts: { host, value, decimal, step, label, primary: { label, icon }, onChange(text),
-//         onPrimary(), onClose() }
+//         onPrimary(), onClose(), extra } – extra: HTML über den Tasten (z. B. Scheiben)
 let K = null;
 
 function stepText(step, decimal) {
@@ -63,6 +63,7 @@ function stepText(step, decimal) {
 function html(o) {
   const digit = (d) => `<button class="kp-key" data-k="${d}">${HAP}${d}</button>`;
   return `
+    <div class="kp-extra">${o.extra || ''}</div>
     <div class="kp-grid">
       ${digit(1)}${digit(2)}${digit(3)}
       <button class="kp-key kp-fn" data-k="minus" aria-label="Weniger">${HAP}−${stepText(o.step, o.decimal)}</button>
@@ -117,6 +118,14 @@ export function setKeypadPrimary(primary) {
   K.opts.primary = primary;
   const b = K.el.querySelector('[data-k="primary"] .kp-primary-in');
   if (b) b.innerHTML = `${primary.icon || ''}<span>${primary.label}</span>`;
+}
+
+// Zeile über den Tasten austauschen (z. B. Scheiben für das getippte Gewicht)
+export function setKeypadExtra(html) {
+  if (!K) return;
+  K.opts.extra = html;
+  const el = K.el.querySelector('.kp-extra');
+  if (el) el.innerHTML = html || '';
 }
 
 export function keypadHeight() {

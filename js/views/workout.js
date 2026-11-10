@@ -1,6 +1,6 @@
 // Laufendes Training: Vollbild über der App, mit Pausentimer, Rekorden,
 // Vorschlagswerten und der Zusammenfassung am Ende.
-import { Store, REST_OPTIONS } from '../core/store.js';
+import { Store, REST_OPTIONS, ACCENTS } from '../core/store.js';
 import {
   workoutFromRoutine, blankWorkout, newEntry, lastSessionFor, refreshPrFlags,
   isEntryComplete, workoutProgress, workoutDoneSets, workoutVolume, workoutDuration, exerciseNames, entryName,
@@ -25,8 +25,17 @@ import { render, setLiveBar, goTo, nav } from '../ui/router.js';
 import { openSheet, actionSheet, confirmAction, promptDialog, openMenu } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
 import { enableReorder } from '../ui/reorder.js';
-import { openKeypad, closeKeypad, isKeypadOpen, setKeypadPrimary, keypadHeight } from '../ui/keypad.js';
+import {
+  openKeypad, closeKeypad, isKeypadOpen, setKeypadPrimary, setKeypadExtra, keypadHeight,
+} from '../ui/keypad.js';
+import {
+  plateSetup, loadout, groupPlates, warmupSets, BAR_OPTIONS,
+} from '../core/plates.js';
 import { haptic, HAP } from '../ui/haptics.js';
+import { confetti } from '../ui/confetti.js';
+import { shareCard } from '../ui/sharecard.js';
+import { bodyMap } from '../ui/bodymap.js';
+import { workoutMuscles } from '../core/muscles.js';
 import { enableSwipeDelete } from '../ui/swipe.js';
 import {
   emptyState, iconTile, chev, deltaPill, TINT,
@@ -763,6 +772,118 @@ function chooseRest(ei, anchor) {
   })), { title: `Pause bei ${ex.name}` });
 }
 
+// ---------- Scheiben und Aufwärmen ----------
+// Scheiben als kleine Stapel: Höhe nach Gewicht, Zahl darin
+function plateChipsHtml(plates) {
+  if (!plates.length) return '';
+  const max = 25;
+  return `<span class="plates">${groupPlates(plates).map(([p, n]) => {
+    const h = Math.round(20 + 14 * Math.min(1, Math.sqrt(p / max)));
+    return `<span class="plate" style="--ph:${h}px">${n > 1 ? `<small>${n}×</small>` : ''}${formatNumber(p)}</span>`;
+  }).join('')}</span>`;
+}
+
+// Was auf eine Seite kommt – als Text für die Zeile über dem Zahlenfeld
+function loadoutText(lo, setup) {
+  const u = setup.unit;
+  if (!lo) return setup.mode === 'total' ? `Stange ${formatWeight(setup.bar, u)}` : 'Scheiben je Seite';
+  if (lo.below) return `Leichter als die Stange (${formatWeight(setup.bar, u)})`;
+  if (!lo.plates.length && !lo.rest) return 'Nur die Stange';
+  return '';
+}
+
+function plateStripHtml(ei, weight) {
+  const entry = Store.getActive()?.entries[ei];
+  const ex = entry ? Store.getExercise(entry.exerciseId) : null;
+  const setup = plateSetup(ex);
+  if (!setup) return '';
+  const lo = loadout(weight, setup);
+  const text = loadoutText(lo, setup);
+  const rest = lo && lo.rest > 0 ? `<span class="plate-rest">+ ${formatNumber(lo.rest)} ${setup.unit} offen</span>` : '';
+  return `
+    <button class="plate-strip" data-action="w-plates" data-ei="${ei}" aria-label="Scheiben und Aufwärmen">
+      <span class="plate-cap">${setup.mode === 'total' ? 'Je Seite' : 'Scheiben'}</span>
+      ${text ? `<span class="plate-note">${esc(text)}</span>` : `${plateChipsHtml(lo.plates)}${rest}`}
+      <span class="plate-more">${setup.mode === 'total' && !text ? `Stange ${formatNumber(setup.bar)}` : ''}${Icon.chevronRight}</span>
+    </button>`;
+}
+
+// Die Hantel von vorn: Scheiben spiegelbildlich um die Stange
+function barbellHtml(lo) {
+  const max = 25;
+  const disc = (p) => `<i style="--dh:${Math.round(26 + 46 * Math.min(1, Math.sqrt(p / max)))}px;--dw:${p >= 10 ? 11 : p >= 5 ? 9 : 7}px"></i>`;
+  const side = lo.plates.map(disc).join('');
+  return `<div class="barbell" aria-hidden="true"><span class="bb-end"></span><span class="bb-plates left">${side}</span><span class="bb-bar"></span><span class="bb-plates">${side}</span><span class="bb-end"></span></div>`;
+}
+
+function openLoadSheet(ei) {
+  const w = Store.getActive();
+  const entry = w?.entries[ei];
+  if (!entry) return;
+  const id = entry.exerciseId;
+  if (isKeypadOpen()) closeKeypad();
+  const body = () => {
+    const cur = Store.getActive();
+    const e = cur?.entries.find((x) => x.exerciseId === id);
+    const ex = Store.getExercise(id);
+    if (!e || !ex) return '';
+    const setup = plateSetup(ex);
+    const u = unit();
+    const lu = loadUnit(u, loadOf(ex), true);
+    // Arbeitsgewicht: der nächste offene Satz, sonst der schwerste
+    const open = e.sets.find((x) => !x.done && x.weight > 0);
+    const work = open ? open.weight : Math.max(0, ...e.sets.map((x) => x.weight || 0));
+    if (!(work > 0)) return '<p class="empty">Trag zuerst ein Gewicht ein – dann stehen hier Scheiben und Aufwärmsätze.</p>';
+    const lo = setup ? loadout(work, setup) : null;
+    const sideText = (l) => {
+      if (!l) return '';
+      if (l.below) return 'leichter als die Stange';
+      if (!l.plates.length) return setup.mode === 'total' ? 'nur die Stange' : '';
+      return `je Seite ${groupPlates(l.plates).map(([p, n]) => `${n > 1 ? `${n} × ` : ''}${formatNumber(p)}`).join(' + ')}${l.rest > 0 ? ` (+ ${formatNumber(l.rest)} offen)` : ''}`;
+    };
+    const step = WEIGHT_STEP[u] / (loadOf(ex) === 'total' ? 1 : 2);
+    const ramp = warmupSets(work, { setup, step });
+    return `
+      <div class="card load-card">
+        <span class="tile-label">Arbeitssatz</span>
+        <div class="load-value num">${formatNumber(work)}<small>${esc(lu)}</small></div>
+        ${lo && !lo.below ? barbellHtml(lo) : ''}
+        ${lo ? `<p class="load-side">${esc(sideText(lo)) || '&nbsp;'}</p>` : ''}
+      </div>
+      ${ramp.length ? `
+      <div class="section">
+        <div class="section-head"><h2>Aufwärmen</h2><span class="meta">vor dem ersten Satz</span></div>
+        <div class="list">${ramp.map((r, i) => `
+          <div class="row ramp-row">
+            <span class="num-badge">${i + 1}</span>
+            <div class="row-main"><span class="row-title num">${esc(formatWeight(r.weight, lu))} × ${r.reps}</span>
+              ${setup ? `<span class="row-sub">${esc(sideText(loadout(r.weight, setup)))}</span>` : ''}</div>
+            <span class="row-value">${Math.round(r.share * 100)} %</span>
+          </div>`).join('')}
+        </div>
+        <p class="section-foot">Richtwerte zum Warmwerden – leicht bleiben, nicht ermüden. Die Sätze werden nicht mitgezählt.</p>
+      </div>` : ''}
+      ${setup?.mode === 'total' ? `
+      <div class="section">
+        <div class="section-head"><h2>Stange</h2><span class="meta">für diese Übung</span></div>
+        <div class="choices">${BAR_OPTIONS[u].map((b) => `<button class="choice ${b === setup.bar ? 'active' : ''}" data-bar="${b}">${HAP}${b ? formatWeight(b, u) : 'Ohne'}</button>`).join('')}</div>
+        <p class="section-foot" style="margin-left:4px">Das Gewicht im Training ist das Gesamtgewicht samt Stange. Welche Scheiben es gibt, legst du in den Einstellungen fest.</p>
+      </div>` : ''}`;
+  };
+  const sheet = openSheet({
+    title: entryName(entry),
+    className: 'load-sheet',
+    body: body(),
+  });
+  sheet.body.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-bar]');
+    if (!b) return;
+    Store.updateExercise(id, { bar: +b.dataset.bar });
+    haptic();
+    sheet.setBody(body());
+  });
+}
+
 // ---------- Beenden ----------
 // Ende des Trainings: normalerweise jetzt. Lag das Training lange offen
 // (vergessen zu beenden), zählt der letzte abgehakte Satz – sonst stünde
@@ -897,11 +1018,46 @@ function openSummary(id) {
       </div>`;
   }).join('');
 
+  // Welche Muskeln hat das Training getroffen? Zielmuskeln kräftig,
+  // mitarbeitende heller
+  const muscles = workoutMuscles(w);
+  const muscleNames = Object.entries(muscles).filter(([, m]) => m.direct > 0).sort((a, b) => b[1].direct - a[1].direct).map(([g]) => g);
+  const muscleClass = (g) => (!muscles[g] ? 'lv0' : muscles[g].direct > 0 ? 'lv4' : 'lv2');
+  const goalReached = week === settings.weeklyGoal;
+  const tons = volume >= 1000 && u === 'kg';
+  const volumeValue = tons ? formatNumber(Math.round(volume / 100) / 10) : formatVolume(volume);
+  const volumeUnit = tons ? 't' : u;
+  const share = async (btn) => {
+    const dark = document.documentElement.dataset.theme === 'dark';
+    const accent = ACCENTS.find((a) => a.id === settings.accent) || ACCENTS[0];
+    const from = dark ? accent.dark : accent.light;
+    btn.disabled = true;
+    const result = await shareCard({
+      title: w.routineName || 'Freies Training',
+      date: new Date(w.startedAt).toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+      stats: [
+        { value: String(minutes), unit: 'Min', label: 'Dauer' },
+        { value: String(workoutDoneSets(w)), label: workoutDoneSets(w) === 1 ? 'Satz' : 'Sätze' },
+        { value: volumeValue, unit: volumeUnit, label: 'Volumen' },
+      ],
+      rows: done.map((e) => {
+        const top = bestSet(e.sets);
+        return { name: entryName(e, names), detail: top ? formatSet(top, entryUnit(e, u)) : '', pr: e.sets.some((x) => x.done && x.pr) };
+      }),
+      colors: [from, (dark ? accent.toDark : accent.to) || from],
+      ink: getComputedStyle(document.documentElement).getPropertyValue('--on-accent').trim() || '#ffffff',
+      footer: prs.length ? `Gym · ${prs.length === 1 ? '1 neuer Rekord' : `${prs.length} neue Rekorde`}` : 'Gym',
+    }, `training-${dayKey(new Date(w.startedAt))}.png`);
+    btn.disabled = false;
+    if (result === 'saved') toast('Bild gespeichert');
+    else if (result === 'failed') toast('Teilen nicht möglich');
+  };
+
   openSheet({
     title: '',
     full: true,
     className: 'summary-sheet',
-    left: null,
+    left: { label: 'Teilen', action: (s) => share(s.el.querySelector('[data-sheet-btn="left"]')) },
     right: { label: 'Fertig', style: 'primary' },
     body: `
       <div class="finish-head">
@@ -922,6 +1078,16 @@ function openSummary(id) {
       ${exerciseRows ? `
         <div class="section"><div class="section-head"><h2>Übungen</h2><span class="meta">im Vergleich zum letzten Mal</span></div>
           <div class="list">${exerciseRows}</div></div>` : ''}
+      ${muscleNames.length ? `
+        <div class="section"><div class="section-head"><h2>Muskeln</h2><span class="meta">${plural(muscleNames.length, 'Zielmuskel', 'Zielmuskeln')}</span></div>
+          <div class="card sum-muscles">
+            ${bodyMap(muscleClass, { caption: false })}
+            <div class="sum-muscle-list">
+              <span class="tile-label">Trainiert</span>
+              <strong>${esc(muscleNames.join(', '))}</strong>
+              ${Object.keys(muscles).length > muscleNames.length ? `<span class="tile-label" style="margin-top:8px">Mitgearbeitet</span><span>${esc(Object.keys(muscles).filter((g) => !muscleNames.includes(g)).join(', '))}</span>` : ''}
+            </div>
+          </div></div>` : ''}
       <div class="section"><div class="list icons">${facts.map((f) => `
         <div class="row">${iconTile(f.icon, f.icon === Icon.target ? TINT.red : TINT.green, 'soft')}
           <div class="row-main"><span class="row-title">${esc(f.text)}</span>${f.sub ? `<span class="row-sub">${esc(f.sub)}</span>` : ''}</div></div>`).join('')}
@@ -946,6 +1112,7 @@ function openSummary(id) {
         </div></div>` : ''}`,
     onMount: (s) => {
       countUp(s.body);
+      if (prs.length || goalReached) setTimeout(() => confetti({ count: prs.length ? 110 : 70 }), 420);
       s.body.addEventListener('click', async (e) => {
         const b = e.target.closest('[data-sum]');
         if (!b) return;
@@ -1237,6 +1404,8 @@ function openField(ei, si, field) {
     primary: primaryFor(ei, si, field),
     // ± bei leerem Feld startet beim Satz davor bzw. beim letzten Mal
     fallback: fallbackFor(w, ei, si, field),
+    // Langhantel & Co.: darüber, welche Scheiben auf eine Seite kommen
+    extra: plateStripHtml(ei, set.weight),
     onChange: (text, fresh) => applyFieldText(text, fresh),
     onPrimary: () => keypadPrimary(),
     onClose: () => {
@@ -1292,6 +1461,7 @@ function applyFieldText(text, fresh) {
   if (el) qs('.sf-val', el).innerHTML = text ? esc(text) : '<span class="sf-ph">0</span>';
   markEditing(fresh);
   setKeypadPrimary(primaryFor(ei, si, field));
+  if (field === 'weight') setKeypadExtra(plateStripHtml(ei, set.weight));
 }
 
 function keypadPrimary() {
@@ -1386,6 +1556,7 @@ registerActions({
   'w-field': (el) => openField(+el.dataset.ei, +el.dataset.si, el.dataset.field),
 
   'w-goal': (el) => openGoalSheet(+el.dataset.ei),
+  'w-plates': (el) => openLoadSheet(+el.dataset.ei),
 
   // Eigene Wahl: neu aufbauen, beim alten Gewicht bleiben … (leer = Vorschlag)
   'goal-choice': (el) => {
@@ -1472,6 +1643,9 @@ registerActions({
         { label: ex.notes ? 'Notiz bearbeiten' : 'Notiz hinzufügen', icon: Icon.pencil, handler: () => openNoteEditor(ei) },
         { label: 'Satzpause', sub: formatRest(restFor(entry.exerciseId)), icon: Icon.timer, handler: () => chooseRest(ei, el) },
       );
+    }
+    if (ex && entry.sets.some((x) => x.weight > 0)) {
+      items.push({ label: plateSetup(ex) ? 'Scheiben & Aufwärmen' : 'Aufwärmsätze', icon: Icon.layers, handler: () => openLoadSheet(ei) });
     }
     items.push(
       { label: 'Verlauf', icon: Icon.clock, handler: () => openExerciseHistory(ei) },

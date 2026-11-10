@@ -20,12 +20,14 @@ import { enableReorder } from '../ui/reorder.js';
 import { chev, chips, iconTile, emptyState, TINT } from '../ui/components.js';
 import { openExercisePicker, openExerciseEditor, filterExercises, groupedHtml } from './picker.js';
 import { progressionOf, loadOf } from '../core/progression.js';
+import { repRecords, exerciseSeries } from '../core/insights.js';
+import { planReadiness } from '../core/muscles.js';
 import {
   goalTagHtml, goalPanelHtml, goalSettingsHtml, animateGoal,
 } from './goal.js';
 import { startRoutine, startBlank } from './workout.js';
 
-const ui = { seg: 'plans', query: '', group: 'all' };
+const ui = { seg: 'plans', query: '', group: 'all', exMetric: 'e1rm' };
 
 function unit() { return unitLabel(Store.getSettings().unit); }
 
@@ -44,6 +46,15 @@ function segHtml() {
 
 function lastLabel(lastDone, r) {
   return lastDone.has(r.id) ? `zuletzt ${relativeDay(lastDone.get(r.id))}` : 'noch nicht trainiert';
+}
+
+// Wie erholt sind die Zielmuskeln des Plans? Nur zeigen, wenn es etwas zu
+// sagen gibt (der Plan wurde schon trainiert und ist nicht längst erholt).
+function readinessHtml(r) {
+  const pct = planReadiness(r);
+  if (pct === null || pct > 0.85) return '';
+  const p = Math.round(pct * 100);
+  return `<span class="ready-pill ${p < 50 ? 'low' : ''}" title="Erholung der Zielmuskeln">${Icon.clock}${p} % erholt</span>`;
 }
 
 function quickTilesHtml() {
@@ -85,7 +96,7 @@ function plansHtml() {
           <div class="plan-card-main">
             <div class="plan-card-title"><span>${esc(r.name)}</span>${isNext ? '<span class="tag">Als Nächstes</span>' : ''}</div>
             <div class="plan-card-meta">${plural(r.exerciseIds.length, 'Übung', 'Übungen')} · ${lastLabel(lastDone, r)}</div>
-            ${chips(planMuscles(r))}
+            <div class="plan-card-foot">${chips(planMuscles(r))}${readinessHtml(r)}</div>
           </div>
           <button class="play-btn" data-action="start-routine" data-id="${r.id}" aria-label="${esc(r.name)} starten" ${r.exerciseIds.length ? '' : 'disabled'}>${Icon.play}</button>
         </div>`;
@@ -192,19 +203,57 @@ function exerciseStatsHtml(ex, middle = '') {
       + tile('Letztes Mal', `${formatNumber(h.sessions[0].top.weight)}<small>${u}</small>`, `× ${h.sessions[0].top.reps} Wdh · ${relativeDay(h.sessions[0].date)}`)
     : tile('Meiste Wdh', `${best.top.reps}`, esc(formatDate(best.date)))
       + tile('Einheiten', `${h.sessions.length}`, `zuletzt ${relativeDay(h.sessions[0].date)}`);
-  const chart = h.points.length >= 2 ? `
+  const records = h.loaded ? repRecords(ex.id) : [];
+  const recordsHtml = records.length >= 2 ? `
     <div class="section">
-      <div class="section-head"><h2>${h.loaded ? 'Geschätztes 1RM' : 'Wiederholungen'}</h2></div>
-      <div class="card">${lineChart(h.points.slice(-20), { unit: h.loaded ? u : 'Wdh' })}</div>
+      <div class="section-head"><h2>Bestwerte</h2><span class="meta">nach Wiederholungen</span></div>
+      <div class="rep-records">${records.map((r) => `
+        <div class="rep-rec"><span>${r.mark === 1 ? 'Schwerster Satz' : `${r.mark}+ Wdh`}</span><b class="num">${formatNumber(r.weight)}<small>${u}</small></b><span class="num">× ${r.reps} · ${esc(formatDate(r.date))}</span></div>`).join('')}
+      </div>
     </div>` : '';
-  const history = `
+  return `<div class="tiles">${stats}</div>${middle}${chartSectionHtml(ex, h, u)}${recordsHtml}${historyHtml(h, u)}`;
+}
+
+// Verlauf als Diagramm – bei Übungen mit Gewicht in drei Lesarten
+const EX_METRICS = [
+  { id: 'e1rm', label: '1RM', title: 'Geschätztes 1RM' },
+  { id: 'top', label: 'Gewicht', title: 'Schwerster Satz' },
+  { id: 'volume', label: 'Volumen', title: 'Volumen je Training' },
+];
+
+function chartSectionHtml(ex, h = exerciseHistory(ex.id), u = loadUnit(unit(), loadOf(ex), true)) {
+  if (!h.loaded) {
+    return h.points.length >= 2 ? `
+    <div class="section" id="ex-chart">
+      <div class="section-head"><h2>Wiederholungen</h2></div>
+      <div class="card">${lineChart(h.points.slice(-20), { unit: 'Wdh' })}</div>
+    </div>` : '';
+  }
+  const series = exerciseSeries(ex.id, loadOf(ex) === 'side' ? 2 : 1);
+  const metric = EX_METRICS.find((m) => m.id === ui.exMetric) || EX_METRICS[0];
+  const points = metric.id === 'e1rm' ? h.points : series[metric.id];
+  if (h.points.length < 2) return '';
+  return `
+    <div class="section" id="ex-chart">
+      <div class="section-head"><h2>${metric.title}</h2></div>
+      <div class="card">
+        <div class="seg seg-sm" style="--n:3;--i:${EX_METRICS.indexOf(metric)}">
+          ${EX_METRICS.map((m) => `<button class="${m === metric ? 'active' : ''}" data-action="ex-metric" data-metric="${m.id}" data-id="${ex.id}">${HAP}${m.label}</button>`).join('')}
+          <span class="seg-thumb"></span>
+        </div>
+        ${points.length >= 2 ? lineChart(points.slice(-20), { unit: metric.id === 'volume' ? unit() : u }) : '<p class="muted small">Noch zu wenige Einheiten.</p>'}
+      </div>
+    </div>`;
+}
+
+function historyHtml(h, u) {
+  return `
     <div class="section">
       <div class="section-head"><h2>Verlauf</h2></div>
       <div class="list">${h.sessions.slice(0, 10).map((s) => `
         <div class="history-row"><span>${esc(formatDate(s.date))}</span><span>${esc(formatSetList(s.sets, u))}${s.sets.some((x) => x.pr) ? '<span class="pr-mark">PR</span>' : ''}</span></div>`).join('')}
       </div>
     </div>`;
-  return `<div class="tiles">${stats}</div>${middle}${chart}${history}`;
 }
 
 // Steigerung: was beim nächsten Training ansteht, die Leiter vom letzten
@@ -519,6 +568,14 @@ registerActions({
     seg.style.setProperty('--i', ui.seg === 'plans' ? 0 : 1);
     seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === el));
     qs('#training-body').innerHTML = ui.seg === 'plans' ? plansHtml() : exercisesHtml();
+  },
+  'ex-metric': (el) => {
+    if (ui.exMetric === el.dataset.metric) return;
+    ui.exMetric = el.dataset.metric;
+    haptic();
+    const ex = Store.getExercise(el.dataset.id);
+    const box = el.closest('#ex-chart');
+    if (ex && box) box.outerHTML = chartSectionHtml(ex);
   },
   'ex-filter': (el) => {
     ui.group = el.dataset.group;

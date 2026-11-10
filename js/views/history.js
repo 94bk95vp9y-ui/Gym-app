@@ -1,12 +1,18 @@
-// Tab „Verlauf“: Trainings (Kalender + Liste) und eine schlanke Statistik.
+// Tab „Verlauf“: Trainings (Kalender + Liste) und die Statistik – Woche,
+// Wochenverlauf, Aktivität, Kraft, Muskeln, Rekorde, Gesamtzahlen.
 import { Store } from '../core/store.js';
 import {
   workoutDoneSets, workoutVolume, workoutDuration, workoutPrs, exerciseNames, entryName, weekInfo, weekStreak,
-  weeklyCounts, weeklySets, keyLifts, recentRecords, routineFromWorkout, compareToPrevious,
+  keyLifts, recentRecords, routineFromWorkout, compareToPrevious,
   SET_TARGET_MIN, SET_TARGET_MAX,
 } from '../core/training.js';
 import {
-  formatDuration, formatVolume, formatNumber, formatSet, formatTime, relativeDay, plural, unitLabel,
+  weeklySeries, activityGrid, lifetime, bestWeekStreak, weekCompare,
+} from '../core/insights.js';
+import { muscleSets, workoutMuscles } from '../core/muscles.js';
+import { bodyMap } from '../ui/bodymap.js';
+import {
+  formatDuration, formatVolume, formatNumber, formatSet, formatTime, formatDate, formatDayMonth, relativeDay, plural, unitLabel,
 } from '../core/format.js';
 import { esc, qs, registerActions } from '../ui/dom.js';
 import { Icon } from '../ui/icons.js';
@@ -16,12 +22,14 @@ import { confirmAction, promptDialog, registerContextMenu } from '../ui/sheet.js
 import { toast } from '../ui/toast.js';
 import { sparkline } from '../ui/chart.js';
 import {
-  chev, dateBadge, emptyState, deltaPill,
+  chev, chips, dateBadge, emptyState, deltaPill,
 } from '../ui/components.js';
 
 const MONTH = new Intl.DateTimeFormat('de-DE', { month: 'long', year: 'numeric' });
 
-const ui = { seg: 'workouts', month: null, allMonths: false };
+const ui = { seg: 'workouts', month: null, allMonths: false, metric: 'count', pick: null };
+// Von „Heute“ aus direkt in die Statistik springen
+export function showStats() { ui.seg = 'stats'; ui.pick = null; }
 // Viele Jahre Training ergeben Hunderte Zeilen – die Liste zeigt erst nur die
 // letzten Monate, ältere auf Wunsch.
 const RECENT_MONTHS = 6;
@@ -133,25 +141,170 @@ function workoutsHtml() {
 }
 
 // ---------- Statistik ----------
-// Säulen je Woche mit gestrichelter Ziellinie; die laufende Woche ist heller,
-// weil sie noch nicht vorbei ist.
-function weeksChart(weeks, goal) {
-  const max = Math.max(goal + 1, ...weeks.map((w) => w.count));
-  const goalPos = (goal / max) * 100;
+const half = (n) => formatNumber(Math.round(n * 2) / 2);
+
+function minutesHtml(min) {
+  return min >= 60 ? `${Math.floor(min / 60)}<small>h</small> ${min % 60}<small>min</small>` : `${min}<small>min</small>`;
+}
+function minutesText(min) {
+  return min >= 60 ? `${Math.floor(min / 60)} h ${min % 60} min` : `${min} min`;
+}
+
+// Die vier Lesarten des Wochen-Diagramms
+const METRICS = {
+  count: { label: 'Trainings', value: (w) => w.count, text: (v) => plural(Math.round(v * 10) / 10, 'Training', 'Trainings').replace('.', ',') },
+  volume: { label: 'Volumen', value: (w) => w.volume, text: (v, u) => volumeText(v, u) },
+  sets: { label: 'Sätze', value: (w) => w.sets, text: (v) => plural(Math.round(v), 'Satz', 'Sätze') },
+  minutes: { label: 'Zeit', value: (w) => w.minutes, text: (v) => minutesText(Math.round(v)) },
+};
+const WEEKS = 12;
+
+function weekLabel(from, last) {
+  if (last) return 'Diese Woche';
+  const to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 6);
+  return `${formatDayMonth(from)} – ${formatDayMonth(to)}`;
+}
+
+// Säulen je Woche. Bei „Trainings“ mit gestrichelter Ziellinie und farbig
+// nur die Wochen im Ziel; sonst mit dem Durchschnitt als Linie. Die laufende
+// Woche ist heller, weil sie noch nicht vorbei ist. Antippen einer Säule
+// zeigt ihren Wert oben.
+function weeksChartHtml() {
+  const settings = Store.getSettings();
+  const u = unit();
+  const weeks = weeklySeries(WEEKS);
+  const m = METRICS[ui.metric] || METRICS.count;
+  const vals = weeks.map(m.value);
+  const goal = ui.metric === 'count' ? settings.weeklyGoal : null;
+  const past = vals.slice(0, -1).filter((v) => v > 0);
+  const avg = past.length ? past.reduce((a, c) => a + c, 0) / past.length : 0;
+  const line = goal ?? avg;
+  const max = Math.max(...vals, line * 1.15, goal ? goal + 1 : 0, 1);
+  const pick = ui.pick !== null && ui.pick < weeks.length ? ui.pick : weeks.length - 1;
   return `
-    <div class="wchart" style="--goal:${goalPos.toFixed(1)}%">
+    <div class="card wchart" id="stats-weeks" style="--line-f:${(line / max).toFixed(3)}">
+      <div class="seg seg-sm" style="--n:4;--i:${Object.keys(METRICS).indexOf(ui.metric)}">
+        ${Object.entries(METRICS).map(([id, x]) => `<button class="${id === ui.metric ? 'active' : ''}" data-action="stats-metric" data-metric="${id}">${HAP}${x.label}</button>`).join('')}
+        <span class="seg-thumb"></span>
+      </div>
+      <div class="ch-head">
+        <b class="ch-value num">${esc(m.text(vals[pick], u))}</b>
+        <span class="ch-sub">${esc(weekLabel(weeks[pick].from, pick === weeks.length - 1))}${avg ? ` · Ø ${esc(m.text(avg, u))}` : ''}</span>
+      </div>
       <div class="wchart-plot">
-        <span class="wchart-goal"><span>Ziel ${goal}</span></span>
+        ${line > 0 ? `<span class="wchart-goal"><span>${goal ? `Ziel ${goal}` : 'Ø'}</span></span>` : ''}
         ${weeks.map((w, i) => {
+    const v = vals[i];
     const now = i === weeks.length - 1;
+    const hit = goal ? v >= goal : true;
     return `
-          <div class="wchart-col ${w.count >= goal ? 'hit' : ''} ${now ? 'now' : ''}">
-            <b>${w.count || ''}</b>
-            <i style="height:${w.count ? Math.max(6, (w.count / max) * 100) : 0}%"></i>
-          </div>`;
+          <button class="wchart-col ${hit ? 'hit' : ''} ${now ? 'now' : ''} ${i === pick ? 'picked' : ''}" data-action="stats-pick" data-i="${i}" aria-label="${esc(weekLabel(w.from, now))}: ${esc(m.text(v, u))}">
+            <i style="height:${v ? Math.max(4, (v / max) * 100) : 0}%"></i>
+          </button>`;
   }).join('')}
       </div>
-      <div class="wchart-axis">${weeks.map((w, i) => `<span>${i === weeks.length - 1 ? 'jetzt' : `${w.from.getDate()}.${w.from.getMonth() + 1}.`}</span>`).join('')}</div>
+      <div class="wchart-axis">${weeks.map((w, i) => `<span class="${i === pick ? 'picked' : ''}">${i === weeks.length - 1 ? 'jetzt' : (i === pick || (i % 3 === (weeks.length - 1) % 3 && Math.abs(i - pick) > 1) ? `${w.from.getDate()}.${w.from.getMonth() + 1}.` : '')}</span>`).join('')}</div>
+    </div>`;
+}
+
+// Aktivität der letzten Monate: ein Kästchen je Tag, dunkler = mehr Sätze
+const GRID_WEEKS = 20;
+function activityHtml() {
+  const { cols, max } = activityGrid(GRID_WEEKS);
+  const level = (sets) => (!sets ? 0 : Math.max(1, Math.min(4, Math.ceil((sets / Math.max(1, max)) * 4))));
+  const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+  // Monatsname über der ersten Woche eines Monats; ganz links nur, wenn
+  // danach genug Platz bis zum nächsten bleibt
+  const monthOf = (i) => cols[i][0].date.getMonth();
+  const months = cols.map((col, i) => {
+    const show = i === 0 ? monthOf(Math.min(2, cols.length - 1)) === monthOf(0) : monthOf(i) !== monthOf(i - 1);
+    return `<span>${show ? MONTHS[monthOf(i)] : ''}</span>`;
+  }).join('');
+  const cells = cols.map((col) => col.map((c) => {
+    if (c.future) return '<i class="ag-cell future"></i>';
+    const label = `${formatDate(c.date.toISOString())}: ${c.sets ? plural(c.sets, 'Satz', 'Sätze') : 'kein Training'}`;
+    return c.id
+      ? `<button class="ag-cell lv${level(c.sets)} ${c.today ? 'today' : ''}" data-action="open-workout" data-id="${c.id}" aria-label="${esc(label)}"></button>`
+      : `<i class="ag-cell ${c.today ? 'today' : ''}" aria-label="${esc(label)}"></i>`;
+  }).join('')).join('');
+  const total = cols.flat().filter((c) => c.count).length;
+  return `
+    <div class="section">
+      <div class="section-head"><h2>Aktivität</h2><span class="meta">${GRID_WEEKS} Wochen</span></div>
+      <div class="card">
+        <div class="ag" style="--cols:${cols.length}">
+          <div class="ag-months">${months}</div>
+          <div class="ag-days"><span>Mo</span><span></span><span>Mi</span><span></span><span>Fr</span><span></span><span>So</span></div>
+          <div class="ag-grid">${cells}</div>
+        </div>
+        <div class="ag-legend"><b>${plural(total, 'Trainingstag', 'Trainingstage')}</b><span>weniger</span><i class="ag-cell"></i><i class="ag-cell lv1"></i><i class="ag-cell lv2"></i><i class="ag-cell lv3"></i><i class="ag-cell lv4"></i><span>mehr Sätze</span></div>
+      </div>
+    </div>`;
+}
+
+// Stufe der Körperkarte nach Sätzen pro Woche
+function setLevel(n) {
+  if (n <= 0) return 'lv0';
+  if (n < SET_TARGET_MIN / 2) return 'lv1';
+  if (n < SET_TARGET_MIN) return 'lv2';
+  if (n <= SET_TARGET_MAX) return 'lv3';
+  return 'lv4';
+}
+
+function musclesHtml() {
+  const sets = muscleSets(7);
+  const groups = Object.entries(sets).filter(([, m]) => m.sets > 0).sort((a, b) => b[1].sets - a[1].sets);
+  const scale = SET_TARGET_MAX * 1.25;
+  return `
+    <div class="section">
+      <div class="section-head"><h2>Sätze pro Muskel</h2><span class="meta">7 Tage</span></div>
+      <div class="card">
+        ${groups.length ? `
+        ${bodyMap((g) => setLevel(sets[g]?.sets || 0))}
+        <div class="map-legend"><span><i class="lv1"></i>wenig</span><span><i class="lv2"></i>unter ${SET_TARGET_MIN}</span><span><i class="lv3"></i>${SET_TARGET_MIN}–${SET_TARGET_MAX}</span><span><i class="lv4"></i>über ${SET_TARGET_MAX}</span></div>
+        <div class="bars">${groups.map(([g, m]) => {
+    return `
+          <div class="bar-row ${setLevel(m.sets)}">
+            <span>${esc(g)}</span>
+            <span class="bar-track"><span class="bar-zone" style="left:${(SET_TARGET_MIN / scale) * 100}%;width:${((SET_TARGET_MAX - SET_TARGET_MIN) / scale) * 100}%"></span><i style="width:${Math.min(100, (m.sets / scale) * 100)}%"></i></span>
+            <b>${half(m.sets)}</b>
+          </div>`;
+  }).join('')}</div>` : '<p class="muted small">In den letzten 7 Tagen kein Training.</p>'}
+        <p class="field-hint" style="margin:14px 0 0">Gestrichelt: ${SET_TARGET_MIN}–${SET_TARGET_MAX} harte Sätze pro Woche bringen den meisten Muskelaufbau. Mitarbeitende Muskeln zählen halb – etwa der Trizeps beim Bankdrücken.</p>
+      </div>
+    </div>`;
+}
+
+// Vergleich mit der Vorwoche bis zum selben Wochentag
+function deltaLine(cur, prev, { pct = false, unitText = '' } = {}) {
+  if (!(prev > 0)) return '';
+  const d = cur - prev;
+  if (!d) return '<span class="tile-delta">wie Vorwoche</span>';
+  const abs = pct ? `${Math.abs(Math.round((d / prev) * 100))} %` : `${formatNumber(Math.abs(Math.round(d)))}${unitText}`;
+  return `<span class="tile-delta ${d > 0 ? 'up' : ''}">${d > 0 ? Icon.arrowUp : Icon.arrowDown}${abs} zur Vorwoche</span>`;
+}
+
+function lifetimeHtml(u) {
+  const all = lifetime();
+  if (!all || all.count < 3) return '';
+  const best = bestWeekStreak();
+  const hours = Math.round(all.minutes / 60);
+  return `
+    <div class="section">
+      <div class="section-head"><h2>Insgesamt</h2><span class="meta">seit ${esc(new Date(all.since).toLocaleDateString('de-DE', { month: 'short', year: 'numeric' }))}</span></div>
+      <div class="card">
+        <div class="totals">
+          <div class="stat"><b class="num">${all.count}</b><span>Trainings</span></div>
+          <div class="stat"><b class="num">${hours >= 1 ? `${hours}<small>h</small>` : `${all.minutes}<small>min</small>`}</b><span>Trainingszeit</span></div>
+          <div class="stat"><b class="num">${volumeShort(all.volume, u)}</b><span>bewegt</span></div>
+          <div class="stat"><b class="num">${formatVolume(all.sets)}</b><span>Sätze</span></div>
+        </div>
+        <div class="totals-foot">
+          <span>${Icon.calendar}Ø ${formatNumber(Math.round(all.perWeek * 10) / 10)} pro Woche</span>
+          <span>${Icon.timer}Ø ${all.avgMinutes} Min</span>
+          ${best >= 2 ? `<span>${Icon.flame}Beste Serie: ${best} Wochen</span>` : ''}
+        </div>
+      </div>
     </div>`;
 }
 
@@ -164,25 +317,24 @@ function statsHtml() {
   const u = unit();
   const info = weekInfo();
   const streak = weekStreak(settings.weeklyGoal);
-  const weeks = weeklyCounts(8);
+  const { cur, prev } = weekCompare();
   const lifts = keyLifts(6);
-  const sets = weeklySets(7);
-  const groups = Object.entries(sets).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
   const records = recentRecords(30, 6);
   return `
     <div class="section">
-      <div class="section-head"><h2>Diese Woche</h2>${streak > 1 ? `<span class="meta">${streak} Wochen in Folge im Ziel</span>` : ''}</div>
+      <div class="section-head"><h2>Diese Woche</h2>${streak > 1 ? `<span class="meta streak-meta">${Icon.flame}${streak} Wochen im Ziel</span>` : ''}</div>
       <div class="tiles">
-        <div class="tile"><span class="tile-label">Trainings</span><div class="tile-value">${info.count}<small>/${settings.weeklyGoal}</small></div></div>
-        <div class="tile"><span class="tile-label">Sätze</span><div class="tile-value">${info.sets}</div></div>
-        <div class="tile"><span class="tile-label">Volumen</span><div class="tile-value">${volumeShort(info.volume, u)}</div></div>
-        <div class="tile"><span class="tile-label">Trainingszeit</span><div class="tile-value">${info.minutes >= 60 ? `${Math.floor(info.minutes / 60)}<small>h</small> ${info.minutes % 60}<small>min</small>` : `${info.minutes}<small>min</small>`}</div></div>
+        <div class="tile"><span class="tile-label">Trainings</span><div class="tile-value">${info.count}<small>/${settings.weeklyGoal}</small></div>${deltaLine(cur.count, prev.count)}</div>
+        <div class="tile"><span class="tile-label">Sätze</span><div class="tile-value">${info.sets}</div>${deltaLine(cur.sets, prev.sets)}</div>
+        <div class="tile"><span class="tile-label">Volumen</span><div class="tile-value">${volumeShort(info.volume, u)}</div>${deltaLine(cur.volume, prev.volume, { pct: true })}</div>
+        <div class="tile"><span class="tile-label">Trainingszeit</span><div class="tile-value">${minutesHtml(info.minutes)}</div>${deltaLine(cur.minutes, prev.minutes, { unitText: ' Min' })}</div>
       </div>
     </div>
     <div class="section">
-      <div class="section-head"><h2>Trainings pro Woche</h2><span class="meta">8 Wochen</span></div>
-      <div class="card">${weeksChart(weeks, settings.weeklyGoal)}</div>
+      <div class="section-head"><h2>Wochenverlauf</h2><span class="meta">${WEEKS} Wochen</span></div>
+      ${weeksChartHtml()}
     </div>
+    ${activityHtml()}
     ${lifts.length ? `
       <div class="section">
         <div class="section-head"><h2>Kraftentwicklung</h2><span class="meta">8 Wochen</span></div>
@@ -199,31 +351,17 @@ function statsHtml() {
   }).join('')}</div>
         <p class="section-foot">Geschätztes 1RM aus deinem besten Satz je Training.</p>
       </div>` : ''}
-    <div class="section">
-      <div class="section-head"><h2>Sätze pro Muskel</h2><span class="meta">7 Tage</span></div>
-      <div class="card">
-        ${groups.length ? `<div class="bars">${groups.map(([g, n]) => {
-    const status = n < SET_TARGET_MIN ? 'low' : n > SET_TARGET_MAX ? 'high' : 'ok';
-    const scale = SET_TARGET_MAX * 1.25;
-    return `
-          <div class="bar-row ${status}">
-            <span>${esc(g)}</span>
-            <span class="bar-track"><span class="bar-zone" style="left:${(SET_TARGET_MIN / scale) * 100}%;width:${((SET_TARGET_MAX - SET_TARGET_MIN) / scale) * 100}%"></span><i style="width:${Math.min(100, (n / scale) * 100)}%"></i></span>
-            <b>${n}</b>
-          </div>`;
-  }).join('')}</div>` : '<p class="muted small">In den letzten 7 Tagen kein Training.</p>'}
-        <p class="field-hint" style="margin:12px 0 0">Gestrichelt: ${SET_TARGET_MIN}–${SET_TARGET_MAX} harte Sätze pro Woche bringen den meisten Muskelaufbau.</p>
-      </div>
-    </div>
+    ${musclesHtml()}
     ${records.length ? `
       <div class="section">
         <div class="section-head"><h2>Rekorde</h2><span class="meta">30 Tage</span></div>
-        <div class="list">${records.map((r) => `
+        <div class="list pr-list">${records.map((r) => `
           <button class="row" data-action="open-exercise-stat" data-id="${r.id}">
-            <div class="row-main"><span class="row-title">${esc(r.name)}</span><span class="row-sub">${relativeDay(r.date)}</span></div>
+            ${Icon.medal}<div class="row-main"><span class="row-title">${esc(r.name)}</span><span class="row-sub">${relativeDay(r.date)}</span></div>
             <span class="row-value num">${esc(formatSet(r.set, u))}</span>${chev}
           </button>`).join('')}</div>
-      </div>` : ''}`;
+      </div>` : ''}
+    ${lifetimeHtml(u)}`;
 }
 
 registerPage('history', {
@@ -244,6 +382,7 @@ registerPage('workout', {
       <div class="detail-head">
         <h1 class="detail-title">${esc(w.routineName || 'Freies Training')}</h1>
         <p class="detail-meta">${new Date(w.startedAt).toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · ${formatTime(w.startedAt)} Uhr</p>
+        ${chips(Object.entries(workoutMuscles(w)).filter(([, m]) => m.direct > 0).sort((a, b) => b[1].direct - a[1].direct).slice(0, 5).map(([g]) => g))}
       </div>
       <div class="card"><div class="stats divided" style="--cols:3">
         <div class="stat"><b class="num">${Math.max(1, Math.round(workoutDuration(w) / 60000))}<small>Min</small></b><span>Dauer</span></div>
@@ -312,6 +451,20 @@ registerActions({
     seg.style.setProperty('--i', ui.seg === 'workouts' ? 0 : 1);
     seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === el));
     qs('#history-body').innerHTML = ui.seg === 'workouts' ? workoutsHtml() : statsHtml();
+  },
+  'stats-metric': (el) => {
+    if (ui.metric === el.dataset.metric) return;
+    ui.metric = el.dataset.metric;
+    ui.pick = null;
+    haptic();
+    const card = qs('#stats-weeks');
+    if (card) card.outerHTML = weeksChartHtml();
+  },
+  'stats-pick': (el) => {
+    ui.pick = +el.dataset.i;
+    haptic();
+    const card = qs('#stats-weeks');
+    if (card) card.outerHTML = weeksChartHtml();
   },
   'history-more': () => {
     ui.allMonths = true;

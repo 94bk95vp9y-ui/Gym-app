@@ -3,6 +3,8 @@ import { Store, ACCENTS, REST_OPTIONS, validateBackup } from '../core/store.js';
 import { dayKey } from '../core/supplements.js';
 import { formatRest, formatDateTime, relativeDay, plural } from '../core/format.js';
 import { Sound, setSoundVolume, testSound, canIgnoreMute } from '../core/sound.js';
+import { plateSettings, ALL_PLATES, BAR_OPTIONS } from '../core/plates.js';
+import { formatNumber } from '../core/format.js';
 import { registerActions, registerInputs } from '../ui/dom.js';
 import { Icon } from '../ui/icons.js';
 import { haptic, HAP } from '../ui/haptics.js';
@@ -13,7 +15,7 @@ import { applySettings } from '../ui/theme.js';
 import { chev, iconTile, TINT } from '../ui/components.js';
 
 const BACKUP_INTERVAL_DAYS = 14;
-const APP_VERSION = '3.0';
+const APP_VERSION = '4.0';
 
 // Sicherung fällig? Nur wenn es überhaupt etwas zu sichern gibt.
 export function backupDue() {
@@ -87,6 +89,7 @@ registerPage('settings', {
   render: () => {
     const s = Store.getSettings();
     const dark = document.documentElement.dataset.theme === 'dark';
+    const gear = plateSettings(s);
     return `
       <div class="detail-head"><h1 class="detail-title">Einstellungen</h1></div>
 
@@ -102,6 +105,15 @@ registerPage('settings', {
         ${toggleRow('appKeypad', 'Zahlenfeld der App', 'Große Tasten mit ± statt der iPhone-Tastatur', s.appKeypad, Icon.keypad, TINT.indigo)}
         ${toggleRow('keepAwake', 'Bildschirm anlassen', 'Während des Trainings sperrt sich das iPhone nicht', s.keepAwake, Icon.phone, TINT.gray)}
       </div>
+
+      <div class="section-label">Hantel und Scheiben</div>
+      <div class="list icons">
+        <button class="row" data-action="set-bar">${iconTile(Icon.dumbbell, TINT.gray)}<div class="row-main"><span class="row-title">Langhantel</span><span class="row-sub">Gewicht der Stange – je Übung änderbar</span></div>
+          <span class="row-value">${formatNumber(gear.bar)} ${gear.unit}</span>${chev}</button>
+        ${stackedRow(Icon.layers, TINT.blue, 'Vorhandene Scheiben', `<div class="choices">${ALL_PLATES[gear.unit].map((p) => `
+            <button class="choice ${gear.plates.includes(p) ? 'active' : ''}" data-action="set-plate" data-plate="${p}" aria-pressed="${gear.plates.includes(p)}">${HAP}${formatNumber(p)}</button>`).join('')}</div>`)}
+      </div>
+      <p class="section-foot">Im Training zeigt das Zahlenfeld bei Langhantel-Übungen, welche Scheiben auf jede Seite kommen.</p>
 
       <div class="section-label">Darstellung</div>
       <div class="list icons">
@@ -192,6 +204,26 @@ registerActions({
       message: 'Startet automatisch nach jedem abgehakten Satz.',
       actions: REST_OPTIONS.map((v) => ({ label: formatRest(v), handler: () => { Store.updateSettings({ restSeconds: v }); render(); } })),
     });
+  },
+  'set-bar': () => {
+    const { unit, bar } = plateSettings();
+    actionSheet({
+      title: 'Gewicht der Langhantel',
+      message: 'Olympische Stangen wiegen 20 kg, kürzere oft 15 oder 10 kg.',
+      actions: BAR_OPTIONS[unit].filter((v) => v > 0).map((v) => ({
+        label: `${formatNumber(v)} ${unit}${v === bar ? ' ✓' : ''}`,
+        handler: () => { Store.updateSettings({ barWeight: v }); render(); },
+      })),
+    });
+  },
+  'set-plate': (el) => {
+    const { plates } = plateSettings();
+    const p = +el.dataset.plate;
+    const next = plates.includes(p) ? plates.filter((x) => x !== p) : [...plates, p];
+    if (!next.length) { toast('Mindestens eine Scheibe'); return; }
+    Store.updateSettings({ plates: next.sort((a, b) => b - a) });
+    haptic();
+    render();
   },
   'set-accent': (el) => {
     Store.updateSettings({ accent: el.dataset.id });

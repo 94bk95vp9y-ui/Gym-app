@@ -202,6 +202,7 @@ function finish() {
 }
 
 // Aktuelle Seite neu zeichnen (nach Datenänderungen), Scrollposition bleibt
+let entrance = true; // der nächste Aufbau einer neuen Seite wird animiert
 export function render() {
   ensureShell();
   settle();
@@ -210,6 +211,10 @@ export function render() {
   const el = buildScreen(entry);
   const keep = active && active.dataset.key === el.dataset.key && active.isConnected;
   const scroll = keep ? qs('.content', active).scrollTop : takeScroll(el.dataset.key);
+  // Tabwechsel und Start: Inhalt baut sich kurz auf. Nicht nach dem
+  // Zurückwischen – dort liegt die Seite schon fertig unter dem Finger.
+  if (!keep && entrance) el.classList.add('fresh');
+  entrance = false;
   if (active && active.isConnected) active.replaceWith(el);
   else stage.replaceChildren(el);
   qsa('.screen', stage).forEach((s) => { if (s !== el) s.remove(); });
@@ -328,6 +333,7 @@ export function switchTab(id) {
   }
   saveScroll();
   nav.tab = id;
+  entrance = true;
   render();
 }
 
@@ -337,7 +343,7 @@ export function goTo(tab, id = null, params = {}) {
   saveScroll();
   nav.tab = tab;
   nav.stacks[tab] = [];
-  if (!id) { render(); return; }
+  if (!id) { entrance = !sameTab; render(); return; }
   if (!sameTab) render();
   push(id, params);
 }
