@@ -1,13 +1,19 @@
-const CACHE = 'gym-cache-v33';
+const CACHE = 'gym-cache-v34';
 const ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './css/app.css',
+  './css/tokens.css',
+  './css/base.css',
+  './css/components.css',
+  './css/views.css',
+  './css/workout.css',
+  './fonts/archivo-var.woff2',
   './js/core/catalog.js',
   './js/core/fatigue.js',
   './js/core/format.js',
   './js/core/insights.js',
+  './js/core/milestones.js',
   './js/core/muscles.js',
   './js/core/plan-import.js',
   './js/core/plates.js',
@@ -15,6 +21,7 @@ const ASSETS = [
   './js/core/sound.js',
   './js/core/store.js',
   './js/core/supplements.js',
+  './js/core/templates.js',
   './js/core/training.js',
   './js/main.js',
   './js/mobility/data.js',
@@ -45,6 +52,7 @@ const ASSETS = [
   './js/vendor/three.module.min.js',
   './js/vendor/GLTFLoader.js',
   './js/vendor/BufferGeometryUtils.js',
+  './js/views/body.js',
   './js/views/goal.js',
   './js/views/history.js',
   './js/views/mobility.js',
@@ -76,7 +84,7 @@ self.addEventListener('activate', (event) => {
 // es umgekehrt – dann bekam die installierte App eine neue Version immer erst
 // beim übernächsten Start zu sehen. Bilder ändern sich praktisch nie und
 // dürfen deshalb direkt aus dem Cache kommen.
-const CACHE_FIRST = /\.(png|jpg|jpeg|svg|ico|webmanifest)$/i;
+const CACHE_FIRST = /\.(png|jpg|jpeg|svg|ico|webmanifest|woff2)$/i;
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;

@@ -26,18 +26,27 @@ import {
   goalTagHtml, goalPanelHtml, goalSettingsHtml, animateGoal,
 } from './goal.js';
 import { startRoutine, startBlank } from './workout.js';
+import { PLAN_TEMPLATES, resolveTemplate, applyTemplate } from '../core/templates.js';
+import { mobilityListHtml, mountMobilityList } from './mobility.js';
 
 const ui = { seg: 'plans', query: '', group: 'all', exMetric: 'e1rm' };
 
 function unit() { return unitLabel(Store.getSettings().unit); }
 
 // ---------- Wurzelseite ----------
+const SEGMENTS = [{ id: 'plans', label: 'Pläne' }, { id: 'exercises', label: 'Übungen' }, { id: 'mobility', label: 'Mobility' }];
+
+function bodyHtml() {
+  if (ui.seg === 'exercises') return exercisesHtml();
+  if (ui.seg === 'mobility') return mobilityListHtml();
+  return plansHtml();
+}
 function segHtml() {
-  const items = [{ id: 'plans', label: 'Pläne' }, { id: 'exercises', label: 'Übungen' }];
+  const items = SEGMENTS;
   const i = items.findIndex((x) => x.id === ui.seg);
   return `
     <div class="seg-wrap">
-      <div class="seg" id="training-seg" style="--n:2;--i:${i}">
+      <div class="seg" id="training-seg" style="--n:${items.length};--i:${i}">
         ${items.map((x) => `<button class="${x.id === ui.seg ? 'active' : ''}" data-action="training-seg" data-seg="${x.id}">${HAP}${x.label}</button>`).join('')}
         <span class="seg-thumb"></span>
       </div>
@@ -62,12 +71,16 @@ function quickTilesHtml() {
     <div class="section">
       <div class="tiles quick-tiles">
         <button class="tile" data-action="start-blank">
-          ${iconTile(Icon.plus, TINT.blue, 'lg')}
-          <div><div class="tile-title">Leeres Training</div><div class="tile-sub">Übungen spontan wählen</div></div>
+          ${iconTile(Icon.plus, TINT.green, 'lg')}
+          <div><div class="tile-title">Frei</div><div class="tile-sub">Leeres Training</div></div>
+        </button>
+        <button class="tile" data-action="plan-templates">
+          ${iconTile(Icon.grid, TINT.orange, 'lg')}
+          <div><div class="tile-title">Vorlagen</div><div class="tile-sub">Bewährte Pläne</div></div>
         </button>
         <button class="tile" data-action="plan-import">
           ${iconTile(Icon.chat, TINT.purple, 'lg')}
-          <div><div class="tile-title">Plan mit KI</div><div class="tile-sub">Aus einer Sprachnachricht</div></div>
+          <div><div class="tile-title">Mit KI</div><div class="tile-sub">Plan diktieren</div></div>
         </button>
       </div>
     </div>`;
@@ -80,8 +93,8 @@ function plansHtml() {
       ${emptyState({
     icon: Icon.dumbbell,
     title: 'Noch keine Pläne',
-    text: 'Lege deinen ersten Trainingsplan an – selbst oder mit einer KI.',
-    action: '<button class="btn btn-primary" data-action="plan-new">Plan erstellen</button>',
+    text: 'Starte mit einer bewährten Vorlage – oder stell deinen Plan selbst zusammen.',
+    action: '<button class="btn btn-primary" data-action="plan-templates">Vorlage wählen</button><button class="btn btn-secondary" data-action="plan-new" style="margin-top:8px">Selbst erstellen</button>',
   })}
       ${quickTilesHtml()}`;
   }
@@ -150,7 +163,8 @@ function exercisesHtml() {
 registerPage('training', {
   title: 'Training',
   right: () => `<button class="nav-btn icon-only" data-action="training-add" aria-label="Hinzufügen">${Icon.plus}</button>`,
-  render: () => `${segHtml()}<div id="training-body">${ui.seg === 'plans' ? plansHtml() : exercisesHtml()}</div>`,
+  render: () => `${segHtml()}<div id="training-body">${bodyHtml()}</div>`,
+  mount: (content) => { if (ui.seg === 'mobility') mountMobilityList(content); },
 });
 
 // ---------- Plan ----------
@@ -565,9 +579,10 @@ registerActions({
     ui.seg = el.dataset.seg;
     haptic();
     const seg = qs('#training-seg');
-    seg.style.setProperty('--i', ui.seg === 'plans' ? 0 : 1);
+    seg.style.setProperty('--i', SEGMENTS.findIndex((x) => x.id === ui.seg));
     seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === el));
-    qs('#training-body').innerHTML = ui.seg === 'plans' ? plansHtml() : exercisesHtml();
+    qs('#training-body').innerHTML = bodyHtml();
+    if (ui.seg === 'mobility') mountMobilityList(qs('#training-body'));
   },
   'ex-metric': (el) => {
     if (ui.exMetric === el.dataset.metric) return;
@@ -585,6 +600,7 @@ registerActions({
   'training-add': (el) => {
     openMenu(el, [
       { label: 'Neuer Plan', icon: Icon.doc, handler: () => openPlanEditor(null, { onSaved: (id) => push('plan', { id }) }) },
+      { label: 'Plan aus Vorlage', icon: Icon.grid, handler: () => openTemplates() },
       { label: 'Plan mit KI', icon: Icon.chat, handler: () => openImportSheet() },
       { label: 'Neue Übung', icon: Icon.dumbbell, handler: () => openExerciseEditor(null, { onSave: (ex) => { render(); push('exercise', { id: ex.id }); } }) },
       '-',
@@ -603,6 +619,7 @@ registerActions({
   'start-routine': (el) => startRoutine(el.dataset.id, { from: el }),
   'start-blank': () => startBlank(),
   'plan-import': () => openImportSheet(),
+  'plan-templates': () => openTemplates(),
   'ex-rest': (el) => {
     const ex = Store.getExercise(el.dataset.id);
     const def = Store.getSettings().restSeconds;
@@ -646,6 +663,65 @@ registerContextMenu('exercise', (el) => {
     { label: 'Übung löschen', icon: Icon.trash, destructive: true, handler: async () => { if (await deleteExercise(ex)) render(); } },
   ];
 });
+
+// ---------- Vorlagen ----------
+// Liste der Vorlagen; Antippen zeigt, was angelegt würde, und übernimmt.
+export function openTemplates() {
+  const list = openSheet({
+    title: 'Vorlagen',
+    right: { label: 'Schließen' },
+    body: `
+      <p class="sheet-sub">Bewährte Aufteilungen als Ausgangspunkt. Nach dem Übernehmen gehören die Pläne dir – Übungen, Sätze und Reihenfolge lassen sich frei ändern.</p>
+      ${PLAN_TEMPLATES.map((t) => `
+        <button class="tpl-card" data-tpl="${t.id}">
+          <span class="tpl-top"><span class="tag neutral">${esc(t.level)}</span><span class="tpl-name">${esc(t.name)}</span></span>
+          <span class="tpl-text">${esc(t.text)}</span>
+          <span class="tpl-days"><span class="chip">${esc(t.days)}</span><span class="chip">${plural(t.plans.length, 'Plan', 'Pläne')}</span></span>
+        </button>`).join('')}`,
+  });
+  list.body.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-tpl]');
+    if (b) openTemplate(PLAN_TEMPLATES.find((t) => t.id === b.dataset.tpl), list);
+  });
+}
+
+function openTemplate(template, parent) {
+  if (!template) return;
+  const plans = resolveTemplate(template);
+  const missing = plans.reduce((n, p) => n + p.missing.length, 0);
+  const usable = plans.filter((p) => p.items.length);
+  openSheet({
+    title: template.name,
+    full: true,
+    left: { label: 'Zurück' },
+    right: usable.length ? {
+      label: 'Übernehmen',
+      style: 'primary',
+      action: (s) => {
+        const created = applyTemplate(template);
+        s.close();
+        parent?.close();
+        haptic(2);
+        ui.seg = 'plans';
+        render();
+        toast(`${plural(created.length, 'Plan', 'Pläne')} angelegt`);
+      },
+    } : null,
+    body: `
+      <p class="sheet-sub">${esc(template.text)}</p>
+      ${plans.map((p) => `
+        <div class="tpl-plan">
+          <div class="section-head"><h2>${esc(p.name)}</h2><span class="meta">${plural(p.items.length, 'Übung', 'Übungen')} · ${plural(p.items.reduce((n, x) => n + x.sets, 0), 'Satz', 'Sätze')}</span></div>
+          <div class="list">${p.items.map((x, i) => `
+            <div class="row plan-ex"><span class="num-badge">${i + 1}</span>
+              <div class="row-main"><span class="row-title">${esc(x.exercise.name)}</span><span class="row-sub">${esc(x.exercise.muscleGroup)}</span></div>
+              <span class="row-value">${x.sets} ×</span></div>`).join('')}</div>
+          ${p.exists ? '<p class="section-foot">Einen Plan mit diesem Namen gibt es schon – der neue bekommt eine Nummer, überschrieben wird nichts.</p>' : ''}
+        </div>`).join('')}
+      ${missing ? `<p class="section-foot" style="margin-top:16px">${plural(missing, 'Übung fehlt', 'Übungen fehlen')} in deiner Bibliothek (gelöscht oder umbenannt) und ${missing === 1 ? 'wird' : 'werden'} ausgelassen.</p>` : ''}
+      <p class="section-foot" style="margin-top:16px">Wiederholungen und Gewichte schlägt die App nach deinem ersten Training selbst vor (Steigerung je Übung).</p>`,
+  });
+}
 
 function duplicatePlan(r) {
   const copy = { ...r, id: uid(), name: `${r.name} (Kopie)`, exerciseIds: [...r.exerciseIds], setCounts: { ...(r.setCounts || {}) } };

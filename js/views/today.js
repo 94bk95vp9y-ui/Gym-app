@@ -4,11 +4,11 @@
 // unten, damit er nicht vor dem Training im Weg ist.
 import { Store } from '../core/store.js';
 import {
-  nextPlan, lastDoneMap, planMinutes, planMuscles, workoutProgress, workoutDoneSets, workoutVolume, workoutDuration,
+  nextPlan, lastDoneMap, planMinutes, planMuscles, plannedSets, workoutProgress, workoutDoneSets, workoutVolume, workoutDuration,
   weekInfo, weekStreak, isSameDay, workoutPrs,
 } from '../core/training.js';
 import { progressionOf } from '../core/progression.js';
-import { recovery, workoutMuscles, MAP_GROUPS } from '../core/muscles.js';
+import { recovery, workoutMuscles, muscleShares, MAP_GROUPS } from '../core/muscles.js';
 import {
   formatLongDate, formatVolume, formatTime, elapsedLabel, relativeDay, plural, unitLabel,
 } from '../core/format.js';
@@ -22,15 +22,33 @@ import { startRoutine, startBlank } from './workout.js';
 import { supplementsTodayHtml } from './supplements.js';
 import { mobilityTileHtml } from './mobility.js';
 import { backupDue, exportBackup } from './settings.js';
-import { openPlanEditor } from './training.js';
+import { openPlanEditor, openTemplates } from './training.js';
+import { bodyTileHtml } from './body.js';
 import { showStats } from './history.js';
+
+// Größe des Plan-Namens nach Länge: kurze Namen stehen plakativ groß
+function titleSize(name) {
+  const longest = Math.max(...String(name).split(/\s+/).map((w) => w.length));
+  const n = String(name).length;
+  return longest > 11 || n > 18 ? 'len-l' : longest > 6 || n > 9 ? 'len-m' : '';
+}
+
+// Die Zielmuskeln eines Plans als Figur: Zielmuskel voll, Hilfsmuskel halb
+function planMapHtml(exercises, setsOf) {
+  const load = {};
+  exercises.forEach((ex) => {
+    muscleShares(ex).forEach(([g, share]) => { load[g] = Math.max(load[g] || 0, share * (setsOf(ex) ? 1 : 0)); });
+  });
+  if (!Object.keys(load).length) return '';
+  return `<div class="hero-map" aria-hidden="true">${bodyMap((g) => (load[g] >= 1 ? 'on' : load[g] > 0 ? 'half' : ''), { caption: false })}</div>`;
+}
 
 function heroHtml() {
   const active = Store.getActive();
   if (active) {
     const p = workoutProgress(active);
     return `
-      <div class="hero">
+      <div class="hero live">
         <div class="hero-top"><span class="hero-label"><span class="live-dot"></span>Training läuft</span></div>
         <div class="hero-time" id="live-time">${elapsedLabel(active.startedAt)}</div>
         <div class="hero-meta">${esc(active.routineName || 'Freies Training')} · ${p.done} von ${plural(p.total, 'Satz', 'Sätzen')}</div>
@@ -44,14 +62,15 @@ function heroHtml() {
   if (doneToday) {
     const prs = workoutPrs(doneToday);
     const u = unitLabel(Store.getSettings().unit);
+    const name = doneToday.routineName || 'Freies Training';
     return `
       <div class="hero calm">
         <div class="hero-top">
           <span class="hero-label">${Icon.check}Heute erledigt</span>
           <button class="hero-switch" data-action="choose-workout">Noch eins ${Icon.chevronRight}</button>
         </div>
-        <h2 class="hero-title">${esc(doneToday.routineName || 'Freies Training')}</h2>
-        <div class="hero-meta muted">${formatTime(doneToday.startedAt)} Uhr · ${Math.max(1, Math.round(workoutDuration(doneToday) / 60000))} Min</div>
+        <h2 class="hero-title">${esc(name)}</h2>
+        <div class="hero-meta">${formatTime(doneToday.startedAt)} Uhr · ${Math.max(1, Math.round(workoutDuration(doneToday) / 60000))} Min</div>
         ${chips(Object.entries(workoutMuscles(doneToday)).filter(([, m]) => m.direct > 0).sort((a, b) => b[1].direct - a[1].direct).slice(0, 4).map(([g]) => g))}
         <div class="hero-stats">
           <div><b>${workoutDoneSets(doneToday)}</b><span>${workoutDoneSets(doneToday) === 1 ? 'Satz' : 'Sätze'}</span></div>
@@ -67,10 +86,13 @@ function heroHtml() {
     return `
       <div class="hero">
         <div class="hero-top"><span class="hero-label">Los geht’s</span></div>
-        <h2 class="hero-title">Erstelle deinen ersten Plan</h2>
-        <div class="hero-meta">Selbst zusammenstellen oder mit einer KI aus einer Sprachnachricht.</div>
+        <h2 class="hero-title len-m">Dein erster Plan</h2>
+        <div class="hero-meta">Nimm eine bewährte Vorlage, stell selbst zusammen – oder lass eine KI aus deiner Sprachnachricht einen Plan bauen.</div>
         <div class="hero-actions">
-          <button class="btn btn-hero" data-action="today-new-plan">Plan erstellen</button>
+          <button class="btn btn-hero" data-action="today-templates">Vorlage wählen</button>
+        </div>
+        <div class="hero-actions" style="margin-top:10px">
+          <button class="btn btn-hero-soft" data-action="today-new-plan">Selbst erstellen</button>
           <button class="btn btn-hero-soft" data-action="start-blank">Leeres Training</button>
         </div>
       </div>`;
@@ -81,14 +103,20 @@ function heroHtml() {
   const minutes = planMinutes(plan);
   const exercises = plan.exerciseIds.map((id) => Store.getExercise(id)).filter(Boolean);
   const count = exercises.length;
+  const sets = exercises.reduce((n, ex) => n + plannedSets(plan, ex.id), 0);
   return `
     <div class="hero">
       <div class="hero-top">
         <span class="hero-label">Nächstes Training</span>
         <button class="hero-switch" data-action="choose-workout">Wechseln ${Icon.chevronDown}</button>
       </div>
-      <h2 class="hero-title">${esc(plan.name)}</h2>
-      <div class="hero-meta">${plural(count, 'Übung', 'Übungen')}${minutes ? ` · ca. ${minutes} Min` : ''} · ${lastDone.has(plan.id) ? `zuletzt ${relativeDay(lastDone.get(plan.id))}` : 'noch nicht trainiert'}</div>
+      <div class="hero-body">
+        <div class="hero-text">
+          <h2 class="hero-title ${titleSize(plan.name)}">${esc(plan.name)}</h2>
+          <div class="hero-meta">${plural(count, 'Übung', 'Übungen')}${minutes ? ` · ca. ${minutes} Min` : ` · ${plural(sets, 'Satz', 'Sätze')}`}<br>${lastDone.has(plan.id) ? `zuletzt ${relativeDay(lastDone.get(plan.id))}` : 'noch nie trainiert'}</div>
+        </div>
+        ${planMapHtml(exercises, (ex) => plannedSets(plan, ex.id))}
+      </div>
       ${chips(planMuscles(plan, 4))}
       ${focusHtml(plan, exercises)}
       <div class="hero-actions">
@@ -126,24 +154,32 @@ function hoursText(h) {
   return h >= 36 ? `${Math.round(h / 24)} Tage` : h >= 20 ? '1 Tag' : `${Math.max(1, h)} Std`;
 }
 
-// Woche als schmaler Streifen direkt unter dem Titel: Ring mit Stand zum
-// Wochenziel, die sieben Tage und – ab zwei Wochen – die Serie.
+// Die Woche oben: Stand zum Wochenziel als große Zahl, die sieben Tage als
+// Felder, darunter das Ziel als Scheiben auf der Stange und die Serie.
 function weekStripHtml() {
   const goal = Store.getSettings().weeklyGoal;
   const info = weekInfo();
   const streak = weekStreak(goal);
-  const letters = ['M', 'D', 'M', 'D', 'F', 'S', 'S'];
+  const letters = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
   const hit = info.count >= goal;
   const left = goal - info.count;
+  const daysLeft = 6 - info.todayIndex + (info.days[info.todayIndex] ? 0 : 1);
+  const status = hit
+    ? (info.count > goal ? '<b>Ziel übertroffen</b>' : '<b>Wochenziel erreicht</b>')
+    : left > daysLeft ? `Noch <b>${left}</b> – wird knapp`
+      : `Noch <b>${left}</b> bis zum Ziel`;
   return `
-    <button class="week-strip" data-action="open-stats" aria-label="Diese Woche: ${info.count} von ${goal} Trainings">
-      ${ring(info.count, goal, { size: 46, stroke: 5, cls: hit ? 'success' : '', label: `${info.count}<small>/${goal}</small>` })}
-      <span class="ws-main">
-        <span class="ws-days">${letters.map((l, i) => `<span class="ws-day ${info.days[i] ? 'on' : ''} ${i === info.todayIndex ? 'today' : ''} ${i > info.todayIndex ? 'future' : ''}"><i>${info.days[i] ? Icon.check : ''}</i>${l}</span>`).join('')}</span>
+    <button class="week" data-action="open-stats" aria-label="Diese Woche: ${info.count} von ${goal} Trainings">
+      <span class="wk-main">
+        <span class="wk-count">${info.count}<small>/${goal}</small></span>
+        <span class="wk-cap">Diese Woche</span>
       </span>
-      <span class="ws-side">
-        ${streak >= 2 ? `<span class="ws-streak">${Icon.flame}<b>${streak}</b></span><span class="ws-cap">Wochen</span>`
-    : `<span class="ws-left">${hit ? Icon.check : `<b>${left}</b>`}</span><span class="ws-cap">${hit ? 'Ziel' : 'offen'}</span>`}
+      <span class="wk-days">${letters.map((l, i) => `<span class="wk-day ${info.days[i] ? 'on' : ''} ${i === info.todayIndex ? 'today' : ''} ${i > info.todayIndex ? 'future' : ''}"><i>${info.days[i] ? Icon.check : ''}</i>${l}</span>`).join('')}</span>
+      <span class="wk-foot">
+        <span class="wk-plates" aria-hidden="true">${Array.from({ length: Math.max(goal, info.count) }, (_, i) => `<i class="${i < info.count ? 'on' : ''}"></i>`).join('')}</span>
+        <span>${status}</span>
+        ${streak >= 2 ? `<span class="wk-streak">${Icon.flame}${streak} Wo.</span>` : ''}
+        <span class="row-chev">${Icon.chevronRight}</span>
       </span>
     </button>`;
 }
@@ -234,7 +270,10 @@ registerPage('today', {
     ${weekStripHtml()}
     ${heroHtml()}
     ${supplementsTodayHtml()}
-    <div class="section">${recoveryCardHtml()}${mobilityTileHtml()}</div>
+    <div class="section">
+      ${recoveryCardHtml()}
+      <div class="tiles today-tiles">${mobilityTileHtml()}${bodyTileHtml()}</div>
+    </div>
     ${backupHtml()}`;
   },
 });
@@ -263,6 +302,7 @@ registerActions({
   'open-stats': () => { showStats(); goTo('history'); },
   'recovery-open': () => openRecovery(),
   'choose-workout': (el) => openWorkoutChooser(el),
+  'today-templates': () => { goTo('training'); openTemplates(); },
   'today-new-plan': () => {
     goTo('training');
     openPlanEditor(null, { onSaved: (id) => push('plan', { id }) });

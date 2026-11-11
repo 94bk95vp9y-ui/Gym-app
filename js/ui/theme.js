@@ -19,14 +19,17 @@ export function applyTheme() {
   const accent = ACCENTS.find((a) => a.id === s.accent) || ACCENTS[0];
   const color = dark ? accent.dark : accent.light;
   const [r, g, b] = hexToRgb(color);
+  docEl.dataset.accent = accent.id;
   docEl.style.setProperty('--accent', color);
-  docEl.style.setProperty('--accent-2', (dark ? accent.toDark : accent.to) || color);
-  docEl.style.setProperty('--accent-tint', `rgba(${r}, ${g}, ${b}, ${dark ? 0.2 : 0.1})`);
-  // Helle Akzentfarbe (Graphit im Dunkelmodus) braucht dunkle Schrift
-  const light = (r * 299 + g * 587 + b * 114) / 1000 > 160;
-  docEl.style.setProperty('--on-accent', light ? '#000000' : '#ffffff');
+  // Schrift und Daten in Akzentfarbe: im Dunkeln die Farbe selbst, auf
+  // hellem Grund die kräftigere Variante
+  docEl.style.setProperty('--accent-ink', dark ? color : accent.ink);
+  docEl.style.setProperty('--graph', dark ? color : accent.graph);
+  // Helle Akzentfarben (Volt, Minze …) tragen dunkle Schrift
+  const light = (r * 299 + g * 587 + b * 114) / 1000 > 128;
+  docEl.style.setProperty('--on-accent', light ? '#10120a' : '#ffffff');
   // Statusleiste in der Farbe des Hintergrunds
-  const bg = getComputedStyle(docEl).getPropertyValue('--bg').trim() || (dark ? '#000000' : '#f2f2f7');
+  const bg = getComputedStyle(docEl).getPropertyValue('--bg').trim() || (dark ? '#0a0b0d' : '#efeee8');
   document.querySelectorAll('meta[name="theme-color"]').forEach((m, i) => {
     if (i === 0) { m.removeAttribute('media'); m.content = bg; } else m.remove();
   });
@@ -43,7 +46,7 @@ export function dimStatusBar(on) {
   const bg = css.getPropertyValue('--bg').trim();
   let color = bg;
   if (dimmed && /^#[0-9a-f]{6}$/i.test(bg)) {
-    const alpha = docEl.dataset.theme === 'dark' ? 0.55 : 0.28;
+    const alpha = docEl.dataset.theme === 'dark' ? 0.6 : 0.36;
     const [r, g, b] = hexToRgb(bg).map((v) => Math.round(v * (1 - alpha)));
     color = `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
   }

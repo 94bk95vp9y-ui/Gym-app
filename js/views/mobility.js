@@ -11,21 +11,20 @@ import {
 } from '../mobility/routines.js';
 import { thumb, fillThumbs } from '../mobility/figures.js';
 import { startRoutine, planExercise } from '../mobility/player.js';
-import { iconTile, TINT } from '../ui/components.js';
 
 // Karte für „Heute“: Antippen öffnet die Auswahl, Play startet die tägliche Routine
 export function mobilityTileHtml() {
   const daily = dailyRoutine();
   const last = lastSession();
   const done = doneToday();
+  const week = weekCount();
   return `
-    <div class="card mob-card" data-action="mobility-open" role="button" tabindex="0">
-      ${iconTile(Icon.stretch, TINT.teal, 'lg')}
-      <div class="row-main">
-        <span class="row-title strong">Mobility</span>
-        <span class="row-sub">${done ? 'Heute erledigt' : `Tägliche Routine · ${mins(routineTotal(daily))}`}${last && !done ? ` · zuletzt ${relativeDay(last.startedAt)}` : ''}</span>
-      </div>
-      ${done ? `<span class="tag success">${Icon.check}Heute</span>` : `<button class="play-btn sm" data-action="mobility-daily" aria-label="Tägliche Routine starten">${Icon.play}</button>`}
+    <div class="tile mob-card" data-action="mobility-open" role="button" tabindex="0">
+      <span class="tile-label">Mobility</span>
+      ${done ? '' : `<button class="play-btn sm" data-action="mobility-daily" aria-label="Tägliche Routine starten">${Icon.play}</button>`}
+      <div class="bw-value">${done ? Icon.check.replace('<svg', '<svg style="width:30px;height:30px;color:var(--success)"') : `${Math.max(1, Math.round(routineTotal(daily) / 60))}<small>Min</small>`}</div>
+      <div class="tile-sub">${done ? 'Heute erledigt' : 'Tägliche Routine'}</div>
+      <div class="tile-foot tile-delta">${week ? `${week} ${week === 1 ? 'Tag' : 'Tage'} diese Woche` : last ? `zuletzt ${relativeDay(last.startedAt)}` : 'Noch nie gemacht'}</div>
     </div>`;
 }
 
@@ -45,14 +44,15 @@ function routineRow(r) {
     </div>`;
 }
 
-function openMobility() {
+// Die Auswahl der Routinen – im Blatt (von „Heute“) und als Bereich im Tab
+// „Training“
+export function mobilityListHtml() {
   const daily = dailyRoutine();
   const deep = deepRoutines();
   const week = weekCount();
-  const sheet = openSheet({
-    title: 'Mobility',
-    body: `
-      <div class="section-label">Mobility-Plan Unterkörper</div>
+  return `
+    <div class="mob-list">
+      <div class="section-label" style="margin-top:6px">Mobility-Plan Unterkörper</div>
       <div class="list">${lowerRoutines().map(routineRow).join('')}</div>
       <p class="section-foot">Jeden Tag derselbe Ablauf: Aufwärmen, aktive Kontrolle, Kraft in Dehnposition, Dehnen. Nerv-Gleiten und Kicks schaltest du in der Vorschau zu.</p>
       <div class="section-label">Tägliche Kick-Routine</div>
@@ -67,16 +67,29 @@ function openMobility() {
       <div class="section-label">Tiefe Einheiten für die Beine</div>
       <div class="list">${deep.map(routineRow).join('')}</div>
       <p class="section-foot">Etwa 30 Minuten mit Anspannen-Loslassen und langem Halten – ein- bis zweimal pro Woche statt der täglichen Routine.</p>
-      <p class="section-foot" style="margin-top:18px">Diese Woche an ${week} ${week === 1 ? 'Tag' : 'Tagen'}. Dauer der täglichen Routine in den Einstellungen.</p>`,
-    onMount: (s) => {
-      fillThumbs(s.body);
-      s.body.addEventListener('click', (e) => {
-        const start = e.target.closest('[data-mob-start]');
-        if (start) { s.close(); play(start.dataset.mobStart); return; }
-        const prev = e.target.closest('[data-mob-preview]');
-        if (prev) openPreview(prev.dataset.mobPreview);
-      });
-    },
+      <p class="section-foot" style="margin-top:18px">Diese Woche an ${week} ${week === 1 ? 'Tag' : 'Tagen'}. Dauer der täglichen Routine in den Einstellungen.</p>
+    </div>`;
+}
+
+// Vorschaubilder füllen und Tipps verdrahten (einmal je Container)
+export function mountMobilityList(container, { onStart = null } = {}) {
+  if (!container) return;
+  fillThumbs(container);
+  if (container.dataset.mobBound) return;
+  container.dataset.mobBound = '1';
+  container.addEventListener('click', (e) => {
+    const start = e.target.closest('[data-mob-start]');
+    if (start) { onStart?.(); play(start.dataset.mobStart); return; }
+    const prev = e.target.closest('[data-mob-preview]');
+    if (prev) openPreview(prev.dataset.mobPreview);
+  });
+}
+
+function openMobility() {
+  const sheet = openSheet({
+    title: 'Mobility',
+    body: mobilityListHtml(),
+    onMount: (s) => mountMobilityList(s.body, { onStart: () => s.close() }),
   });
   return sheet;
 }

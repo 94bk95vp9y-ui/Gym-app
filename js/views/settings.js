@@ -58,6 +58,12 @@ export async function exportBackup() {
   toast('Sicherung heruntergeladen');
 }
 
+// Schriftfarbe auf einer Akzentfläche: dunkel auf hellen Farben
+function onColor(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return (((n >> 16) & 255) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000 > 128 ? '#10120a' : '#ffffff';
+}
+
 function seg(key, options, value, { wide = false } = {}) {
   const i = Math.max(0, options.findIndex((o) => o.value === value));
   return `
@@ -120,7 +126,7 @@ registerPage('settings', {
         ${stackedRow(Icon.moon, TINT.indigo, 'Erscheinungsbild', seg('theme', [{ value: 'light', label: 'Hell' }, { value: 'dark', label: 'Dunkel' }, { value: 'system', label: 'Wie iPhone' }], s.theme, { wide: true }))}
         ${stackedRow(Icon.palette, TINT.pink, 'Akzentfarbe', `<div class="swatches">${ACCENTS.map((a) => `
             <button class="swatch ${s.accent === a.id ? 'active' : ''}" data-action="set-accent" data-id="${a.id}" aria-label="${a.label}"
-              style="background:${dark ? a.dark : a.light};color:${dark ? a.dark : a.light}"><span style="color:${dark && a.id === 'graphite' ? '#000' : '#fff'}">${s.accent === a.id ? Icon.check : ''}</span></button>`).join('')}</div>`)}
+              style="background:${dark ? a.dark : a.light}"><span style="color:${onColor(dark ? a.dark : a.light)}">${s.accent === a.id ? Icon.check : ''}</span></button>`).join('')}</div>`)}
         ${toggleRow('solidBars', 'Transparenz reduzieren', 'Leisten und Menüs undurchsichtig statt Glas', s.solidBars, Icon.layers, TINT.gray)}
         ${toggleRow('haptics', 'Haptik', 'Kurzes Klopfen beim Abhaken und Tippen', s.haptics, Icon.haptic, TINT.purple)}
         ${toggleRow('sound', 'Töne', 'Beim Abhaken, bei Rekorden und am Ende der Pause', s.sound, Icon.voiceOn, TINT.red)}

@@ -1,9 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" fill="#141416"/>
-  <g transform="translate(88 88) scale(14)" fill="none" stroke="#ffffff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M7.5 12h9"/>
-    <rect x="4.5" y="7" width="3" height="10" rx="1" fill="#ffffff"/>
-    <rect x="16.5" y="7" width="3" height="10" rx="1" fill="#ffffff"/>
-    <path d="M2.5 10v4M21.5 10v4"/>
+  <defs>
+    <pattern id="k" width="22" height="22" patternUnits="userSpaceOnUse">
+      <path d="M0 0l22 22M22 0L0 22" stroke="#ffffff" stroke-opacity=".05" stroke-width="2"/>
+    </pattern>
+  </defs>
+  <rect width="512" height="512" fill="#0a0b0d"/>
+  <rect width="512" height="512" fill="url(#k)"/>
+  <g fill="#d4ff3a">
+    <rect x="150" y="238" width="212" height="36" rx="10"/>
+    <rect x="112" y="150" width="62" height="212" rx="20"/>
+    <rect x="338" y="150" width="62" height="212" rx="20"/>
+    <rect x="70" y="196" width="34" height="120" rx="14"/>
+    <rect x="408" y="196" width="34" height="120" rx="14"/>
   </g>
 </svg>

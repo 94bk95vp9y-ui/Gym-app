@@ -1,0 +1,377 @@
+/* ==========================================================================
+   Grundlagen und Gerüst: Bühne, Seiten, Kopf, schwebende Leisten
+   ========================================================================== */
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--bg);
+}
+
+body {
+  font-family: var(--font);
+  font-size: 17px;
+  line-height: 1.35;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+}
+
+button, input, select, textarea { font: inherit; color: inherit; }
+button { background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; }
+button:disabled { opacity: 0.4; cursor: default; }
+button, .tabbar, .topbar, .row, .set-headrow, .seg, .tile, .plan-card, .hero, .keypad, .menu, .week { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+a { color: var(--accent-ink); text-decoration: none; }
+svg { display: block; }
+h1, h2, h3, h4, p { margin: 0; }
+.num { font-variant-numeric: tabular-nums; }
+[hidden] { display: none !important; }
+.muted { color: var(--text-2); }
+.faint { color: var(--text-3); }
+.small { font-size: 13px; }
+
+/* Schmale Auszeichnungsschrift: Titel, Zahlen, Etiketten */
+.d, .large-title, .detail-title, .section-head h2, .hero-title, .hero-time, .plan-card-title, .ex-name,
+.finish-head h3, .p-name, .empty-state strong, .card-title, .sheet-title, .nav-title, .w-title strong, .tile-title {
+  font-family: var(--font-d);
+  font-stretch: 74%;
+  font-weight: 800;
+  letter-spacing: -0.005em;
+}
+/* Zahlen: etwas breiter, immer gleich breite Ziffern */
+.n, .tile-value, .stat b, .hero-stats b, .sum-stats b, .ch-value, .lift-value, .load-value, .rep-rec b,
+.set-in, .set-field, .set-num, .kp-key, .rest-label b, .p-time, .date-badge b, .ring-label, .stepper > span,
+.num-badge, .ex-state, .cal-day, .bar-row b, .rest-btn, .wk-count, .gp-set-val, .plate, .sf-badge, .gain-float,
+.goal-title b, .gp-title b, .goal-line b, .row-value, .ft-time, .bw-value, .ms-val {
+  font-family: var(--font-d);
+  font-stretch: 80%;
+  font-variant-numeric: tabular-nums;
+}
+/* Kleine Etiketten in Versalien */
+.cap, .page-kicker, .section-label, .hero-label, .field-label, .tile-label, .set-headrow, .group-head,
+.supp-slot-head, .plate-cap, .rest-label > span, .p-phase, .wk-cap {
+  font-family: var(--font-d);
+  font-stretch: 88%;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* Glas: halbtransparent, unscharfer Hintergrund, feine Lichtkante oben */
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: inset 0 0.5px 0 var(--glass-edge), 0 0 0 0.5px var(--glass-line), var(--glass-shadow);
+}
+
+/* Unsichtbarer Schalter für die Haptik (siehe haptics.js) */
+/* isolation: der Schalter bleibt in seinem Knopf und legt sich nie über Nachbarn */
+:where(button, .row):has(> .hap) { position: relative; isolation: isolate; }
+.hap {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  margin: 0;
+  border-radius: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.hap-switch { position: fixed; left: 0; top: 0; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
+html:not(.ios) .hap, html.no-haptics .hap { display: none; }
+
+/* ---------- Bühne und Seiten ---------- */
+#app-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  height: 100%;
+  height: 100dvh;
+}
+
+.stage { position: absolute; inset: 0; overflow: hidden; }
+.stage.animating { pointer-events: none; }
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  will-change: transform;
+}
+.screen.is-top { z-index: 2; box-shadow: -10px 0 30px rgba(0, 0, 0, 0.14); }
+.screen.is-under { z-index: 1; }
+.screen-dim { position: absolute; inset: 0; z-index: 30; background: var(--dim); opacity: 0; pointer-events: none; }
+
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  padding: calc(var(--safe-top) + 60px) var(--pad) calc(var(--chrome-h) + 28px);
+}
+.screen.is-root .content { padding-top: calc(var(--safe-top) + 14px); }
+.screen.has-footer .content { padding-bottom: calc(var(--chrome-h) + 100px); }
+
+/* Weicher Übergang oben, sobald Inhalt darunter liegt (Scroll-Kante) */
+.edge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  height: calc(var(--safe-top) + 64px);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s;
+  /* Nur ein Verlauf, kein Weichzeichner: der müsste bei jedem Scrollbild
+     neu gerechnet werden */
+  background: linear-gradient(to bottom, var(--bg) 0%, color-mix(in srgb, var(--bg) 94%, transparent) 45%, color-mix(in srgb, var(--bg) 65%, transparent) 72%, transparent 100%);
+}
+.screen.scrolled .edge { opacity: 1; }
+
+.topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  height: calc(var(--safe-top) + 56px);
+  padding: var(--safe-top) 12px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  pointer-events: none;
+}
+.topbar > * { pointer-events: auto; }
+.nav-left, .nav-right { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.nav-right { justify-content: flex-end; }
+.nav-title {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  height: 56px;
+  line-height: 56px;
+  font-size: 19px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: calc(100% - 2 * var(--side, 60px) - 40px);
+  text-align: center;
+  translate: -50% 0;
+  pointer-events: none !important;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.2s, transform 0.25s var(--ease);
+}
+.nav-title.between, .sheet-title.between { translate: none; max-width: none; text-align: center; }
+.screen.scrolled .nav-title { opacity: 1; transform: none; }
+/* Wurzelseiten: Leiste erst beim Scrollen (die Aktionen stehen neben dem großen Titel) */
+.screen.is-root .topbar .nav-right, .screen.is-root .topbar .nav-left { opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+.screen.is-root.scrolled .topbar .nav-right, .screen.is-root.scrolled .topbar .nav-left { opacity: 1; pointer-events: auto; }
+
+/* Runde Glasknöpfe in der Kopfleiste */
+.nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0 16px;
+  border-radius: 22px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: inset 0 0.5px 0 var(--glass-edge), 0 0 0 0.5px var(--glass-line), 0 4px 16px rgba(20, 20, 10, 0.08);
+  transition: transform 0.2s var(--spring-pop);
+}
+.nav-btn svg { width: 22px; height: 22px; }
+.nav-btn.icon-only { padding: 0; width: 44px; }
+.nav-btn:active { transform: scale(0.92); }
+.nav-btn.accent, .nav-btn.strong { color: var(--accent-ink); }
+.nav-back svg { width: 24px; height: 24px; margin-left: -2px; }
+
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 4px 18px;
+}
+.page-head-text { min-width: 0; }
+.page-kicker { color: var(--text-2); margin-bottom: 3px; display: flex; align-items: center; gap: 8px; }
+.page-kicker::before { content: ""; width: 14px; height: 3px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--text) 18%, transparent); }
+.large-title { font-size: 50px; font-stretch: 66%; font-weight: 850; letter-spacing: -0.012em; line-height: 0.96; text-transform: uppercase; }
+.page-head-actions { display: flex; gap: 10px; padding-bottom: 3px; }
+.page-head-actions .nav-btn { width: 44px; height: 44px; min-width: 44px; padding: 0; border-radius: 50%; background: var(--card); box-shadow: var(--shadow-card); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.page-head-actions .nav-btn svg { width: 21px; height: 21px; }
+
+.detail-head { padding: 4px 4px 20px; }
+.detail-title { font-size: 40px; font-stretch: 68%; font-weight: 850; letter-spacing: -0.01em; line-height: 1; text-wrap: balance; }
+.detail-meta { font-size: 15px; color: var(--text-2); margin-top: 8px; line-height: 1.4; }
+.detail-head .chips { margin-top: 12px; }
+.detail-cta { margin-top: 18px; }
+
+/* Feste Aktion unten, über der Tableiste */
+.screen-footer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--chrome-h) - 4px);
+  z-index: 6;
+  padding: 18px var(--pad) 10px;
+  pointer-events: none;
+}
+.screen-footer > * { pointer-events: auto; }
+
+/* ---------- Schwebende Leisten unten ---------- */
+.bottom-chrome {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 14px calc(max(var(--safe-bottom) - 12px, 10px));
+  pointer-events: none;
+}
+.bottom-chrome > * { pointer-events: auto; }
+/* Inhalt läuft unter der Leiste weich aus */
+.bottom-chrome::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(100% + 26px);
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(to top, var(--bg) 0%, color-mix(in srgb, var(--bg) 82%, transparent) 46%, transparent 100%);
+}
+
+.tabbar {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  height: 66px;
+  padding: 5px;
+  border-radius: 33px;
+  background: var(--dock);
+  box-shadow: inset 0 0 0 1px var(--dock-line), 0 14px 34px -10px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.18);
+  transition: transform 0.45s var(--spring), opacity 0.3s;
+}
+.tab-pill {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 5px;
+  width: calc((100% - 10px) / 4);
+  border-radius: 28px;
+  background: var(--accent);
+  transform: translateX(calc(100% * var(--tab-i, 0)));
+  transition: transform 0.5s var(--spring-pop);
+}
+.tab {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--dock-text-2);
+  font-family: var(--font-d);
+  font-stretch: 78%;
+  font-size: 10.5px;
+  font-weight: 750;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+  text-align: center;
+  border-radius: 28px;
+  transition: color 0.25s;
+}
+.tab-icon { position: relative; display: grid; place-items: center; transition: transform 0.25s var(--spring-pop); }
+.tab-icon svg { width: 24px; height: 24px; }
+.tab .ic-fill { display: none; }
+.tab.active { color: var(--on-accent); }
+.tab.active .ic-line { display: none; }
+.tab.active .ic-fill { display: block; }
+.tab:active .tab-icon { transform: scale(0.86); }
+
+/* Laufendes Training: Kapsel über der Tableiste */
+.live-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 60px;
+  padding: 0 7px 0 18px;
+  border-radius: 30px;
+  text-align: left;
+  color: var(--dock-text);
+  background: var(--dock);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 70%, transparent), 0 14px 34px -10px rgba(0, 0, 0, 0.45);
+}
+.live-bar.enter { animation: live-in 0.5s var(--spring) both; }
+@keyframes live-in { from { transform: translateY(16px) scale(0.96); opacity: 0; } }
+.live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex: none; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); animation: pulse 1.8s ease-in-out infinite; }
+.live-text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.live-text strong { font-family: var(--font-d); font-stretch: 76%; font-size: 17px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.live-text span { font-size: 13px; color: var(--dock-text-2); font-variant-numeric: tabular-nums; }
+.live-go { flex: none; display: inline-flex; align-items: center; height: 46px; padding: 0 18px; border-radius: 23px; font-size: 15px; font-weight: 700; color: var(--on-accent); background: var(--accent); }
+@keyframes pulse { 50% { opacity: 0.4; } }
+
+/* Seiten bauen sich beim Tabwechsel kurz von unten auf */
+.screen.fresh .content > * { animation: rise 0.46s var(--spring) both; }
+.screen.fresh .content > :nth-child(2) { animation-delay: 0.035s; }
+.screen.fresh .content > :nth-child(3) { animation-delay: 0.07s; }
+.screen.fresh .content > :nth-child(4) { animation-delay: 0.105s; }
+.screen.fresh .content > :nth-child(n+5) { animation-delay: 0.14s; }
+@keyframes rise { from { opacity: 0; transform: translateY(12px); } }
+
+.pop-in { animation: pop-in 0.45s var(--spring-pop) both; }
+@keyframes pop-in { from { opacity: 0; transform: translateY(8px) scale(0.97); } }
+/* Rollende Ziffern (Timer) */
+.roll-ch { display: inline-block; white-space: pre; }
+.roll-ch.roll { animation: roll-in 0.38s var(--spring) both; }
+@keyframes roll-in { from { transform: translateY(42%); opacity: 0; } }
+
+/* ---------- Barrierefreiheit, große Bildschirme ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+:root.solid-bars .glass, :root.solid-bars .nav-btn, :root.solid-bars .sheet, :root.solid-bars .menu,
+:root.solid-bars .keypad, :root.solid-bars .as-group, :root.solid-bars .dialog, :root.solid-bars .toast {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@media (min-width: 640px) {
+  .content, .w-content { padding-left: max(var(--pad), calc((100% - 600px) / 2)); padding-right: max(var(--pad), calc((100% - 600px) / 2)); }
+  .bottom-chrome { left: 50%; right: auto; width: 460px; transform: translateX(-50%); }
+  .bottom-chrome::before { left: -50vw; right: -50vw; }
+  .sheet, .sheet.full { left: 50%; right: auto; width: 600px; transform: translate(-50%, calc(100% + 40px)); }
+  .sheet.open, .sheet.full.open { transform: translateX(-50%); }
+  .sheet.closing { transform: translate(-50%, calc(100% + 40px)); }
+  .sheet.behind { transform: translate(-50%, -8px) scale(0.94); }
+  .keypad { left: 50%; right: auto; width: 460px; transform: translate(-50%, 105%); }
+  .keypad.open { transform: translateX(-50%); }
+  .rest { left: 50%; right: auto; width: 460px; transform: translateX(-50%); }
+}

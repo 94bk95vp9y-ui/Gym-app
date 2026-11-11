@@ -150,6 +150,7 @@ export function openWorkout({ instant = false, from = null } = {}) {
 
 export function minimizeWorkout() {
   closeKeypad();
+  closeFocus();
   const el = qs('.workout', root);
   W.open = false;
   document.documentElement.classList.remove('workout-open');
@@ -339,10 +340,10 @@ function paint() {
     <div class="workout ${wasOpen ? 'open instant' : ''}">
       <header class="w-bar">
         <div class="nav-left"><button class="w-min" data-action="w-minimize" aria-label="Minimieren">${Icon.chevronDown}</button></div>
-        <div class="w-title"><strong>${esc(w.routineName || 'Freies Training')}</strong><span><span id="w-timer">${elapsedLabel(w.startedAt)}</span> · <span id="w-count">${p.done}/${p.total}</span> Sätze</span></div>
+        <div class="w-title"><strong>${esc(w.routineName || 'Freies Training')}</strong><span><span id="w-timer">${elapsedLabel(w.startedAt)}</span><span><span id="w-count">${p.done}/${p.total}</span> Sätze</span></span></div>
         <div class="nav-right"><button class="w-finish" data-action="w-finish">Beenden</button></div>
-        <div class="w-progress"><i id="w-progress" style="transform:scaleX(${p.ratio})"></i></div>
       </header>
+      <div class="w-segs" id="w-segs" role="progressbar" aria-valuemin="0" aria-valuemax="${p.total}" aria-valuenow="${p.done}" aria-label="Fortschritt">${segsHtml(w, ctx.current)}</div>
       <main class="content w-content" id="w-content">
         ${w.entries.length ? w.entries.map((e, ei) => exerciseCardHtml(w, e, ei, ctx)).join('') : emptyState({
     icon: Icon.dumbbell,
@@ -372,10 +373,31 @@ function paint() {
   W.goalSheet?.refresh();
 }
 
+// Fortschritt oben: ein Abschnitt je Übung, so breit wie ihre Satzzahl
+function segsHtml(w, current) {
+  return w.entries.map((e, ei) => {
+    const n = Math.max(1, e.sets.length);
+    const done = e.sets.filter((x) => x.done).length;
+    return `<span class="w-seg ${ei === current ? 'cur' : ''}" style="--n:${n};--f:${(done / n).toFixed(3)}"><i></i></span>`;
+  }).join('');
+}
+
 function updateProgress(w) {
   const p = workoutProgress(w);
-  const bar = qs('#w-progress', root);
-  if (bar) bar.style.transform = `scaleX(${p.ratio})`;
+  const bar = qs('#w-segs', root);
+  if (bar) {
+    const current = currentIndex(w);
+    const segs = qsa('.w-seg', bar);
+    if (segs.length !== w.entries.length) bar.innerHTML = segsHtml(w, current);
+    else {
+      w.entries.forEach((e, ei) => {
+        const n = Math.max(1, e.sets.length);
+        segs[ei].style.setProperty('--f', (e.sets.filter((x) => x.done).length / n).toFixed(3));
+        segs[ei].classList.toggle('cur', ei === current);
+      });
+    }
+    bar.setAttribute('aria-valuenow', String(p.done));
+  }
   const count = qs('#w-count', root);
   if (count) count.textContent = `${p.done}/${p.total}`;
 }
@@ -558,6 +580,7 @@ function syncRest() {
   const rest = Store.getRest();
   const bar = qs('.rest', slot);
   if (!rest) {
+    syncFocus(null, 0);
     if (bar && !bar.classList.contains('leaving')) {
       bar.classList.add('leaving');
       setTimeout(() => bar.remove(), 240);
@@ -578,7 +601,7 @@ function syncRest() {
     slot.innerHTML = `
       <div class="rest glass">
         <div class="rest-main">
-          <div class="rest-label"><span>Pause</span><b class="num" id="rest-time">${formatClock(remaining)}</b></div>
+          <button class="rest-label" data-action="rest-focus" aria-label="Pause groß anzeigen">${HAP}<span>Pause ${Icon.expand}</span><b class="num" id="rest-time">${formatClock(remaining)}</b></button>
           <button class="rest-btn" data-action="rest-adjust" data-delta="-15" aria-label="15 Sekunden weniger">${HAP}−15</button>
           <button class="rest-btn" data-action="rest-adjust" data-delta="15" aria-label="15 Sekunden mehr">${HAP}+15</button>
           <button class="rest-btn primary" data-action="rest-skip">${HAP}Überspringen</button>
@@ -592,6 +615,81 @@ function syncRest() {
   qs('.rest', slot)?.classList.toggle('ending', remaining <= 5);
   const fill = qs('#rest-fill', slot);
   if (fill) fill.style.setProperty('--f', String(Math.max(0, Math.min(1, remaining / rest.duration))));
+  syncFocus(rest, remaining);
+}
+
+// ---------- Fokus-Timer ----------
+// Die Pause bildschirmfüllend: für das Handy auf der Bank oder am Boden.
+// Öffnet sich durch Tippen auf die Pausenzeit und schließt sich von selbst,
+// kurz nachdem die Pause vorbei ist.
+const FOCUS_R = 46;
+const FOCUS_C = 2 * Math.PI * FOCUS_R;
+
+function focusEl() { return document.querySelector('.focus-timer'); }
+
+function openFocus() {
+  const rest = Store.getRest();
+  if (!rest || focusEl()) return;
+  if (isKeypadOpen()) closeKeypad();
+  const w = Store.getActive();
+  const next = w ? nextSetInfo(w) : null;
+  const el = document.createElement('div');
+  el.className = 'focus-timer';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', 'Pause');
+  el.innerHTML = `
+    <div class="ft-top">
+      <button class="ft-close" data-action="focus-close" aria-label="Schließen">${Icon.chevronDown}</button>
+      <span class="ft-cap">Pause</span>
+      <span style="width:46px"></span>
+    </div>
+    <div class="ft-stage">
+      <div class="ft-ring">
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <circle class="ft-track" cx="50" cy="50" r="${FOCUS_R}" vector-effect="non-scaling-stroke"/>
+          <circle class="ft-fill" cx="50" cy="50" r="${FOCUS_R}" stroke-dasharray="${FOCUS_C.toFixed(2)}" stroke-dashoffset="0" vector-effect="non-scaling-stroke"/>
+        </svg>
+        <b class="ft-time num" id="ft-time"></b>
+      </div>
+    </div>
+    <div class="ft-next">${next ? `Als Nächstes · Satz ${next.si + 1}<strong>${esc(next.name)}${next.set.reps > 0 ? ` <em>${esc(formatSet(next.set, unit()))}</em>` : ''}</strong>` : ''}</div>
+    <div class="ft-actions">
+      <button data-action="rest-adjust" data-delta="-15" aria-label="15 Sekunden weniger">${HAP}−15</button>
+      <button class="primary" data-action="rest-skip">${HAP}Weiter</button>
+      <button data-action="rest-adjust" data-delta="15" aria-label="15 Sekunden mehr">${HAP}+15</button>
+    </div>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('open')));
+  syncFocus(rest, Math.max(0, (rest.endsAt - Date.now()) / 1000));
+}
+
+function closeFocus(delay = 0) {
+  const el = focusEl();
+  if (!el || el.dataset.closing) return;
+  el.dataset.closing = '1';
+  setTimeout(() => {
+    el.classList.remove('open');
+    setTimeout(() => el.remove(), prefersReducedMotion() ? 0 : 300);
+  }, delay);
+}
+
+function syncFocus(rest, remaining) {
+  const el = focusEl();
+  if (!el || el.dataset.closing) return;
+  if (!rest) {
+    // Pause vorbei: kurz „Los“ zeigen, dann zurück zum Training
+    const time = qs('#ft-time', el);
+    if (time) { time.textContent = 'Los'; delete time.dataset.roll; }
+    el.classList.remove('ending');
+    el.classList.add('over');
+    qs('.ft-fill', el)?.setAttribute('stroke-dashoffset', FOCUS_C.toFixed(2));
+    closeFocus(900);
+    return;
+  }
+  rollText(qs('#ft-time', el), formatClock(Math.ceil(remaining)));
+  el.classList.toggle('ending', remaining <= 5);
+  const f = Math.max(0, Math.min(1, remaining / rest.duration));
+  qs('.ft-fill', el)?.setAttribute('stroke-dashoffset', (FOCUS_C * (1 - f)).toFixed(2));
 }
 
 // ---------- Bildschirm anlassen ----------
@@ -1044,7 +1142,7 @@ function openSummary(id) {
         const top = bestSet(e.sets);
         return { name: entryName(e, names), detail: top ? formatSet(top, entryUnit(e, u)) : '', pr: e.sets.some((x) => x.done && x.pr) };
       }),
-      colors: [from, (dark ? accent.toDark : accent.to) || from],
+      colors: [from, from],
       ink: getComputedStyle(document.documentElement).getPropertyValue('--on-accent').trim() || '#ffffff',
       footer: prs.length ? `Gym · ${prs.length === 1 ? '1 neuer Rekord' : `${prs.length} neue Rekorde`}` : 'Gym',
     }, `training-${dayKey(new Date(w.startedAt))}.png`);
@@ -1060,9 +1158,9 @@ function openSummary(id) {
     left: { label: 'Teilen', action: (s) => share(s.el.querySelector('[data-sheet-btn="left"]')) },
     right: { label: 'Fertig', style: 'primary' },
     body: `
-      <div class="finish-head">
-        <div class="finish-badge ${prs.length ? 'gold' : ''}">${prs.length ? Icon.trophy : Icon.check}</div>
-        <h3>${prs.length ? (prs.length === 1 ? 'Neuer Rekord' : `${prs.length} neue Rekorde`) : 'Training gespeichert'}</h3>
+      <div class="finish-head ${prs.length ? 'gold' : ''}">
+        <div class="finish-badge">${prs.length ? Icon.trophy : Icon.check}</div>
+        <h3>${prs.length ? (prs.length === 1 ? 'Neuer Rekord' : `${prs.length} neue Rekorde`) : 'Stark. Gespeichert.'}</h3>
         <p>${esc(w.routineName || 'Freies Training')} · ${esc(new Date(w.startedAt).toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
       </div>
       <div class="sum-stats">
@@ -1666,8 +1764,11 @@ registerActions({
     Store.setRest({ endsAt, duration });
     syncRest();
   },
+  'rest-focus': () => { haptic(); openFocus(); },
+  'focus-close': () => closeFocus(),
   'rest-skip': () => {
     haptic();
+    if (focusEl()) { focusEl().dataset.skipped = '1'; closeFocus(); }
     const bar = qs('.rest', root);
     if (bar) bar.dataset.skipped = '1';
     Store.setRest(null);

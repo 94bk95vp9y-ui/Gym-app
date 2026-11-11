@@ -21,6 +21,8 @@ import { registerPage, push, pop, render } from '../ui/router.js';
 import { confirmAction, promptDialog, registerContextMenu } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
 import { sparkline } from '../ui/chart.js';
+import { milestones } from '../core/milestones.js';
+import { bodyStatsHtml } from './body.js';
 import {
   chev, chips, dateBadge, emptyState, deltaPill,
 } from '../ui/components.js';
@@ -308,6 +310,45 @@ function lifetimeHtml(u) {
     </div>`;
 }
 
+// Meilensteine als Hantelscheiben: die geschaffte Marke gefüllt, daneben der
+// Weg zur nächsten als Ring
+function milestonesHtml() {
+  const list = milestones();
+  if (!list.length) return '';
+  const R = 43;
+  const C = 2 * Math.PI * R;
+  const num = (v) => (v >= 1000 ? formatVolume(v) : formatNumber(Math.floor(v * 10) / 10));
+  const plates = list.flatMap((m) => {
+    const out = [];
+    if (m.reached !== null) {
+      out.push(`
+        <div class="ms done">
+          <span class="ms-plate"><span class="ms-val">${num(m.reached)}${m.unit ? `<small>${esc(m.unit)}</small>` : ''}</span></span>
+          <span class="ms-name">${esc(m.label)}<small>geschafft</small></span>
+        </div>`);
+    }
+    if (m.next !== null) {
+      out.push(`
+        <div class="ms">
+          <span class="ms-plate">
+            <svg viewBox="0 0 92 92" aria-hidden="true"><circle class="ms-track" cx="46" cy="46" r="${R}"/><circle class="ms-fill" cx="46" cy="46" r="${R}" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - m.progress)).toFixed(1)}"/></svg>
+            <span class="ms-val">${num(m.next)}${m.unit ? `<small>${esc(m.unit)}</small>` : ''}</span>
+          </span>
+          <span class="ms-name">${esc(m.label)}<small>${num(m.value)} von ${num(m.next)}</small></span>
+        </div>`);
+    }
+    return out.map((html) => ({ html, done: html.includes('ms done'), progress: m.progress }));
+  });
+  // Erst, was als Nächstes fällt (am weitesten), dann das Geschaffte
+  const open = plates.filter((x) => !x.done).sort((a, b) => b.progress - a.progress);
+  const done = plates.filter((x) => x.done);
+  return `
+    <div class="section">
+      <div class="section-head"><h2>Meilensteine</h2><span class="meta">${done.length} geschafft</span></div>
+      <div class="ms-row">${[...open, ...done].map((x) => x.html).join('')}</div>
+    </div>`;
+}
+
 function statsHtml() {
   const workouts = Store.getWorkouts();
   if (!workouts.length) {
@@ -323,7 +364,7 @@ function statsHtml() {
   return `
     <div class="section">
       <div class="section-head"><h2>Diese Woche</h2>${streak > 1 ? `<span class="meta streak-meta">${Icon.flame}${streak} Wochen im Ziel</span>` : ''}</div>
-      <div class="tiles">
+      <div class="tiles week-tiles">
         <div class="tile"><span class="tile-label">Trainings</span><div class="tile-value">${info.count}<small>/${settings.weeklyGoal}</small></div>${deltaLine(cur.count, prev.count)}</div>
         <div class="tile"><span class="tile-label">Sätze</span><div class="tile-value">${info.sets}</div>${deltaLine(cur.sets, prev.sets)}</div>
         <div class="tile"><span class="tile-label">Volumen</span><div class="tile-value">${volumeShort(info.volume, u)}</div>${deltaLine(cur.volume, prev.volume, { pct: true })}</div>
@@ -361,6 +402,8 @@ function statsHtml() {
             <span class="row-value num">${esc(formatSet(r.set, u))}</span>${chev}
           </button>`).join('')}</div>
       </div>` : ''}
+    ${bodyStatsHtml()}
+    ${milestonesHtml()}
     ${lifetimeHtml(u)}`;
 }
 

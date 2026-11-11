@@ -21,6 +21,7 @@ const KEYS = {
   supplementLog: 'gym.supplementLog',
   mobilityLog: 'gym.mobilityLog',
   mobilityProfile: 'gym.mobilityProfile',
+  bodyLog: 'gym.bodyLog',
 };
 
 // Geparste Werte zwischenspeichern: ein Neuaufbau der Ansicht liest dieselben
@@ -77,20 +78,23 @@ export function uid() {
 const CATALOG_VERSION = 1;
 
 export const ACCENTS = [
-  // light/dark: Akzentfarbe je Erscheinungsbild; to/toDark: zweite Farbe für
-  // den Verlauf der Hauptkarte
-  { id: 'blue', label: 'Blau', light: '#0088FF', dark: '#0091FF', to: '#5E5CE6', toDark: '#5E5CE6' },
-  { id: 'indigo', label: 'Indigo', light: '#6155F5', dark: '#6D7CFF', to: '#A845D8', toDark: '#A45BE8' },
-  { id: 'green', label: 'Grün', light: '#1F9D55', dark: '#30D158', to: '#0B8E94', toDark: '#1FBFA8' },
-  { id: 'orange', label: 'Orange', light: '#E8590C', dark: '#FF9F0A', to: '#D6336C', toDark: '#FF7A45' },
-  { id: 'rose', label: 'Rosé', light: '#DB2D6A', dark: '#FF4D7D', to: '#9B3FD4', toDark: '#C45BE8' },
-  { id: 'graphite', label: 'Graphit', light: '#1C1C1E', dark: '#F2F2F7', to: '#4A4A52', toDark: '#C9C9D2' },
+  // light/dark: Füllfarbe je Stimmung; ink: Schrift in dieser Farbe auf
+  // hellem Grund; graph: Farbe für Daten (Säulen, Linien) auf hellem Grund –
+  // Volt ist dafür zu hell, dort zeichnet die Tinte. Im Dunkeln leuchtet
+  // überall die Füllfarbe selbst.
+  { id: 'volt', label: 'Volt', light: '#C8F031', dark: '#D4FF3A', ink: '#3D5000', graph: '#151512' },
+  { id: 'orange', label: 'Glut', light: '#FF5A1F', dark: '#FF6B2C', ink: '#CF3F00', graph: '#FF5A1F' },
+  { id: 'blue', label: 'Kobalt', light: '#2A62FF', dark: '#5B8CFF', ink: '#1F4FE0', graph: '#2A62FF' },
+  { id: 'green', label: 'Minze', light: '#12C98A', dark: '#34E3A6', ink: '#00805A', graph: '#0FB47C' },
+  { id: 'rose', label: 'Magenta', light: '#F0287C', dark: '#FF5C9C', ink: '#CF1264', graph: '#F0287C' },
+  { id: 'indigo', label: 'Violett', light: '#7A4DFF', dark: '#A58BFF', ink: '#6236E8', graph: '#7A4DFF' },
+  { id: 'graphite', label: 'Mono', light: '#151512', dark: '#F4F4F0', ink: '#151512', graph: '#151512' },
 ];
 
 export const REST_OPTIONS = [0, 45, 60, 90, 120, 150, 180, 240];
 export const DEFAULT_PLAN_SETS = 3;
 
-const SETTINGS_VERSION = 2;
+const SETTINGS_VERSION = 3;
 const DEFAULT_SETTINGS = {
   v: SETTINGS_VERSION,
   unit: 'kg',
@@ -98,8 +102,8 @@ const DEFAULT_SETTINGS = {
   restSeconds: 90,
   progressiveOverload: true,
   keepAwake: true,
-  theme: 'light', // 'light' | 'dark' | 'system'
-  accent: 'blue',
+  theme: 'system', // 'light' | 'dark' | 'system'
+  accent: 'volt',
   sound: true,
   soundVolume: 0.6,
   haptics: true,
@@ -157,6 +161,13 @@ function mergeCatalog() {
 function migrateSettings() {
   const old = read(KEYS.settings, null);
   if (!old || old.v >= SETTINGS_VERSION) return;
+  // Version 2 → 3: nur die Optik ist neu. Alle Einstellungen bleiben, die
+  // Akzentfarbe startet mit dem neuen Standard; wer „Hell“ hatte (der alte
+  // Standard), folgt jetzt dem iPhone – „Dunkel“ bleibt dunkel.
+  if (old.v === 2) {
+    write(KEYS.settings, { ...old, v: SETTINGS_VERSION, accent: DEFAULT_SETTINGS.accent, theme: old.theme === 'dark' ? 'dark' : 'system' });
+    return;
+  }
   const profile = read(KEYS.mobilityProfile, null);
   const next = { ...DEFAULT_SETTINGS };
   ['unit', 'weeklyGoal', 'restSeconds', 'keepAwake', 'sound', 'soundVolume', 'mobilityVoice',
@@ -192,9 +203,9 @@ let sortedWorkouts = { source: null, sorted: [] };
 // alles überschreibt. Gibt eine Fehlermeldung zurück oder null.
 export function validateBackup(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return 'Die Datei enthält keine Gym-Sicherung.';
-  const known = ['exercises', 'routines', 'workouts', 'settings', 'supplements', 'supplementLog', 'mobilityLog'];
+  const known = ['exercises', 'routines', 'workouts', 'settings', 'supplements', 'supplementLog', 'mobilityLog', 'bodyLog'];
   if (!known.some((k) => k in data)) return 'Die Datei enthält keine Gym-Sicherung.';
-  const lists = ['exercises', 'routines', 'workouts', 'supplements', 'mobilityLog'];
+  const lists = ['exercises', 'routines', 'workouts', 'supplements', 'mobilityLog', 'bodyLog'];
   if (lists.some((k) => k in data && !Array.isArray(data[k]))) return 'Die Sicherung ist beschädigt.';
   if ((data.exercises || []).some((e) => !e || !e.id || typeof e.name !== 'string')) return 'Die Übungen in der Sicherung sind beschädigt.';
   if ((data.routines || []).some((r) => !r || !r.id || !Array.isArray(r.exerciseIds))) return 'Die Pläne in der Sicherung sind beschädigt.';
@@ -207,6 +218,7 @@ export function validateBackup(data) {
   }
   if ((data.supplements || []).some((x) => !x || !x.id || typeof x.name !== 'string' || typeof x.since !== 'string')) return 'Die Supplements in der Sicherung sind beschädigt.';
   if ('supplementLog' in data && data.supplementLog && Object.values(data.supplementLog).some((d) => !d || typeof d !== 'object')) return 'Die Supplement-Daten in der Sicherung sind beschädigt.';
+  if ((data.bodyLog || []).some((x) => !x || typeof x.day !== 'string' || !(x.weight > 0))) return 'Das Körpergewicht in der Sicherung ist beschädigt.';
   if ('settings' in data && (typeof data.settings !== 'object' || Array.isArray(data.settings))) return 'Die Einstellungen in der Sicherung sind beschädigt.';
   if ('supplementLog' in data && (typeof data.supplementLog !== 'object' || Array.isArray(data.supplementLog))) return 'Die Supplement-Daten in der Sicherung sind beschädigt.';
   return null;
@@ -371,6 +383,18 @@ export const Store = {
     write(KEYS.mobilityLog, [...Store.getMobilityLog(), session]);
   },
 
+  // ---------- Körpergewicht ----------
+  // Ein Wert je Tag ({ day: 'JJJJ-MM-TT', weight }), nach Tag sortiert.
+  getBodyLog() {
+    return read(KEYS.bodyLog, []);
+  },
+  setBodyWeight(day, weight) {
+    const list = Store.getBodyLog().filter((x) => x.day !== day);
+    if (weight > 0) list.push({ day, weight: Math.round(weight * 10) / 10 });
+    list.sort((a, b) => a.day.localeCompare(b.day));
+    write(KEYS.bodyLog, list);
+  },
+
   // ---------- Einstellungen ----------
   getSettings() {
     return { ...DEFAULT_SETTINGS, ...read(KEYS.settings, DEFAULT_SETTINGS) };
@@ -395,6 +419,7 @@ export const Store = {
     write(KEYS.workouts, read(KEYS.workouts, []).map(fix));
     const active = Store.getActive();
     if (active) write(KEYS.active, fix(active));
+    if (Store.getBodyLog().length) write(KEYS.bodyLog, Store.getBodyLog().map((x) => ({ ...x, weight: conv(x.weight) })));
     Store.resetIncrements();
   },
   // Eigene Gewichtssprünge passen nach dem Wechsel der Einheit nicht mehr
@@ -421,6 +446,7 @@ export const Store = {
       supplements: Store.getSupplements(),
       supplementLog: Store.getSupplementLog(),
       mobilityLog: Store.getMobilityLog(),
+      bodyLog: Store.getBodyLog(),
     };
   },
   importAll(data) {
@@ -431,6 +457,7 @@ export const Store = {
     if (data.supplements) write(KEYS.supplements, data.supplements);
     if (data.supplementLog) write(KEYS.supplementLog, data.supplementLog);
     if (Array.isArray(data.mobilityLog)) write(KEYS.mobilityLog, data.mobilityLog);
+    if (Array.isArray(data.bodyLog)) write(KEYS.bodyLog, data.bodyLog);
     // Das Backup ist maßgeblich: gelöschte Katalog-Übungen sollen durch den
     // Import nicht wieder auftauchen.
     write(KEYS.catalogVersion, CATALOG_VERSION);

@@ -13,8 +13,12 @@ danach auch offline.
   Planauswahl direkt am Knopf
 - Laufendes oder heute erledigtes Training
 - Supplements des Tages zum Abhaken, Hinweis bei knappem Vorrat
-- Wochenstreifen ganz oben: Ring zum Wochenziel, die sieben Tage und die
-  Serie der Wochen im Ziel
+- Woche ganz oben: Stand zum Wochenziel als große Zahl, die sieben Tage als
+  Felder, das Ziel als Scheiben auf der Stange und die Serie der Wochen
+- Hauptkarte als Block in der Akzentfarbe, mit den Zielmuskeln des Plans als
+  Figur
+- Körpergewicht: ein Wert je Tag, Kachel mit Verlauf, Blatt mit Diagramm,
+  7er-Schnitt und Veränderung über etwa vier Wochen
 - Hauptkarte zeigt, was heute im Plan ansteht: wo mehr Gewicht drin ist, wo
   ein Plateau hakt und ob die Zielmuskeln noch erholen
 - Erholung: Körperkarte (vorn/hinten) mit dem Zustand jeder Muskelgruppe –
@@ -24,6 +28,10 @@ danach auch offline.
 **Training**
 - Pläne anlegen und bearbeiten (Reihenfolge per Ziehen, Satzzahl pro Übung)
 - Pläne per KI erstellen: Prompt kopieren, Antwort der KI einfügen
+- Vorlagen: vier bewährte Aufteilungen (Push/Pull/Beine, Ober-/Unterkörper,
+  Ganzkörper A/B, Maschinen) mit einem Tipp übernehmen – vorhandene Pläne
+  werden nie überschrieben
+- Mobility hat neben der Kachel auf „Heute“ einen eigenen Bereich im Tab
 - Übungsbibliothek mit 138 Übungen nach Muskelgruppe, eigene Übungen
 - Übungsdetail: Bestleistung, geschätztes 1RM als Verlauf (mit dem Finger
   abfahren), Notiz zur Ausführung, eigene Satzpause
@@ -45,6 +53,9 @@ danach auch offline.
 - Spalte „Vorher“ – antippen übernimmt die Werte vom letzten Mal
 - Satz nach links wischen zum Löschen, mit „Rückgängig“
 - Pausentimer nach jedem Satz (Standard oder pro Übung), zeigt den nächsten Satz
+- Fokus-Timer: Tippen auf die Pausenzeit zeigt sie bildschirmfüllend – für
+  das Handy auf der Bank; schließt sich nach der Pause von selbst
+- Fortschritt oben als Abschnitte: einer je Übung, so breit wie ihre Satzzahl
 - Rekord-Erkennung, Hinweis bei anderer Vorbelastung
 - Scheibenrechner: bei Langhantel-Übungen (und allem, was „je Seite“
   eingetragen wird) zeigt das Zahlenfeld, welche Scheiben auf jede Seite
@@ -84,7 +95,9 @@ danach auch offline.
   Wochenverlauf über zwölf Wochen (Trainings, Volumen, Sätze oder Zeit –
   Säule antippen zeigt den Wert), Aktivität der letzten 20 Wochen als
   Kästchenraster, Kraftentwicklung, Sätze pro Muskel mit Körperkarte,
-  Rekorde, Gesamtzahlen
+  Rekorde, Körpergewicht, Gesamtzahlen
+- Meilensteine als Hantelscheiben: geschaffte Marken (Trainings, bewegte
+  Tonnen, Wochen im Ziel, Rekorde, Stunden) und der Weg zur nächsten
 - Sätze pro Muskel zählen „fraktionell“: Zielmuskel 1, mitarbeitende Muskeln
   ½ (z. B. Trizeps beim Bankdrücken)
 
@@ -109,21 +122,31 @@ danach auch offline.
 - kg/lb, Wochenziel, Satzpause, Steigerungs-Ziele, Zahlenfeld, Bildschirm
   anlassen
 - Gewicht der Langhantel und vorhandene Scheiben
-- Hell, Dunkel oder wie das iPhone, Akzentfarbe, Transparenz reduzieren,
+- Hell, Dunkel oder wie das iPhone (Standard), sieben Akzentfarben,
+  Transparenz reduzieren,
   Haptik, Töne (mit „Ton testen“ und optional auch bei Stumm-Schalter)
 - Sicherung erstellen/wiederherstellen (JSON), Erinnerung an die Sicherung
 
-## Bedienung wie in iOS
+## Gestaltung („Eisen“)
 
-- Schwebende Tableiste und Kopfknöpfe aus Glas, Inhalte auf ruhigen Flächen;
-  die Hauptkarte trägt einen Verlauf in der Akzentfarbe (sechs zur Wahl)
-- Seitenwechsel mit Parallaxe; vom linken Rand wischen geht zurück, die
-  vorige Seite ist dabei schon zu sehen
+- Zwei Stimmungen: **Nacht** (fast schwarz, die Akzentfarbe leuchtet wie
+  eine Anzeige) und **Kreide** (warmes Papier, Tinte für Text und Daten, die
+  Akzentfarbe als Textmarker)
+- Überschriften und Zahlen in Archivo (schmal, kräftig): lange deutsche
+  Übungsnamen passen in eine Zeile, Zahlen sind aus Armlänge lesbar.
+  Fließtext bleibt die Systemschrift
+- Tableiste, Zahlenfeld, Pause und Fokus-Timer sind in beiden Stimmungen
+  dunkel – die Bedienung unten sieht immer gleich aus
+- Wiederkehrende Motive aus dem Gym: Rändelung (das Kreuzmuster der
+  Hantelstange) als Textur, Scheiben als Zähler und Abzeichen
+- Akzentfarben: Volt (Standard), Glut, Kobalt, Minze, Magenta, Violett, Mono.
+  Helle Farben tragen dunkle Schrift; auf hellem Grund zeichnet bei Volt die
+  Tinte die Daten, weil Gelbgrün auf Papier zu wenig Kontrast hätte
+- Seitenwechsel mit Parallaxe; vom linken Rand wischen geht zurück
 - Menüs öffnen direkt am Knopf, langes Drücken öffnet Kontextmenüs
 - Haptisches Klopfen beim Abhaken und im Zahlenfeld (über einen
   unsichtbaren Schalter – Safari bietet Web-Apps keine Vibration an)
-- Zahlen in SF Pro Rounded, Federkurven nach Apples Vorbild,
-  „Bewegung reduzieren“ wird respektiert
+- „Bewegung reduzieren“ wird respektiert
 
 ## Hosting auf GitHub Pages
 
@@ -146,7 +169,12 @@ danach auch offline.
 
 ```
 index.html              App-Gerüst
-css/app.css             Design-System (hell/dunkel, Glas, Bewegung)
+css/tokens.css          Farben, Formen, Schrift, Bewegung (hell/dunkel)
+css/base.css            Gerüst: Seiten, Kopf, Tableiste
+css/components.css      Bausteine, Blätter, Menüs, Zahlenfeld
+css/views.css           Heute, Training, Verlauf, Supplements, Mobility
+css/workout.css         Training läuft, Pause, Fokus-Timer, Zusammenfassung
+fonts/                  Archivo (variabel, SIL Open Font License)
 js/main.js              Start, globale Ereignisse
 js/core/                Daten und Logik ohne Oberfläche
   store.js              localStorage, Migration, Sicherung
@@ -155,6 +183,8 @@ js/core/                Daten und Logik ohne Oberfläche
   muscles.js            Muskel-Anteile je Übung, Sätze pro Muskel, Erholung
   plates.js             Scheibenrechner, Aufwärmsätze
   insights.js           Wochenreihen, Aktivität, Gesamtzahlen, Bestwerte
+  milestones.js         Meilensteine über alle Trainings
+  templates.js          Plan-Vorlagen
   supplements.js        Tage, Serie, Vorrat, Erinnerungen
   plan-import.js        KI-Prompt und Parser
   catalog.js            Übungskatalog
@@ -174,6 +204,8 @@ service-worker.js       Offline-Cache
 (github.com/BoQsc/Godot-Male-Base-Mesh), laut Godot Asset Library unter
 CC0 (gemeinfrei). Das Repository selbst enthält keine Lizenzdatei.
 three.js und die Hilfsdateien in `js/vendor/` stehen unter der MIT-Lizenz.
+Die Schrift Archivo (Omnibus-Type) steht unter der SIL Open Font License 1.1
+(`fonts/Archivo-LICENSE.txt`).
 
 ## Annahmen hinter den Auswertungen
 
