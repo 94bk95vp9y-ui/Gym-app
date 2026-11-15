@@ -1,5 +1,6 @@
 // Trainingslogik ohne DOM: Vorschläge, Rekorde, Statistik, Plan-Rotation.
 import { Store, uid } from './store.js';
+import { isTrainingPaused, weekGoal } from './breaks.js';
 import { estimate1RM, bestSet, setScore } from './format.js';
 import {
   analyze, progressDelta, progressionOf, targetSets, loadOf,
@@ -340,6 +341,8 @@ export function startOfWeek(d = new Date()) {
 
 export function weekInfo(now = new Date()) {
   const monday = startOfWeek(now);
+  const goal = weekGoal(monday, Store.getSettings().weeklyGoal);
+  const pausedDays = Array.from({ length: 7 }, (_, i) => isTrainingPaused(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i)));
   const week = Store.getWorkouts().filter((w) => new Date(w.startedAt) >= monday);
   const days = Array(7).fill(false);
   week.forEach((w) => { days[(new Date(w.startedAt).getDay() + 6) % 7] = true; });
@@ -347,6 +350,10 @@ export function weekInfo(now = new Date()) {
     workouts: week,
     count: week.length,
     days,
+    // Wochenziel nach Abzug der Pausentage; 0 = ganze Woche pausiert
+    goal,
+    paused: goal === 0,
+    pausedDays,
     todayIndex: (now.getDay() + 6) % 7,
     sets: week.reduce((n, w) => n + workoutDoneSets(w), 0),
     volume: week.reduce((n, w) => n + workoutVolume(w), 0),
@@ -355,7 +362,8 @@ export function weekInfo(now = new Date()) {
 }
 
 // Wochen in Folge mit erreichtem Ziel. Die laufende Woche zählt erst mit,
-// wenn das Ziel dort schon steht.
+// wenn das Ziel dort schon steht. Pausenwochen (Wochenziel 0) zählen nicht
+// und reißen die Serie nicht; Wochen mit Pausentagen haben ein kleineres Ziel.
 export function weekStreak(goal = Store.getSettings().weeklyGoal) {
   const counts = new Map();
   Store.getWorkouts().forEach((w) => {
@@ -363,10 +371,13 @@ export function weekStreak(goal = Store.getSettings().weeklyGoal) {
     counts.set(key, (counts.get(key) || 0) + 1);
   });
   let cursor = startOfWeek();
-  let streak = (counts.get(cursor.getTime()) || 0) >= goal ? 1 : 0;
+  const nowGoal = weekGoal(cursor, goal);
+  let streak = nowGoal > 0 && (counts.get(cursor.getTime()) || 0) >= nowGoal ? 1 : 0;
   for (let guard = 0; guard < 520; guard += 1) {
     cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() - 7);
-    if ((counts.get(cursor.getTime()) || 0) < goal) break;
+    const g = weekGoal(cursor, goal);
+    if (g === 0) continue;
+    if ((counts.get(cursor.getTime()) || 0) < g) break;
     streak += 1;
   }
   return streak;

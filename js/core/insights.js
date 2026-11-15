@@ -4,6 +4,7 @@ import { Store } from './store.js';
 import {
   startOfWeek, workoutDoneSets, workoutVolume, workoutDuration, workoutPrs,
 } from './training.js';
+import { isTrainingPaused, weekGoal } from './breaks.js';
 
 const DAY = 86400000;
 
@@ -49,7 +50,8 @@ export function weeklySeries(n = 12, now = new Date()) {
   const weeks = [];
   for (let i = n - 1; i >= 0; i -= 1) {
     const from = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() - i * 7);
-    weeks.push({ from, count: 0, sets: 0, volume: 0, minutes: 0 });
+    const goal = weekGoal(from, Store.getSettings().weeklyGoal);
+    weeks.push({ from, count: 0, sets: 0, volume: 0, minutes: 0, goal, paused: goal === 0 });
   }
   const index = new Map(weeks.map((w, i) => [w.from.getTime(), i]));
   facts().forEach((f) => {
@@ -87,7 +89,7 @@ export function activityGrid(weeks = 20, now = new Date()) {
       const date = new Date(first.getFullYear(), first.getMonth(), first.getDate() + w * 7 + d);
       const hit = byDay.get(date.getTime());
       if (hit) max = Math.max(max, hit.sets);
-      col.push({ date, future: date.getTime() > today, today: date.getTime() === today, sets: hit?.sets || 0, count: hit?.count || 0, id: hit?.id || null });
+      col.push({ date, paused: isTrainingPaused(date), future: date.getTime() > today, today: date.getTime() === today, sets: hit?.sets || 0, count: hit?.count || 0, id: hit?.id || null });
     }
     cols.push(col);
   }
@@ -119,20 +121,28 @@ export function lifetime() {
   });
 }
 
-// Längste Folge von Wochen mit erreichtem Ziel
+// Längste Folge von Wochen mit erreichtem Ziel. Pausenwochen werden
+// übersprungen (sie unterbrechen die Folge nicht); Wochen mit Pausentagen
+// zählen gegen ihr verkleinertes Ziel.
 export function bestWeekStreak(goal = Store.getSettings().weeklyGoal) {
   const counts = new Map();
   facts().forEach((f) => counts.set(f.week, (counts.get(f.week) || 0) + 1));
-  const hit = [...counts.entries()].filter(([, n]) => n >= goal).map(([k]) => k).sort((a, b) => a - b);
+  const weeks = [...counts.keys()];
+  if (!weeks.length) return 0;
+  const first = Math.min(...weeks);
+  const monday = startOfWeek();
   let best = 0;
   let run = 0;
-  let prev = null;
-  hit.forEach((k) => {
-    // Sommer-/Winterzeit: eine Woche ist 167–169 Stunden lang
-    run = prev !== null && Math.abs(k - prev - 7 * DAY) < 2 * 3600000 ? run + 1 : 1;
-    best = Math.max(best, run);
-    prev = k;
-  });
+  // Von der ersten Trainingswoche bis heute Woche für Woche (Kalenderrechnung
+  // statt 7 × 24 h: Sommer-/Winterzeit)
+  let cursor = new Date(first);
+  for (let guard = 0; guard < 2000 && cursor <= monday; guard += 1) {
+    const g = weekGoal(cursor, goal);
+    if (g > 0) {
+      if ((counts.get(cursor.getTime()) || 0) >= g) { run += 1; best = Math.max(best, run); } else run = 0;
+    }
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 7);
+  }
   return best;
 }
 

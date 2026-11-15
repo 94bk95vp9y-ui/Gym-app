@@ -22,6 +22,7 @@ const KEYS = {
   mobilityLog: 'gym.mobilityLog',
   mobilityProfile: 'gym.mobilityProfile',
   bodyLog: 'gym.bodyLog',
+  breaks: 'gym.breaks',
 };
 
 // Geparste Werte zwischenspeichern: ein Neuaufbau der Ansicht liest dieselben
@@ -207,9 +208,9 @@ let sortedWorkouts = { source: null, sorted: [] };
 // alles überschreibt. Gibt eine Fehlermeldung zurück oder null.
 export function validateBackup(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return 'Die Datei enthält keine Gym-Sicherung.';
-  const known = ['exercises', 'routines', 'workouts', 'settings', 'supplements', 'supplementLog', 'mobilityLog', 'bodyLog'];
+  const known = ['exercises', 'routines', 'workouts', 'settings', 'supplements', 'supplementLog', 'mobilityLog', 'bodyLog', 'breaks'];
   if (!known.some((k) => k in data)) return 'Die Datei enthält keine Gym-Sicherung.';
-  const lists = ['exercises', 'routines', 'workouts', 'supplements', 'mobilityLog', 'bodyLog'];
+  const lists = ['exercises', 'routines', 'workouts', 'supplements', 'mobilityLog', 'bodyLog', 'breaks'];
   if (lists.some((k) => k in data && !Array.isArray(data[k]))) return 'Die Sicherung ist beschädigt.';
   if ((data.exercises || []).some((e) => !e || !e.id || typeof e.name !== 'string')) return 'Die Übungen in der Sicherung sind beschädigt.';
   if ((data.routines || []).some((r) => !r || !r.id || !Array.isArray(r.exerciseIds))) return 'Die Pläne in der Sicherung sind beschädigt.';
@@ -223,6 +224,7 @@ export function validateBackup(data) {
   if ((data.supplements || []).some((x) => !x || !x.id || typeof x.name !== 'string' || typeof x.since !== 'string')) return 'Die Supplements in der Sicherung sind beschädigt.';
   if ('supplementLog' in data && data.supplementLog && Object.values(data.supplementLog).some((d) => !d || typeof d !== 'object')) return 'Die Supplement-Daten in der Sicherung sind beschädigt.';
   if ((data.bodyLog || []).some((x) => !x || typeof x.day !== 'string' || !(x.weight > 0))) return 'Das Körpergewicht in der Sicherung ist beschädigt.';
+  if ((data.breaks || []).some((b) => !b || !b.id || typeof b.from !== 'string' || typeof b.kind !== 'string' || !(b.to === null || b.to === undefined || typeof b.to === 'string'))) return 'Die Pausen in der Sicherung sind beschädigt.';
   if ('settings' in data && (typeof data.settings !== 'object' || Array.isArray(data.settings))) return 'Die Einstellungen in der Sicherung sind beschädigt.';
   if ('supplementLog' in data && (typeof data.supplementLog !== 'object' || Array.isArray(data.supplementLog))) return 'Die Supplement-Daten in der Sicherung sind beschädigt.';
   return null;
@@ -399,6 +401,24 @@ export const Store = {
     write(KEYS.bodyLog, list);
   },
 
+  // ---------- Pausen (krank, Urlaub …) ----------
+  // { id, kind, from, to (null = läuft noch), supplements, note? }, nach
+  // Beginn sortiert.
+  getBreaks() {
+    return read(KEYS.breaks, []);
+  },
+  saveBreak(entry) {
+    const list = [...Store.getBreaks()];
+    const i = list.findIndex((b) => b.id === entry.id);
+    if (i >= 0) list[i] = entry;
+    else list.push(entry);
+    list.sort((a, b) => a.from.localeCompare(b.from));
+    write(KEYS.breaks, list);
+  },
+  deleteBreak(id) {
+    write(KEYS.breaks, Store.getBreaks().filter((b) => b.id !== id));
+  },
+
   // ---------- Einstellungen ----------
   getSettings() {
     return { ...DEFAULT_SETTINGS, ...read(KEYS.settings, DEFAULT_SETTINGS) };
@@ -451,6 +471,7 @@ export const Store = {
       supplementLog: Store.getSupplementLog(),
       mobilityLog: Store.getMobilityLog(),
       bodyLog: Store.getBodyLog(),
+      breaks: Store.getBreaks(),
     };
   },
   importAll(data) {
@@ -462,6 +483,7 @@ export const Store = {
     if (data.supplementLog) write(KEYS.supplementLog, data.supplementLog);
     if (Array.isArray(data.mobilityLog)) write(KEYS.mobilityLog, data.mobilityLog);
     if (Array.isArray(data.bodyLog)) write(KEYS.bodyLog, data.bodyLog);
+    if (Array.isArray(data.breaks)) write(KEYS.breaks, data.breaks);
     // Das Backup ist maßgeblich: gelöschte Katalog-Übungen sollen durch den
     // Import nicht wieder auftauchen.
     write(KEYS.catalogVersion, CATALOG_VERSION);

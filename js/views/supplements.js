@@ -79,8 +79,11 @@ function checklistHtml(day, { grouped = false } = {}) {
   }).join('');
 }
 
+// Fortschritt als Text; an einem pausierten Tag steht „pausiert“ statt „x von y“
+const progressText = (st) => (st.paused ? 'pausiert' : `${st.done} von ${st.expected}`);
+
 function progressHead(st) {
-  return `<span class="head-ring" data-supp-progress-wrap>${ring(st.done, st.expected, { size: 20, stroke: 3, cls: 'success' })}<span class="meta" data-supp-progress>${st.done} von ${st.expected}</span></span>`;
+  return `<span class="head-ring" data-supp-progress-wrap>${ring(st.done, st.expected, { size: 20, stroke: 3, cls: 'success' })}<span class="meta" data-supp-progress>${progressText(st)}</span></span>`;
 }
 
 // Abschnitt für „Heute“
@@ -122,13 +125,14 @@ export function supplementsTodayHtml() {
     <div class="section" data-supp-card>
       <div class="section-head"><h2>Supplements</h2>${progressHead(st)}</div>
       <div class="list">${checklistHtml(today)}</div>
-      ${y.expected && !y.complete ? `<p class="section-foot"><button class="text-link" data-action="supp-day" data-day="${yesterday}">Gestern ${y.done} von ${y.expected} – nachtragen</button></p>` : ''}
+      ${y.expected && !y.complete && !y.paused ? `<p class="section-foot"><button class="text-link" data-action="supp-day" data-day="${yesterday}">Gestern ${y.done} von ${y.expected} – nachtragen</button></p>` : ''}
     </div>`;
 }
 
 // ---------- Kalender ----------
 function dayClass(st, key, today) {
   if (key > today) return 'future';
+  if (st.paused) return 'paused';
   if (st.complete) return 'full';
   if (st.expected && st.done) return 'partial';
   if (st.expected && key < today) return 'missed';
@@ -165,9 +169,11 @@ function calendarHtml() {
     const key = `${ref.y}-${String(ref.m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const st = dayStatus(supplements, log, key);
     const cls = dayClass(st, key, today);
-    const pickable = key <= today && st.expected;
-    const label = `${d}. – ${st.expected ? `${st.done} von ${st.expected}` : 'nichts geplant'}`;
-    cells += `<button class="cal-day ring-day ${cls} ${key === today ? 'today' : ''}" ${pickable ? `data-action="supp-day" data-day="${key}"` : 'disabled'} aria-label="${label}">${pickable ? dayRing(st, d, cls) : `<span>${d}</span>`}</button>`;
+    // Pausierte Tage sind antippbar, wenn dort etwas zu sehen/nachzutragen ist
+    const hasItems = activeOn(supplements, key).length > 0;
+    const pickable = key <= today && (st.expected || (st.paused && hasItems));
+    const label = `${d}. – ${st.paused ? 'Pause' : st.expected ? `${st.done} von ${st.expected}` : 'nichts geplant'}`;
+    cells += `<button class="cal-day ring-day ${cls} ${key === today ? 'today' : ''}" ${pickable ? `data-action="supp-day" data-day="${key}"` : 'disabled'} aria-label="${label}">${pickable && !st.paused ? dayRing(st, d, cls) : `<span>${d}</span>`}</button>`;
   }
   const canForward = new Date(ref.y, ref.m + 1, 1) <= dateOfKey(today);
   return `
@@ -181,7 +187,7 @@ function calendarHtml() {
       </div>
       <div class="cal-week">${['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map((w) => `<span>${w}</span>`).join('')}</div>
       <div class="cal-grid">${cells}</div>
-      <div class="cal-legend"><span><i class="lg-full"></i>alles</span><span><i class="lg-partial"></i>teilweise</span><span><i class="lg-missed"></i>vergessen</span></div>
+      <div class="cal-legend"><span><i class="lg-full"></i>alles</span><span><i class="lg-partial"></i>teilweise</span><span><i class="lg-missed"></i>vergessen</span><span><i class="lg-paused"></i>Pause</span></div>
     </div>`;
 }
 
@@ -248,14 +254,14 @@ registerPage('supplements', {
     const quote = adherence(supplements, log, today, 30);
     return `
       <div class="card supp-summary" data-supp-card>
-        <span data-supp-ring>${ring(st.done, st.expected, { size: 68, stroke: 7, cls: 'success', label: `${st.done}/${st.expected}` })}</span>
+        <span data-supp-ring>${ring(st.done, st.expected, { size: 68, stroke: 7, cls: 'success', label: st.paused ? '–' : `${st.done}/${st.expected}` })}</span>
         <div class="stats divided" style="--cols:2">
           <div class="stat"><b class="num">${series}</b><span>${series === 1 ? 'Tag' : 'Tage'} in Folge</span></div>
           <div class="stat"><b class="num">${quote ? `${quote.percent}%` : '–'}</b><span>${quote ? `letzte ${quote.days} Tage` : 'noch keine Daten'}</span></div>
         </div>
       </div>
       <div class="section">
-        <div class="section-head"><h2>Heute</h2><span class="meta" data-supp-progress>${st.done} von ${st.expected}</span></div>
+        <div class="section-head"><h2>Heute</h2><span class="meta" data-supp-progress>${progressText(st)}</span></div>
         <div class="list">${checklistHtml(today, { grouped: true })}</div>
       </div>
       <div class="section">
@@ -277,7 +283,7 @@ function openDaySheet(day) {
     title: dayLabel(day),
     className: 'supp-day-sheet',
     body: `
-      <p class="sheet-sub"><span class="supp-progress">${st.done} von ${st.expected}</span> genommen – antippen zum Nachtragen</p>
+      <p class="sheet-sub"><span class="supp-progress">${progressText(st)}</span>${st.paused ? ' – an diesem Tag zählt nichts als vergessen' : ' genommen – antippen zum Nachtragen'}</p>
       <div class="list">${checklistHtml(day, { grouped: true })}</div>`,
     onClose: () => render(),
   });
@@ -374,7 +380,7 @@ function scheduleRefresh() {
       if (day) {
         const st = dayStatus(Store.getSupplements(), Store.getSupplementLog(), day);
         const p = qs('.supp-progress', sheet.body);
-        if (p) p.textContent = `${st.done} von ${st.expected}`;
+        if (p) p.textContent = progressText(st);
       }
       return;
     }
@@ -393,7 +399,7 @@ function setTaken(ids, day, taken) {
     });
   });
   const st = dayStatus(Store.getSupplements(), Store.getSupplementLog(), dayKey());
-  qsa('[data-supp-progress]').forEach((p) => { p.textContent = `${st.done} von ${st.expected}`; });
+  qsa('[data-supp-progress]').forEach((p) => { p.textContent = progressText(st); });
   const ringFill = (sel) => qsa(`${sel} .ring-fill`).forEach((c) => {
     const len = parseFloat(c.getAttribute('stroke-dasharray'));
     c.setAttribute('stroke-dashoffset', (len * (1 - (st.expected ? st.done / st.expected : 0))).toFixed(2));

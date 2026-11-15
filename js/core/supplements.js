@@ -5,9 +5,12 @@
 // wird. Deshalb zählt vor allem die Serie (lückenlose Tage) – und ein Tag gilt
 // erst als erledigt, wenn alles genommen wurde, was an dem Tag dran war.
 
-// Ein Tag beginnt um 4 Uhr statt um Mitternacht: wer sein Magnesium um 0:30
-// vor dem Schlafen nimmt, meint damit noch den Vortag.
-const DAY_START_HOUR = 4;
+import { DAY_START_HOUR, dayKey, shiftDay, dateOfKey } from './days.js';
+import { isSupplementPaused } from './breaks.js';
+
+// dayKey, shiftDay und dateOfKey liegen in days.js (damit breaks.js sie ohne
+// Kreis-Import nutzen kann) und werden hier weiter bereitgestellt.
+export { dayKey, shiftDay, dateOfKey };
 
 export const SLOTS = [
   { id: 'morning', label: 'Morgens', short: 'Morgens', from: 4, to: 11, reminder: '0730' },
@@ -36,25 +39,6 @@ export const SUPPLEMENT_PRESETS = [
 
 function pad(n) { return String(n).padStart(2, '0'); }
 
-function keyOf(date) {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
-// Der "logische" Tag eines Zeitpunkts – mit Tageswechsel um 4 Uhr.
-export function dayKey(date = new Date()) {
-  return keyOf(new Date(date.getTime() - DAY_START_HOUR * 3600000));
-}
-
-export function shiftDay(key, days) {
-  const [y, m, d] = key.split('-').map(Number);
-  return keyOf(new Date(y, m - 1, d + days));
-}
-
-export function dateOfKey(key) {
-  const [y, m, d] = key.split('-').map(Number);
-  return new Date(y, m - 1, d);
-}
-
 export function slotOf(id) {
   return SLOTS.find((s) => s.id === id) || SLOTS[0];
 }
@@ -74,6 +58,11 @@ export function activeOn(supplements, key) {
 }
 
 export function dayStatus(supplements, log, key) {
+  // Pause (krank, Urlaub …): nichts ist fällig, was genommen wurde, bleibt sichtbar
+  if (isSupplementPaused(key)) {
+    const taken = log[key] || {};
+    return { expected: 0, done: activeOn(supplements, key).filter((s) => taken[s.id]).length, complete: false, paused: true };
+  }
   const expected = activeOn(supplements, key);
   const taken = log[key] || {};
   const done = expected.filter((s) => taken[s.id]).length;
@@ -88,10 +77,14 @@ export function dayStatus(supplements, log, key) {
 // ist – bis dahin bleibt die Serie von gestern stehen, statt schon morgens um
 // acht als gerissen zu gelten.
 export function streak(supplements, log, today) {
-  let count = dayStatus(supplements, log, today).complete ? 1 : 0;
+  // Pausierte Tage zählen nicht und reißen die Serie nicht – auch ein
+  // pausierter heutiger Tag wird übersprungen.
+  const first = dayStatus(supplements, log, today);
+  let count = first.complete ? 1 : 0;
   let key = shiftDay(today, -1);
   for (let guard = 0; guard < 3660; guard += 1) {
     const status = dayStatus(supplements, log, key);
+    if (status.paused) { key = shiftDay(key, -1); continue; }
     if (!status.complete) break;
     count += 1;
     key = shiftDay(key, -1);

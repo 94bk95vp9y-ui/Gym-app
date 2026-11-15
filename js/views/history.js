@@ -23,6 +23,8 @@ import { toast } from '../ui/toast.js';
 import { sparkline } from '../ui/chart.js';
 import { milestones } from '../core/milestones.js';
 import { bodyStatsHtml } from './body.js';
+import { breaksSectionHtml } from './breaks.js';
+import { isTrainingPaused } from '../core/breaks.js';
 import {
   chev, chips, dateBadge, emptyState, deltaPill,
 } from '../ui/components.js';
@@ -84,7 +86,7 @@ function calendarHtml() {
     const future = new Date(ref.y, ref.m, d) > now;
     cells += id
       ? `<button class="cal-day hit ${isToday ? 'today' : ''}" data-action="open-workout" data-id="${id}"><span>${d}</span></button>`
-      : `<span class="cal-day ${isToday ? 'today' : ''} ${future ? 'future' : ''}"><span>${d}</span></span>`;
+      : `<span class="cal-day ${isToday ? 'today' : ''} ${future ? 'future' : ''} ${!future && isTrainingPaused(new Date(ref.y, ref.m, d)) ? 'paused' : ''}"><span>${d}</span></span>`;
   }
   const canForward = new Date(ref.y, ref.m + 1, 1) <= now;
   const count = Store.getWorkouts().filter((w) => {
@@ -109,7 +111,7 @@ function calendarHtml() {
 function workoutsHtml() {
   const workouts = Store.getWorkouts();
   if (!workouts.length) {
-    return emptyState({ icon: Icon.calendar, title: 'Noch keine Trainings', text: 'Nach deinem ersten Training steht es hier – mit allen Sätzen und Rekorden.' });
+    return `${emptyState({ icon: Icon.calendar, title: 'Noch keine Trainings', text: 'Nach deinem ersten Training steht es hier – mit allen Sätzen und Rekorden.' })}${breaksSectionHtml()}`;
   }
   const months = [];
   workouts.forEach((w) => {
@@ -124,6 +126,7 @@ function workoutsHtml() {
   const hidden = months.slice(shown.length).reduce((n, m) => n + m.items.length, 0);
   return `
     <div class="section">${calendarHtml()}</div>
+    ${breaksSectionHtml()}
     ${shown.map((m) => `
       <div class="section hist-month">
         <div class="section-head"><h2>${esc(m.label)}</h2><span class="meta">${plural(m.items.length, 'Training', 'Trainings')}</span></div>
@@ -178,6 +181,7 @@ function weeksChartHtml() {
   const m = METRICS[ui.metric] || METRICS.count;
   const vals = weeks.map(m.value);
   const goal = ui.metric === 'count' ? settings.weeklyGoal : null;
+  const goalOf = (w) => (goal ? w.goal : null); // je Woche um Pausentage verkleinert
   const past = vals.slice(0, -1).filter((v) => v > 0);
   const avg = past.length ? past.reduce((a, c) => a + c, 0) / past.length : 0;
   const line = goal ?? avg;
@@ -191,17 +195,18 @@ function weeksChartHtml() {
       </div>
       <div class="ch-head">
         <b class="ch-value num">${esc(m.text(vals[pick], u))}</b>
-        <span class="ch-sub">${esc(weekLabel(weeks[pick].from, pick === weeks.length - 1))}${avg ? ` · Ø ${esc(m.text(avg, u))}` : ''}</span>
+        <span class="ch-sub">${esc(weekLabel(weeks[pick].from, pick === weeks.length - 1))}${goal && weeks[pick].paused ? ' · pausiert' : goal && weeks[pick].goal < goal ? ` · Ziel ${weeks[pick].goal}` : ''}${avg ? ` · Ø ${esc(m.text(avg, u))}` : ''}</span>
       </div>
       <div class="wchart-plot">
         ${line > 0 ? `<span class="wchart-goal"><span>${goal ? `Ziel ${goal}` : 'Ø'}</span></span>` : ''}
         ${weeks.map((w, i) => {
     const v = vals[i];
     const now = i === weeks.length - 1;
-    const hit = goal ? v >= goal : true;
+    const paused = !!goal && w.paused;
+    const hit = goal ? !paused && v >= goalOf(w) : true;
     return `
-          <button class="wchart-col ${hit ? 'hit' : ''} ${now ? 'now' : ''} ${i === pick ? 'picked' : ''}" data-action="stats-pick" data-i="${i}" aria-label="${esc(weekLabel(w.from, now))}: ${esc(m.text(v, u))}">
-            <i style="height:${v ? Math.max(4, (v / max) * 100) : 0}%"></i>
+          <button class="wchart-col ${hit ? 'hit' : ''} ${paused ? 'paused' : ''} ${now ? 'now' : ''} ${i === pick ? 'picked' : ''}" data-action="stats-pick" data-i="${i}" aria-label="${esc(weekLabel(w.from, now))}: ${esc(m.text(v, u))}">
+            <i style="height:${v ? Math.max(4, (v / max) * 100) : paused ? 6 : 0}%"></i>
           </button>`;
   }).join('')}
       </div>
@@ -224,10 +229,10 @@ function activityHtml() {
   }).join('');
   const cells = cols.map((col) => col.map((c) => {
     if (c.future) return '<i class="ag-cell future"></i>';
-    const label = `${formatDate(c.date.toISOString())}: ${c.sets ? plural(c.sets, 'Satz', 'Sätze') : 'kein Training'}`;
+    const label = `${formatDate(c.date.toISOString())}: ${c.sets ? plural(c.sets, 'Satz', 'Sätze') : c.paused ? 'Pause' : 'kein Training'}`;
     return c.id
       ? `<button class="ag-cell lv${level(c.sets)} ${c.today ? 'today' : ''}" data-action="open-workout" data-id="${c.id}" aria-label="${esc(label)}"></button>`
-      : `<i class="ag-cell ${c.today ? 'today' : ''}" aria-label="${esc(label)}"></i>`;
+      : `<i class="ag-cell ${c.paused ? 'paused' : ''} ${c.today ? 'today' : ''}" aria-label="${esc(label)}"></i>`;
   }).join('')).join('');
   const total = cols.flat().filter((c) => c.count).length;
   return `
@@ -239,7 +244,7 @@ function activityHtml() {
           <div class="ag-days"><span>Mo</span><span></span><span>Mi</span><span></span><span>Fr</span><span></span><span>So</span></div>
           <div class="ag-grid">${cells}</div>
         </div>
-        <div class="ag-legend"><b>${plural(total, 'Trainingstag', 'Trainingstage')}</b><span>weniger</span><i class="ag-cell"></i><i class="ag-cell lv1"></i><i class="ag-cell lv2"></i><i class="ag-cell lv3"></i><i class="ag-cell lv4"></i><span>mehr Sätze</span></div>
+        <div class="ag-legend"><b>${plural(total, 'Trainingstag', 'Trainingstage')}</b><span>weniger</span><i class="ag-cell"></i><i class="ag-cell lv1"></i><i class="ag-cell lv2"></i><i class="ag-cell lv3"></i><i class="ag-cell lv4"></i><span>mehr Sätze</span><i class="ag-cell paused"></i><span>Pause</span></div>
       </div>
     </div>`;
 }
@@ -365,7 +370,7 @@ function statsHtml() {
     <div class="section">
       <div class="section-head"><h2>Diese Woche</h2>${streak > 1 ? `<span class="meta streak-meta">${Icon.flame}${streak} Wochen im Ziel</span>` : ''}</div>
       <div class="tiles week-tiles">
-        <div class="tile"><span class="tile-label">Trainings</span><div class="tile-value">${info.count}<small>/${settings.weeklyGoal}</small></div>${deltaLine(cur.count, prev.count)}</div>
+        <div class="tile"><span class="tile-label">Trainings</span><div class="tile-value">${info.count}<small>/${info.goal}</small></div>${deltaLine(cur.count, prev.count)}</div>
         <div class="tile"><span class="tile-label">Sätze</span><div class="tile-value">${info.sets}</div>${deltaLine(cur.sets, prev.sets)}</div>
         <div class="tile"><span class="tile-label">Volumen</span><div class="tile-value">${volumeShort(info.volume, u)}</div>${deltaLine(cur.volume, prev.volume, { pct: true })}</div>
         <div class="tile"><span class="tile-label">Trainingszeit</span><div class="tile-value">${minutesHtml(info.minutes)}</div>${deltaLine(cur.minutes, prev.minutes, { unitText: ' Min' })}</div>

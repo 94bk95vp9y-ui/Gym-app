@@ -582,3 +582,35 @@ button.ag-cell::before { content: ""; position: absolute; inset: -4px; }
   .plan-card-title { font-size: 20px; }
   .tpl-name { font-size: 20px; }
 }
+
+/* ==========================================================================
+   Pausen (krank, Urlaub)
+   Ruhige Pastellflächen in Violett: eine Pause ist kein Versäumnis.
+   ========================================================================== */
+/* Heute: Karte statt Trainingsvorschlag */
+.hero.pause { background: var(--p-violet); color: var(--text); box-shadow: var(--shadow-card); }
+.hero.pause.vacation { background: var(--p-mint); }
+.hero.pause.other { background: var(--p-blue); }
+.hero.pause::before { display: none; }
+.hero.pause .hero-label { color: var(--text-2); }
+.hero.pause .hero-title { font-size: 30px; margin-top: 4px; }
+.hero.pause .hero-meta { color: var(--text-2); margin-top: 8px; }
+.hero-text-sm { margin: 12px 0 0; font-size: 14.5px; line-height: 1.45; color: var(--text); }
+.hero.pause .hero-actions .btn { height: 50px; }
+.hero.pause .btn-secondary { background: color-mix(in srgb, var(--card) 70%, transparent); }
+
+/* Woche: Pausentage statt leerer Felder */
+.wk-day.paused i { background: var(--fill); box-shadow: none; color: var(--text-3); font-size: 16px; font-weight: 700; line-height: 1; }
+.wk-day.paused { color: var(--text-3); }
+
+/* Kalender (Verlauf) und Supplement-Kalender */
+.cal-day.paused > span { background: var(--p-violet); color: var(--text-2); }
+.cal-day.paused.today > span { box-shadow: inset 0 0 0 2px var(--accent); }
+.ring-day.paused > span { background: var(--p-violet); color: var(--text-2); width: 36px; height: 36px; }
+.cal-legend .lg-paused { background: var(--p-violet); box-shadow: inset 0 0 0 1px var(--sep-strong); }
+
+/* Aktivitätsraster und Wochenverlauf */
+.ag-cell.paused { background: var(--p-violet); }
+.ag-cell.paused.today { box-shadow: inset 0 0 0 1.5px var(--text); }
+.wchart-col.paused i { background: var(--p-violet); box-shadow: inset 0 0 0 1px var(--sep); }
+.wchart-col.now.paused i { background: var(--p-violet); }

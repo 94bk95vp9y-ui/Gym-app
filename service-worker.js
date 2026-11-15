@@ -1,4 +1,4 @@
-const CACHE = 'gym-cache-v35';
+const CACHE = 'gym-cache-v36';
 const ASSETS = [
   './',
   './index.html',
@@ -8,7 +8,9 @@ const ASSETS = [
   './css/components.css',
   './css/views.css',
   './css/workout.css',
+  './js/core/breaks.js',
   './js/core/catalog.js',
+  './js/core/days.js',
   './js/core/fatigue.js',
   './js/core/format.js',
   './js/core/insights.js',
@@ -52,6 +54,7 @@ const ASSETS = [
   './js/vendor/GLTFLoader.js',
   './js/vendor/BufferGeometryUtils.js',
   './js/views/body.js',
+  './js/views/breaks.js',
   './js/views/goal.js',
   './js/views/history.js',
   './js/views/mobility.js',

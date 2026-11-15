@@ -24,6 +24,15 @@ danach auch offline.
   belastet, erholt sich, bereit; Antippen zeigt Details und die Faustregel
 - Mobility als Karte, Hinweis auf eine fällige Sicherung
 
+**Pausen (krank, Urlaub)**
+- „Krank melden“ im Menü der Hauptkarte oder „Pause eintragen“ im Verlauf
+  (Trainings): Zeitraum, Art, optional offenes Ende und Notiz
+- In einer Pause zählen verpasste Trainings und – wenn gewählt – Supplements
+  nicht als Versäumnis: Serien reißen nicht, das Wochenziel sinkt um die
+  Pausentage, Kalender und Aktivitätsraster zeigen „Pause“ statt „vergessen“
+- Heute zeigt während einer laufenden Pause eine ruhige Karte mit „Wieder fit“;
+  das erste Training danach bekommt den Hinweis, etwas leichter zu starten
+
 **Training**
 - Pläne anlegen und bearbeiten (Reihenfolge per Ziehen, Satzzahl pro Übung)
 - Pläne per KI erstellen: Prompt kopieren, Antwort der KI einfügen
@@ -180,13 +189,15 @@ js/core/                Daten und Logik ohne Oberfläche
   milestones.js         Meilensteine über alle Trainings
   templates.js          Plan-Vorlagen
   supplements.js        Tage, Serie, Vorrat, Erinnerungen
+  days.js               Tagesschlüssel (Tageswechsel 4 Uhr), geteilt von Supplements und Pausen
+  breaks.js             Pausen: Wochenziel, pausierte Tage, Wiedereinstieg
   plan-import.js        KI-Prompt und Parser
   catalog.js            Übungskatalog
 js/ui/                  Router (Übergänge, Wisch-zurück), Sheets und Menüs,
                         Zahlenfeld, Wischen-zum-Löschen, Haptik, Diagramme,
                         Körperkarte, Konfetti, Teilen-Bild, Icons, Bausteine
 js/views/               Heute, Training, Workout, Supplements, Verlauf,
-                        Einstellungen, Mobility
+                        Pausen, Einstellungen, Mobility
 js/mobility/            Routinen, Player, 3D-Figur (three.js), Modell-Skinning (skin.js)
 models/figure.glb       3D-Modell der Figur
 service-worker.js       Offline-Cache

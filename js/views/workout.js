@@ -1,6 +1,7 @@
 // Laufendes Training: Vollbild über der App, mit Pausentimer, Rekorden,
 // Vorschlagswerten und der Zusammenfassung am Ende.
 import { Store, REST_OPTIONS, ACCENTS } from '../core/store.js';
+import { weekGoal } from '../core/breaks.js';
 import {
   workoutFromRoutine, blankWorkout, newEntry, lastSessionFor, refreshPrFlags,
   isEntryComplete, workoutProgress, workoutDoneSets, workoutVolume, workoutDuration, exerciseNames, entryName,
@@ -1057,6 +1058,8 @@ function openSummary(id) {
   monday.setHours(0, 0, 0, 0);
   monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
   const week = Store.getWorkouts().filter((x) => new Date(x.startedAt) >= monday).length;
+  // Wochenziel nach Abzug von Pausentagen (Krankheit, Urlaub)
+  const weekTarget = weekGoal(monday, settings.weeklyGoal);
   const minutes = Math.max(1, Math.round(workoutDuration(w) / 60000));
   const done = w.entries.filter((e) => e.sets.some((s) => s.done && s.reps > 0));
 
@@ -1077,8 +1080,8 @@ function openSummary(id) {
   }
   facts.push({
     icon: Icon.target,
-    text: week > settings.weeklyGoal ? 'Wochenziel übertroffen' : week === settings.weeklyGoal ? 'Wochenziel erreicht' : `${week} von ${settings.weeklyGoal} Trainings diese Woche`,
-    sub: week >= settings.weeklyGoal ? `${plural(week, 'Training', 'Trainings')} diese Woche` : `noch ${settings.weeklyGoal - week} bis zum Ziel`,
+    text: week > weekTarget ? 'Wochenziel übertroffen' : week === weekTarget ? 'Wochenziel erreicht' : `${week} von ${weekTarget} Trainings diese Woche`,
+    sub: week >= weekTarget ? `${plural(week, 'Training', 'Trainings')} diese Woche` : `noch ${weekTarget - week} bis zum Ziel`,
   });
   const diffText = diff ? [
     diff.added ? `${plural(diff.added, 'Übung', 'Übungen')} hinzugefügt` : '',
@@ -1121,7 +1124,7 @@ function openSummary(id) {
   const muscles = workoutMuscles(w);
   const muscleNames = Object.entries(muscles).filter(([, m]) => m.direct > 0).sort((a, b) => b[1].direct - a[1].direct).map(([g]) => g);
   const muscleClass = (g) => (!muscles[g] ? 'lv0' : muscles[g].direct > 0 ? 'lv4' : 'lv2');
-  const goalReached = week === settings.weeklyGoal;
+  const goalReached = week === weekTarget;
   const tons = volume >= 1000 && u === 'kg';
   const volumeValue = tons ? formatNumber(Math.round(volume / 100) / 10) : formatVolume(volume);
   const volumeUnit = tons ? 't' : u;

@@ -8,6 +8,7 @@ import {
   weekInfo, weekStreak, isSameDay, workoutPrs,
 } from '../core/training.js';
 import { progressionOf } from '../core/progression.js';
+import { currentBreak, recentlyBack, breakDays, kindOf } from '../core/breaks.js';
 import { recovery, workoutMuscles, muscleShares, MAP_GROUPS } from '../core/muscles.js';
 import {
   formatLongDate, formatVolume, formatTime, elapsedLabel, relativeDay, plural, unitLabel,
@@ -25,6 +26,8 @@ import { backupDue, exportBackup } from './settings.js';
 import { openPlanEditor, openTemplates } from './training.js';
 import { bodyTileHtml } from './body.js';
 import { showStats } from './history.js';
+import { openBreakEditor, endBreakNow, longDate } from './breaks.js';
+import { dayKey } from '../core/days.js';
 
 // Größe des Plan-Namens nach Länge: kurze Namen stehen plakativ groß
 function titleSize(name) {
@@ -78,6 +81,25 @@ function heroHtml() {
           <div><b>${prs}</b><span>${prs === 1 ? 'Rekord' : 'Rekorde'}</span></div>
         </div>
         <div class="hero-actions"><button class="btn btn-secondary" data-action="open-workout-detail" data-id="${doneToday.id}">Details ansehen</button></div>
+      </div>`;
+  }
+
+  // Laufende Pause: ruhige Karte statt Trainingsvorschlag
+  const pause = currentBreak();
+  if (pause) {
+    const k = kindOf(pause.kind);
+    const title = { sick: 'Gute Besserung', vacation: 'Erhol dich gut', other: 'Pause' }[pause.kind] || 'Pause';
+    const label = { sick: 'Krank gemeldet', vacation: 'Urlaub', other: 'Pause' }[pause.kind] || 'Pause';
+    return `
+      <div class="hero pause ${pause.kind}">
+        <div class="hero-top"><span class="hero-label">${Icon[k.icon]}${label}</span></div>
+        <h2 class="hero-title">${title}</h2>
+        <div class="hero-meta">seit ${esc(longDate(pause.from))} · Tag ${breakDays(pause)}</div>
+        <p class="hero-text-sm">Verpasste Trainings und Supplements zählen in dieser Zeit nicht. Deine Serien bleiben erhalten.</p>
+        <div class="hero-actions">
+          <button class="btn btn-primary" data-action="break-end" data-id="${pause.id}">Wieder fit</button>
+          <button class="btn btn-secondary" data-action="choose-workout">Trotzdem trainieren</button>
+        </div>
       </div>`;
   }
 
@@ -141,6 +163,7 @@ function focusHtml(plan, exercises) {
   if (kinds.up.length) lines.push({ icon: Icon.arrowUp, text: `Mehr Gewicht drin: ${short(kinds.up)}` });
   if (kinds.plateau.length) lines.push({ icon: Icon.plateau, text: `Plateau: ${short(kinds.plateau)}` });
   if (kinds.comeback.length) lines.push({ icon: Icon.restore, text: `Wiedereinstieg: ${kinds.comeback.length === exercises.length ? 'heute leichter starten' : short(kinds.comeback)}` });
+  if (recentlyBack()) lines.unshift({ icon: Icon.restore, text: 'Erstes Training nach der Pause – starte etwas leichter' });
   const rec = recovery();
   const tired = planMuscles(plan, 4).filter((g) => rec[g] && rec[g].state !== 'ready').sort((a, b) => rec[b].hoursLeft - rec[a].hoursLeft);
   if (tired.length) {
@@ -157,14 +180,14 @@ function hoursText(h) {
 // Die Woche oben: Stand zum Wochenziel als große Zahl, die sieben Tage als
 // Felder, darunter das Ziel als Scheiben auf der Stange und die Serie.
 function weekStripHtml() {
-  const goal = Store.getSettings().weeklyGoal;
   const info = weekInfo();
-  const streak = weekStreak(goal);
+  const goal = info.goal; // um Pausentage verkleinert
+  const streak = weekStreak(Store.getSettings().weeklyGoal);
   const letters = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
   const hit = info.count >= goal;
   const left = goal - info.count;
   const daysLeft = 6 - info.todayIndex + (info.days[info.todayIndex] ? 0 : 1);
-  const status = hit
+  const status = info.paused ? '<b>Woche pausiert</b>' : hit
     ? (info.count > goal ? '<b>Ziel übertroffen</b>' : '<b>Wochenziel erreicht</b>')
     : left > daysLeft ? `Noch <b>${left}</b> – wird knapp`
       : `Noch <b>${left}</b> bis zum Ziel`;
@@ -174,7 +197,7 @@ function weekStripHtml() {
         <span class="wk-count">${info.count}<small>/${goal}</small></span>
         <span class="wk-cap">Diese Woche</span>
       </span>
-      <span class="wk-days">${letters.map((l, i) => `<span class="wk-day ${info.days[i] ? 'on' : ''} ${i === info.todayIndex ? 'today' : ''} ${i > info.todayIndex ? 'future' : ''}"><i>${info.days[i] ? Icon.check : ''}</i>${l}</span>`).join('')}</span>
+      <span class="wk-days">${letters.map((l, i) => `<span class="wk-day ${info.days[i] ? 'on' : ''} ${info.pausedDays[i] && !info.days[i] ? 'paused' : ''} ${i === info.todayIndex ? 'today' : ''} ${i > info.todayIndex ? 'future' : ''}"><i>${info.days[i] ? Icon.check : info.pausedDays[i] ? '–' : ''}</i>${l}</span>`).join('')}</span>
       <span class="wk-foot">
         <span class="wk-plates" aria-hidden="true">${Array.from({ length: Math.max(goal, info.count) }, (_, i) => `<i class="${i < info.count ? 'on' : ''}"></i>`).join('')}</span>
         <span>${status}</span>
@@ -284,7 +307,7 @@ function openWorkoutChooser(anchor) {
   const next = nextPlan(routines);
   const lastDone = lastDoneMap();
   const hero = anchor.closest('.hero');
-  openMenu(anchor, [
+  const items = [
     ...routines.map((r) => ({
       label: r.name,
       sub: `${planMuscles(r, 2).join(' · ') || plural(r.exerciseIds.length, 'Übung', 'Übungen')} · ${lastDone.has(r.id) ? relativeDay(lastDone.get(r.id)) : 'neu'}`,
@@ -294,7 +317,10 @@ function openWorkoutChooser(anchor) {
     })),
     ...(routines.length ? ['-'] : []),
     { label: 'Leeres Training', icon: Icon.plus, handler: () => startBlank() },
-  ], { title: 'Training wählen' });
+    '-',
+    { label: 'Krank melden', icon: Icon.thermo, handler: () => openBreakEditor(null, { kind: 'sick', from: dayKey(), to: null, supplements: true }) },
+  ];
+  openMenu(anchor, items, { title: 'Training wählen' });
 }
 
 registerActions({
@@ -302,6 +328,7 @@ registerActions({
   'open-stats': () => { showStats(); goTo('history'); },
   'recovery-open': () => openRecovery(),
   'choose-workout': (el) => openWorkoutChooser(el),
+  'break-end': (el) => { const b = Store.getBreaks().find((x) => x.id === el.dataset.id); if (b) endBreakNow(b); },
   'today-templates': () => { goTo('training'); openTemplates(); },
   'today-new-plan': () => {
     goTo('training');
