@@ -15,11 +15,10 @@
        bis zur echten Unterkante. -->
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Gym" />
-  <meta name="theme-color" content="#efeee8" />
+  <meta name="theme-color" content="#f5f6fb" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="preload" href="fonts/archivo-var.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="css/tokens.css" />
   <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/components.css" />
@@ -32,7 +31,7 @@
       var theme = s.v >= 3 ? s.theme : (s.theme === 'dark' ? 'dark' : 'system');
       var dark = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
       document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-      document.querySelector('meta[name="theme-color"]').content = dark ? '#0a0b0d' : '#efeee8';
+      document.querySelector('meta[name="theme-color"]').content = dark ? '#0c0d13' : '#f5f6fb';
     } catch (e) { /* ohne Einstellungen: wie das Gerät */ }
   </script>
 </head>

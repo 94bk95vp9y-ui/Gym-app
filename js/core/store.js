@@ -78,23 +78,21 @@ export function uid() {
 const CATALOG_VERSION = 1;
 
 export const ACCENTS = [
-  // light/dark: Füllfarbe je Stimmung; ink: Schrift in dieser Farbe auf
-  // hellem Grund; graph: Farbe für Daten (Säulen, Linien) auf hellem Grund –
-  // Volt ist dafür zu hell, dort zeichnet die Tinte. Im Dunkeln leuchtet
-  // überall die Füllfarbe selbst.
-  { id: 'volt', label: 'Volt', light: '#C8F031', dark: '#D4FF3A', ink: '#3D5000', graph: '#151512' },
-  { id: 'orange', label: 'Glut', light: '#FF5A1F', dark: '#FF6B2C', ink: '#CF3F00', graph: '#FF5A1F' },
-  { id: 'blue', label: 'Kobalt', light: '#2A62FF', dark: '#5B8CFF', ink: '#1F4FE0', graph: '#2A62FF' },
-  { id: 'green', label: 'Minze', light: '#12C98A', dark: '#34E3A6', ink: '#00805A', graph: '#0FB47C' },
-  { id: 'rose', label: 'Magenta', light: '#F0287C', dark: '#FF5C9C', ink: '#CF1264', graph: '#F0287C' },
-  { id: 'indigo', label: 'Violett', light: '#7A4DFF', dark: '#A58BFF', ink: '#6236E8', graph: '#7A4DFF' },
-  { id: 'graphite', label: 'Mono', light: '#151512', dark: '#F4F4F0', ink: '#151512', graph: '#151512' },
+  // light/dark: Füllfarbe je Stimmung; to/toDark: Partner im Verlauf;
+  // ink: Schrift in dieser Farbe auf hellem Grund. Alle tragen weiße Schrift.
+  { id: 'blue', label: 'Blau', light: '#3B7BFF', dark: '#5B93FF', to: '#8B6BFF', toDark: '#9A82FF', ink: '#2563EB' },
+  { id: 'indigo', label: 'Violett', light: '#7A5CFF', dark: '#9A82FF', to: '#FF6BB5', toDark: '#FF86C2', ink: '#5B3FE0' },
+  { id: 'green', label: 'Mint', light: '#12B886', dark: '#34D6A0', to: '#3B9BFF', toDark: '#5BB0FF', ink: '#0B7F5C' },
+  { id: 'orange', label: 'Koralle', light: '#FF7A59', dark: '#FF8C6E', to: '#FF5FA2', toDark: '#FF7DB5', ink: '#D9482A' },
+  { id: 'rose', label: 'Pink', light: '#F0509A', dark: '#FF70B0', to: '#8B6BFF', toDark: '#A58BFF', ink: '#CC2A78' },
+  { id: 'volt', label: 'Limette', light: '#43A047', dark: '#5BC060', to: '#14B8A6', toDark: '#2DD4BF', ink: '#2E7D32' },
+  { id: 'graphite', label: 'Graphit', light: '#2B2F3A', dark: '#E9EBF2', to: '#4A5062', toDark: '#C9CDDA', ink: '#2B2F3A' },
 ];
 
 export const REST_OPTIONS = [0, 45, 60, 90, 120, 150, 180, 240];
 export const DEFAULT_PLAN_SETS = 3;
 
-const SETTINGS_VERSION = 3;
+const SETTINGS_VERSION = 4;
 const DEFAULT_SETTINGS = {
   v: SETTINGS_VERSION,
   unit: 'kg',
@@ -103,7 +101,7 @@ const DEFAULT_SETTINGS = {
   progressiveOverload: true,
   keepAwake: true,
   theme: 'system', // 'light' | 'dark' | 'system'
-  accent: 'volt',
+  accent: 'blue',
   sound: true,
   soundVolume: 0.6,
   haptics: true,
@@ -165,7 +163,13 @@ function migrateSettings() {
   // Akzentfarbe startet mit dem neuen Standard; wer „Hell“ hatte (der alte
   // Standard), folgt jetzt dem iPhone – „Dunkel“ bleibt dunkel.
   if (old.v === 2) {
-    write(KEYS.settings, { ...old, v: SETTINGS_VERSION, accent: DEFAULT_SETTINGS.accent, theme: old.theme === 'dark' ? 'dark' : 'system' });
+    write(KEYS.settings, { ...old, v: SETTINGS_VERSION, accent: 'blue', theme: old.theme === 'dark' ? 'dark' : 'system' });
+    return;
+  }
+  // Version 3 → 4: neue Optik „Luft“ – alles bleibt, die Akzentfarbe startet
+  // mit dem neuen Standard Blau.
+  if (old.v === 3) {
+    write(KEYS.settings, { ...old, v: SETTINGS_VERSION, accent: 'blue' });
     return;
   }
   const profile = read(KEYS.mobilityProfile, null);

@@ -5,22 +5,8 @@
 const W = 1080;
 const H = 1350;
 const FONT = '-apple-system, "SF Pro Display", "Inter", "Segoe UI", Roboto, sans-serif';
-// Titel und Zahlen in der schmalen Auszeichnungsschrift der App
-const DISPLAY = '"Archivo", "Arial Narrow", -apple-system, sans-serif';
-// Schmal gesetzt wird über das Stauchen der Zeichenfläche: die Laufweite
-// einer variablen Schrift lässt sich auf einer Zeichenfläche nicht in jedem
-// Browser wählen, das Stauchen sieht überall gleich aus.
-const SQUEEZE = 0.72;
-function narrowText(ctx, text, x, y, max) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(SQUEEZE, 1);
-  const shown = fit(ctx, text, max / SQUEEZE);
-  ctx.fillText(shown, 0, 0);
-  const width = ctx.measureText(shown).width * SQUEEZE;
-  ctx.restore();
-  return width;
-}
+// Titel und Zahlen in der runden Schrift der App
+const DISPLAY = 'ui-rounded, "SF Pro Rounded", -apple-system, "Inter", sans-serif';
 
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -50,21 +36,20 @@ export function drawShareCard(data) {
   const [from, to] = data.colors;
   const bg = ctx.createLinearGradient(0, 0, W, H);
   bg.addColorStop(0, from);
-  bg.addColorStop(0.3, from);
   bg.addColorStop(1, to);
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
-  // Rändelung: feines Kreuzmuster, nach rechts hin stärker
+  // Zwei weiche Lichtflecken statt Muster
   const dark = data.ink !== '#ffffff';
-  ctx.save();
-  ctx.lineWidth = 2;
-  for (let x = -H; x < W + H; x += 26) {
-    const alpha = Math.max(0, Math.min(1, (x + H / 2) / W)) * 0.09;
-    ctx.strokeStyle = dark ? `rgba(0,0,0,${alpha})` : `rgba(255,255,255,${alpha})`;
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + H, H); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(x + H, 0); ctx.lineTo(x, H); ctx.stroke();
-  }
-  ctx.restore();
+  const blob = (cx, cy, r, a) => {
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, `rgba(255,255,255,${a})`);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  };
+  blob(W * 0.12, H * 0.08, W * 0.7, dark ? 0.3 : 0.22);
+  blob(W * 0.92, H * 0.94, W * 0.75, dark ? 0.18 : 0.12);
 
   const ink = data.ink || '#ffffff';
   const soft = data.ink !== '#ffffff' ? 'rgba(0,0,0,0.62)' : 'rgba(255,255,255,0.78)';
@@ -74,10 +59,10 @@ export function drawShareCard(data) {
 
   ctx.fillStyle = soft;
   ctx.font = `600 34px ${FONT}`;
-  ctx.fillText(data.date.toUpperCase(), pad, 150);
+  ctx.fillText(data.date, pad, 150);
   ctx.fillStyle = ink;
-  ctx.font = `900 168px ${DISPLAY}`;
-  narrowText(ctx, data.title.toUpperCase(), pad, 296, W - 2 * pad);
+  ctx.font = `700 104px ${DISPLAY}`;
+  ctx.fillText(fit(ctx, data.title, W - 2 * pad), pad, 280);
 
   // Kennzahlen
   const gap = 24;
@@ -88,8 +73,10 @@ export function drawShareCard(data) {
     roundRect(ctx, x, 340, cw, 190, 40);
     ctx.fill();
     ctx.fillStyle = ink;
-    ctx.font = `900 100px ${DISPLAY}`;
-    const vw = narrowText(ctx, s.value, x + 30, 446, cw - 60 - (s.unit ? 80 : 0));
+    ctx.font = `700 76px ${DISPLAY}`;
+    const value = fit(ctx, s.value, cw - 60 - (s.unit ? 80 : 0));
+    const vw = ctx.measureText(value).width;
+    ctx.fillText(value, x + 30, 446);
     if (s.unit) {
       ctx.fillStyle = soft;
       ctx.font = `600 38px ${FONT}`;
@@ -144,8 +131,6 @@ export function drawShareCard(data) {
 
 // Gibt 'shared', 'saved', 'cancelled' oder 'failed' zurück
 export async function shareCard(data, filename = 'training.png') {
-  // Die Schrift muss geladen sein, bevor die Zeichenfläche sie benutzt
-  try { await document.fonts.load('900 150px "Archivo"'); } catch { /* dann eben die Systemschrift */ }
   const canvas = drawShareCard(data);
   if (!canvas) return 'failed';
   const blob = await new Promise((resolve) => { canvas.toBlob(resolve, 'image/png'); });

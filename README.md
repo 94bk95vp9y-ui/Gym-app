@@ -14,9 +14,8 @@ danach auch offline.
 - Laufendes oder heute erledigtes Training
 - Supplements des Tages zum Abhaken, Hinweis bei knappem Vorrat
 - Woche ganz oben: Stand zum Wochenziel als große Zahl, die sieben Tage als
-  Felder, das Ziel als Scheiben auf der Stange und die Serie der Wochen
-- Hauptkarte als Block in der Akzentfarbe, mit den Zielmuskeln des Plans als
-  Figur
+  Kreise und die Serie der Wochen
+- Hauptkarte mit Farbverlauf, mit den Zielmuskeln des Plans als Figur
 - Körpergewicht: ein Wert je Tag, Kachel mit Verlauf, Blatt mit Diagramm,
   7er-Schnitt und Veränderung über etwa vier Wochen
 - Hauptkarte zeigt, was heute im Plan ansteht: wo mehr Gewicht drin ist, wo
@@ -96,7 +95,7 @@ danach auch offline.
   Säule antippen zeigt den Wert), Aktivität der letzten 20 Wochen als
   Kästchenraster, Kraftentwicklung, Sätze pro Muskel mit Körperkarte,
   Rekorde, Körpergewicht, Gesamtzahlen
-- Meilensteine als Hantelscheiben: geschaffte Marken (Trainings, bewegte
+- Meilensteine als runde Abzeichen: geschaffte Marken (Trainings, bewegte
   Tonnen, Wochen im Ziel, Rekorde, Stunden) und der Weg zur nächsten
 - Sätze pro Muskel zählen „fraktionell“: Zielmuskel 1, mitarbeitende Muskeln
   ½ (z. B. Trizeps beim Bankdrücken)
@@ -127,21 +126,17 @@ danach auch offline.
   Haptik, Töne (mit „Ton testen“ und optional auch bei Stumm-Schalter)
 - Sicherung erstellen/wiederherstellen (JSON), Erinnerung an die Sicherung
 
-## Gestaltung („Eisen“)
+## Gestaltung („Luft“)
 
-- Zwei Stimmungen: **Nacht** (fast schwarz, die Akzentfarbe leuchtet wie
-  eine Anzeige) und **Kreide** (warmes Papier, Tinte für Text und Daten, die
-  Akzentfarbe als Textmarker)
-- Überschriften und Zahlen in Archivo (schmal, kräftig): lange deutsche
-  Übungsnamen passen in eine Zeile, Zahlen sind aus Armlänge lesbar.
-  Fließtext bleibt die Systemschrift
-- Tableiste, Zahlenfeld, Pause und Fokus-Timer sind in beiden Stimmungen
-  dunkel – die Bedienung unten sieht immer gleich aus
-- Wiederkehrende Motive aus dem Gym: Rändelung (das Kreuzmuster der
-  Hantelstange) als Textur, Scheiben als Zähler und Abzeichen
-- Akzentfarben: Volt (Standard), Glut, Kobalt, Minze, Magenta, Violett, Mono.
-  Helle Farben tragen dunkle Schrift; auf hellem Grund zeichnet bei Volt die
-  Tinte die Daten, weil Gelbgrün auf Papier zu wenig Kontrast hätte
+- Weich, hell, farbig: weiße Karten mit runden Ecken und weichen Schatten,
+  viel Weißraum, Pastellflächen für Kennzahlen
+- Hauptkarte, Hauptknöpfe und Fokus-Timer tragen einen sanften Verlauf in
+  der Akzentfarbe (Standard Blau → Violett)
+- Überschriften und Zahlen in der runden Systemschrift (SF Pro Rounded)
+- Hell, Dunkel oder wie das iPhone; Tableiste als Glas in der jeweiligen
+  Stimmung
+- Akzentfarben: Blau (Standard), Violett, Mint, Koralle, Pink, Limette,
+  Graphit
 - Seitenwechsel mit Parallaxe; vom linken Rand wischen geht zurück
 - Menüs öffnen direkt am Knopf, langes Drücken öffnet Kontextmenüs
 - Haptisches Klopfen beim Abhaken und im Zahlenfeld (über einen
@@ -174,7 +169,6 @@ css/base.css            Gerüst: Seiten, Kopf, Tableiste
 css/components.css      Bausteine, Blätter, Menüs, Zahlenfeld
 css/views.css           Heute, Training, Verlauf, Supplements, Mobility
 css/workout.css         Training läuft, Pause, Fokus-Timer, Zusammenfassung
-fonts/                  Archivo (variabel, SIL Open Font License)
 js/main.js              Start, globale Ereignisse
 js/core/                Daten und Logik ohne Oberfläche
   store.js              localStorage, Migration, Sicherung
@@ -204,8 +198,6 @@ service-worker.js       Offline-Cache
 (github.com/BoQsc/Godot-Male-Base-Mesh), laut Godot Asset Library unter
 CC0 (gemeinfrei). Das Repository selbst enthält keine Lizenzdatei.
 three.js und die Hilfsdateien in `js/vendor/` stehen unter der MIT-Lizenz.
-Die Schrift Archivo (Omnibus-Type) steht unter der SIL Open Font License 1.1
-(`fonts/Archivo-LICENSE.txt`).
 
 ## Annahmen hinter den Auswertungen
 

@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <pattern id="k" width="22" height="22" patternUnits="userSpaceOnUse">
-      <path d="M0 0l22 22M22 0L0 22" stroke="#ffffff" stroke-opacity=".05" stroke-width="2"/>
-    </pattern>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3B7BFF"/>
+      <stop offset="1" stop-color="#8B6BFF"/>
+    </linearGradient>
   </defs>
-  <rect width="512" height="512" fill="#0a0b0d"/>
-  <rect width="512" height="512" fill="url(#k)"/>
-  <g fill="#d4ff3a" transform="translate(256 256) scale(0.74) translate(-256 -256)">
+  <rect width="512" height="512" fill="url(#g)"/>
+  <g fill="#ffffff" transform="translate(256 256) scale(0.74) translate(-256 -256)">
     <rect x="150" y="238" width="212" height="36" rx="10"/>
     <rect x="112" y="150" width="62" height="212" rx="20"/>
     <rect x="338" y="150" width="62" height="212" rx="20"/>

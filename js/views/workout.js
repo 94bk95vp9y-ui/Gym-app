@@ -1142,7 +1142,7 @@ function openSummary(id) {
         const top = bestSet(e.sets);
         return { name: entryName(e, names), detail: top ? formatSet(top, entryUnit(e, u)) : '', pr: e.sets.some((x) => x.done && x.pr) };
       }),
-      colors: [from, from],
+      colors: [from, (dark ? accent.toDark : accent.to) || from],
       ink: getComputedStyle(document.documentElement).getPropertyValue('--on-accent').trim() || '#ffffff',
       footer: prs.length ? `Gym · ${prs.length === 1 ? '1 neuer Rekord' : `${prs.length} neue Rekorde`}` : 'Gym',
     }, `training-${dayKey(new Date(w.startedAt))}.png`);
@@ -1160,7 +1160,7 @@ function openSummary(id) {
     body: `
       <div class="finish-head ${prs.length ? 'gold' : ''}">
         <div class="finish-badge">${prs.length ? Icon.trophy : Icon.check}</div>
-        <h3>${prs.length ? (prs.length === 1 ? 'Neuer Rekord' : `${prs.length} neue Rekorde`) : 'Stark. Gespeichert.'}</h3>
+        <h3>${prs.length ? (prs.length === 1 ? 'Neuer Rekord' : `${prs.length} neue Rekorde`) : 'Training gespeichert'}</h3>
         <p>${esc(w.routineName || 'Freies Training')} · ${esc(new Date(w.startedAt).toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
       </div>
       <div class="sum-stats">

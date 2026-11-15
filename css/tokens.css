@@ -1,93 +1,88 @@
 /* ==========================================================================
-   Gym – Design-System 5 „Eisen“
-   Zwei Stimmungen aus denselben Bausteinen:
-   · Dunkel („Nacht“): fast schwarze Fläche, die Akzentfarbe leuchtet wie
-     eine Anzeige.
-   · Hell („Kreide“): warmes Papier, Tinte für Text und Daten, die
-     Akzentfarbe als Textmarker.
-   Überschriften und Zahlen stehen in einer schmalen, kräftigen Schrift
-   (Archivo, variabel) – lange deutsche Übungsnamen passen so in eine Zeile,
-   Zahlen sind aus Armlänge lesbar. Fließtext bleibt die Systemschrift.
+   Gym – Design-System 6 „Luft“
+   Weich, hell, farbig: viel Weißraum, große runde Karten, sanfte Verläufe
+   und Pastellflächen. Zwei Stimmungen aus denselben Bausteinen:
+   · Hell: kühles Weiß-Blau, weiße Karten, die Akzentfarbe als Verlauf.
+   · Dunkel: tiefes Blauschwarz, Karten eine Stufe heller, gleiche Farben.
+   Überschriften und Zahlen stehen in einer runden Systemschrift
+   (SF Rounded, sonst die normale Systemschrift) – freundlich und gut lesbar.
+   Keine Versalien, kein Muster: Ruhe kommt aus Abstand und Farbe.
    ========================================================================== */
-
-@font-face {
-  font-family: "Archivo";
-  src: url("../fonts/archivo-var.woff2") format("woff2");
-  font-weight: 100 900;
-  font-stretch: 62% 125%;
-  font-style: normal;
-  font-display: swap;
-}
 
 :root {
   /* Flächen */
-  --bg: #efeee8;
-  --bg-elev: #fbfaf6;
-  --card: #fbfaf6;
-  --raised: #f7f6f1;
-  --fill: #e8e6de;
-  --fill-strong: #d9d6cc;
+  --bg: #f5f6fb;
+  --bg-elev: #ffffff;
+  --card: #ffffff;
+  --raised: #ffffff;
+  --fill: #eff1f7;
+  --fill-strong: #e2e5ef;
   /* Text */
-  --text: #151512;
-  --text-2: #66645c;
-  --text-3: #a5a299;
-  --sep: rgba(40, 36, 20, 0.11);
-  --sep-strong: rgba(40, 36, 20, 0.2);
-  --line: rgba(40, 36, 20, 0.07);
-  /* Akzent: --accent füllt Flächen, --accent-ink ist Text auf Papier,
-     --graph färbt Daten (Säulen, Linien, Ringe). theme.js setzt alle drei. */
-  --accent: #c8f031;
-  --on-accent: #10120a;
-  --accent-ink: #3d5000;
-  --graph: #151512;
-  --accent-tint: color-mix(in srgb, var(--accent) 34%, transparent);
+  --text: #14161f;
+  --text-2: #6a7086;
+  --text-3: #a8adbf;
+  --sep: rgba(22, 28, 60, 0.08);
+  --sep-strong: rgba(22, 28, 60, 0.16);
+  --line: rgba(22, 28, 60, 0.05);
+  /* Akzent: --accent füllt Flächen, --accent-2 ist der Partner im Verlauf,
+     --accent-ink ist Text in Akzentfarbe, --graph färbt Daten (Säulen,
+     Linien, Ringe). theme.js setzt sie passend zur gewählten Farbe. */
+  --accent: #3b7bff;
+  --accent-2: #8b6bff;
+  --on-accent: #ffffff;
+  --accent-ink: #2563eb;
+  --graph: #3b7bff;
+  --accent-tint: color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--card));
+  --grad: linear-gradient(135deg, var(--accent), var(--accent-2));
   /* Bedeutung */
-  --success: #0b7a4b;
-  --success-strong: #17bf7a;
-  --success-tint: rgba(23, 191, 122, 0.16);
-  --danger: #d42a1c;
-  --danger-strong: #f4483b;
-  --warn: #b25c00;
-  --warn-strong: #ff9a1f;
-  --warn-tint: rgba(255, 154, 31, 0.18);
-  --gold: #946500;
-  --gold-strong: #f5b400;
-  --gold-tint: rgba(245, 180, 0, 0.2);
-  --indigo: #6257f5;
-  --indigo-text: #4a3fd6;
-  /* Schwebende Leisten: in beiden Stimmungen dunkel – ein fester Anker */
-  --dock: #17181a;
-  --dock-text: #f4f4f0;
-  --dock-text-2: #9b9da3;
-  --dock-line: rgba(255, 255, 255, 0.08);
-  --dock-fill: rgba(255, 255, 255, 0.1);
-  /* Akzent auf den dunklen Leisten – nur „Mono“ im Hellen braucht dort die
-     Gegenfarbe (Schwarz auf Schwarz wäre unsichtbar) */
-  --dock-accent: var(--accent);
-  --on-dock-accent: var(--on-accent);
-  /* Glas (Kopfknöpfe, Menüs) */
-  --glass: rgba(251, 250, 246, 0.78);
-  --glass-solid: rgba(251, 250, 246, 0.96);
+  --success: #0d8a52;
+  --success-strong: #1fbf75;
+  --success-tint: rgba(31, 191, 117, 0.14);
+  --danger: #e04545;
+  --danger-strong: #f25757;
+  --warn: #b8650a;
+  --warn-strong: #ff9f43;
+  --warn-tint: rgba(255, 159, 67, 0.16);
+  --gold: #9a6a00;
+  --gold-strong: #f5b82e;
+  --gold-tint: rgba(245, 184, 46, 0.2);
+  --indigo: #7a6cff;
+  --indigo-text: #5a4cdb;
+  /* Pastellflächen für Kacheln */
+  --p-blue: #e8efff;
+  --p-violet: #efe9ff;
+  --p-mint: #e1f6ec;
+  --p-peach: #ffeadb;
+  --p-pink: #ffe6ee;
+  --p-yellow: #fff4d6;
+  /* Leisten unten (Tabs, Pause, Ziffernblock): Flächen der Stimmung */
+  --dock: var(--raised);
+  --dock-text: var(--text);
+  --dock-text-2: var(--text-2);
+  --dock-line: var(--line);
+  --dock-fill: var(--fill);
+  /* Glas (Tableiste, Kopfknöpfe, Menüs) */
+  --glass: rgba(255, 255, 255, 0.78);
+  --glass-solid: rgba(255, 255, 255, 0.96);
   --glass-edge: rgba(255, 255, 255, 0.9);
-  --glass-line: rgba(40, 36, 20, 0.1);
-  --glass-shadow: 0 10px 30px rgba(30, 26, 10, 0.12), 0 1px 4px rgba(30, 26, 10, 0.06);
-  --glass-blur: blur(20px) saturate(170%);
-  --pill: rgba(60, 54, 30, 0.1);
-  --shadow-card: 0 0 0 0.5px var(--line), 0 1px 2px rgba(30, 26, 10, 0.04), 0 12px 24px -18px rgba(30, 26, 10, 0.16);
-  --shadow-float: 0 18px 44px rgba(30, 26, 10, 0.18), 0 2px 8px rgba(30, 26, 10, 0.06);
-  --backdrop: rgba(18, 16, 8, 0.36);
-  --dim: rgba(18, 16, 8, 0.08);
-  /* Rändelung: das Kreuzmuster der Hantelstange als wiederkehrende Textur */
-  --knurl-c: rgba(20, 18, 8, 0.07);
+  --glass-line: rgba(22, 28, 60, 0.06);
+  --glass-shadow: 0 12px 32px -12px rgba(22, 28, 60, 0.22), 0 1px 4px rgba(22, 28, 60, 0.05);
+  --glass-blur: blur(22px) saturate(180%);
+  --pill: rgba(22, 28, 60, 0.07);
+  --shadow-card: 0 1px 2px rgba(22, 28, 60, 0.04), 0 14px 34px -18px rgba(22, 28, 60, 0.16);
+  --shadow-float: 0 20px 48px -12px rgba(22, 28, 60, 0.28), 0 2px 8px rgba(22, 28, 60, 0.06);
+  --backdrop: rgba(14, 16, 32, 0.36);
+  --dim: rgba(14, 16, 32, 0.08);
   /* Formen */
-  --r-hero: 30px;
-  --r-card: 22px;
+  --r-hero: 32px;
+  --r-card: 26px;
   --r-btn: 999px;
-  --r-input: 14px;
-  --r-field: 13px;
+  --r-input: 16px;
+  --r-field: 14px;
   --r-sheet: 36px;
   --pad: 16px;
-  --gap: 10px;
+  --gap: 12px;
   /* Systemränder (main.js gleicht --safe-bottom für die Home-Screen-App ab) */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -95,7 +90,7 @@
   --kp-h: 300px;
   /* Schrift */
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-d: "Archivo", "Arial Narrow", "Helvetica Neue", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-d: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
   /* Bewegung – Federn ohne Überschwingen bzw. leicht federnd */
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --spring: cubic-bezier(0.32, 0.72, 0, 1);
@@ -111,69 +106,60 @@
 }
 
 :root[data-theme="dark"] {
-  --bg: #0a0b0d;
-  --bg-elev: #141619;
-  --card: #141619;
-  --raised: #1a1c20;
-  --fill: #1f2226;
-  --fill-strong: #2c3036;
-  --text: #f4f4f0;
-  --text-2: #9b9da3;
-  --text-3: #5e6168;
+  --bg: #0c0d13;
+  --bg-elev: #171923;
+  --card: #171923;
+  --raised: #1d202b;
+  --fill: #222534;
+  --fill-strong: #2f3345;
+  --text: #f2f3f8;
+  --text-2: #9a9fb4;
+  --text-3: #5e6377;
   --sep: rgba(255, 255, 255, 0.08);
   --sep-strong: rgba(255, 255, 255, 0.15);
-  --line: rgba(255, 255, 255, 0.07);
-  --accent: #d4ff3a;
-  --on-accent: #10120a;
-  --accent-ink: #d4ff3a;
-  --graph: #d4ff3a;
-  --accent-tint: color-mix(in srgb, var(--accent) 16%, transparent);
+  --line: rgba(255, 255, 255, 0.06);
+  --accent: #5b93ff;
+  --accent-2: #9a82ff;
+  --accent-ink: #5b93ff;
+  --graph: #5b93ff;
+  --accent-tint: color-mix(in srgb, var(--accent) 18%, transparent);
   --success: #3ddc97;
   --success-strong: #2fd08a;
   --success-tint: rgba(61, 220, 151, 0.16);
-  --danger: #ff5c52;
-  --danger-strong: #ff5c52;
-  --warn: #ffab3d;
-  --warn-strong: #ff9f2e;
-  --warn-tint: rgba(255, 171, 61, 0.16);
+  --danger: #ff6b6b;
+  --danger-strong: #ff6b6b;
+  --warn: #ffb35c;
+  --warn-strong: #ffa347;
+  --warn-tint: rgba(255, 179, 92, 0.16);
   --gold: #ffd24a;
   --gold-strong: #ffc933;
   --gold-tint: rgba(255, 210, 74, 0.16);
-  --indigo: #7d7bff;
-  --indigo-text: #a3a5ff;
-  --dock: #1b1d21;
-  --glass: rgba(26, 28, 32, 0.72);
-  --glass-solid: rgba(30, 32, 37, 0.96);
-  --glass-edge: rgba(255, 255, 255, 0.12);
+  --indigo: #8e86ff;
+  --indigo-text: #a9a4ff;
+  --p-blue: #1d2742;
+  --p-violet: #272140;
+  --p-mint: #17302b;
+  --p-peach: #33261f;
+  --p-pink: #35212c;
+  --p-yellow: #332d1a;
+  --glass: rgba(29, 32, 43, 0.72);
+  --glass-solid: rgba(29, 32, 43, 0.96);
+  --glass-edge: rgba(255, 255, 255, 0.1);
   --glass-line: rgba(255, 255, 255, 0.07);
-  --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 1px 4px rgba(0, 0, 0, 0.3);
+  --glass-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.55), 0 1px 4px rgba(0, 0, 0, 0.3);
   --pill: rgba(255, 255, 255, 0.1);
   --shadow-card: inset 0 0 0 1px var(--line);
-  --shadow-float: 0 18px 44px rgba(0, 0, 0, 0.6);
+  --shadow-float: 0 20px 48px rgba(0, 0, 0, 0.6);
   --backdrop: rgba(0, 0, 0, 0.6);
   --dim: rgba(0, 0, 0, 0.4);
-  --knurl-c: rgba(255, 255, 255, 0.055);
   color-scheme: dark;
 }
 
-:root[data-accent="graphite"]:not([data-theme="dark"]) { --dock-accent: #f4f4f0; --on-dock-accent: #151512; }
-:root[data-accent="graphite"] { --accent-tint: color-mix(in srgb, var(--accent) 12%, transparent); }
-.tabbar, .live-bar, .keypad, .rest, .focus-timer, .toast { --accent: var(--dock-accent); --on-accent: var(--on-dock-accent); }
-
-/* Das Muster selbst steht an jedem Element, das seine Linienfarbe
-   (--knurl-c) selbst bestimmt – eine Variable, die eine andere liest, wird
-   dort ausgerechnet, wo sie steht. */
-:root, .hero, .finish-head, .focus-timer {
-  --knurl:
-    repeating-linear-gradient(45deg, var(--knurl-c) 0 1px, transparent 1px 7px),
-    repeating-linear-gradient(-45deg, var(--knurl-c) 0 1px, transparent 1px 7px);
-}
-
 /* Einstellung „Transparenz reduzieren“: Glas wird massiv */
-:root.solid-bars { --glass: #fbfaf6; --glass-solid: #fbfaf6; }
-:root.solid-bars[data-theme="dark"] { --glass: #1e2025; --glass-solid: #1e2025; }
+:root.solid-bars { --glass: #ffffff; --glass-solid: #ffffff; }
+:root.solid-bars[data-theme="dark"] { --glass: #1d202b; --glass-solid: #1d202b; }
 
 @media (prefers-contrast: more) {
-  :root { --sep: rgba(40, 36, 20, 0.3); --text-2: #4b4a43; --glass: rgba(251, 250, 246, 0.97); }
-  :root[data-theme="dark"] { --sep: rgba(255, 255, 255, 0.24); --text-2: #c4c6cb; --glass: rgba(26, 28, 32, 0.97); }
+  :root { --sep: rgba(22, 28, 60, 0.3); --text-2: #4a5068; --glass: rgba(255, 255, 255, 0.97); }
+  :root[data-theme="dark"] { --sep: rgba(255, 255, 255, 0.24); --text-2: #c4c7d6; --glass: rgba(29, 32, 43, 0.97); }
 }
