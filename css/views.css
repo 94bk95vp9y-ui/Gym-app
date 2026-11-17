@@ -302,8 +302,7 @@
 .tpl-days { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .tpl-plan + .tpl-plan { margin-top: 22px; }
 
-/* Monate außerhalb des Bildschirms erst beim Hinscrollen layouten */
-.hist-month { content-visibility: auto; contain-intrinsic-size: auto 520px; }
+
 .history-row { display: flex; justify-content: space-between; gap: 12px; font-size: 15px; padding: 13px 16px; }
 .history-row + .history-row { border-top: 0.5px solid var(--sep); }
 .history-row span:first-child { color: var(--text-2); white-space: nowrap; }

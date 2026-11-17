@@ -284,6 +284,7 @@ export function registerContextMenu(kind, build) {
 }
 
 let pressTimer = null;
+let pressFeedback = null;
 let press = null;
 let swallowClick = false;
 document.addEventListener('pointerdown', (e) => {
@@ -291,7 +292,10 @@ document.addEventListener('pointerdown', (e) => {
   const el = e.target.closest('[data-menu]');
   if (!el || !contextMenus[el.dataset.menu]) return;
   press = { el, x: e.clientX, y: e.clientY };
-  el.classList.add('pressing');
+  // Erst eindrücken, wenn der Finger kurz liegen bleibt – wer scrollt, hat
+  // sich bis dahin bewegt, und die Karte zuckt nicht
+  clearTimeout(pressFeedback);
+  pressFeedback = setTimeout(() => { if (press?.el === el) el.classList.add('pressing'); }, 140);
   clearTimeout(pressTimer);
   pressTimer = setTimeout(() => {
     if (!press) return;
@@ -306,6 +310,7 @@ document.addEventListener('pointerdown', (e) => {
 }, { passive: true });
 const cancelPress = () => {
   clearTimeout(pressTimer);
+  clearTimeout(pressFeedback);
   press?.el.classList.remove('pressing');
   press = null;
 };

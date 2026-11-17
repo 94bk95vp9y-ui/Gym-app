@@ -62,13 +62,10 @@
   scroll-margin-top: 14px;
 }
 .ex-card + .ex-card { margin-top: var(--gap); }
-/* Karten außerhalb des Bildschirms überspringt der Browser beim Layout und
-   Zeichnen – bei zehn Übungen spürbar beim Öffnen und Abhaken. Die zuletzt
-   gemessene Höhe hält den Platz, damit nichts springt. */
-.ex-card:not(.current) { content-visibility: auto; contain-intrinsic-size: auto 380px; }
+
 /* Rahmen als eigene Ebene über den Satzzeilen – sonst verdecken die Zeilen ihn */
 .ex-card.current::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 2px var(--accent); pointer-events: none; z-index: 2; }
-.ex-card.current { box-shadow: var(--shadow-card), 0 14px 34px -18px color-mix(in srgb, var(--accent) 60%, transparent); }
+.ex-card.current { box-shadow: var(--shadow-card), 0 8px 18px -12px color-mix(in srgb, var(--accent) 55%, transparent); }
 .ex-head { display: flex; align-items: flex-start; gap: 8px; padding: 0 8px 0 14px; }
 .ex-head-main { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 11px; text-align: left; }
 .ex-titles { min-width: 0; padding-top: 1px; }

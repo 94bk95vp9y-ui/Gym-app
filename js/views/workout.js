@@ -487,7 +487,8 @@ function startTicker() {
     const w = Store.getActive();
     if (!w) { stopTicker(); return; }
     const t = qs('#w-timer', root);
-    if (t) t.textContent = elapsedLabel(w.startedAt);
+    const label = elapsedLabel(w.startedAt);
+    if (t && t.textContent !== label) t.textContent = label;
     syncRest();
   }, 250);
 }
@@ -511,8 +512,9 @@ function startLiveTicker() {
     if (!w || W.open) { clearInterval(liveTicker); return; }
     const el = qs('#live-time');
     if (el) {
-      if (el.classList.contains('hero-time')) rollText(el, liveText(w));
-      else el.textContent = liveText(w);
+      const text = liveText(w);
+      if (el.classList.contains('hero-time')) rollText(el, text);
+      else if (el.textContent !== text) el.textContent = text;
     }
     const rest = Store.getRest();
     if (restEnd && !rest && document.visibilityState === 'visible' && restEndedJustNow(restEnd)) {
@@ -615,7 +617,8 @@ function syncRest() {
   rollText(qs('#rest-time', slot), formatClock(Math.ceil(remaining)));
   qs('.rest', slot)?.classList.toggle('ending', remaining <= 5);
   const fill = qs('#rest-fill', slot);
-  if (fill) fill.style.setProperty('--f', String(Math.max(0, Math.min(1, remaining / rest.duration))));
+  const f = Math.max(0, Math.min(1, remaining / rest.duration)).toFixed(3);
+  if (fill && fill.style.getPropertyValue('--f') !== f) fill.style.setProperty('--f', f);
   syncFocus(rest, remaining);
 }
 
