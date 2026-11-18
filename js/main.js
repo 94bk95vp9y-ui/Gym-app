@@ -13,36 +13,16 @@ import './views/history.js';
 import './views/settings.js';
 import { restoreWorkout, onVisible as workoutVisible } from './views/workout.js';
 
-// ---------- Safe Area und fehlender Streifen unten ----------
-// Die installierte Web-App auf dem iPhone meldet ihre Höhe je nach
-// iOS-Version unterschiedlich. Ist der Bildschirm messbar höher als die
-// Seite, fehlt irgendwo ein Streifen von der Höhe der Statusleiste:
-// - Beginnt die Seite unter der Statusleiste (älteres Verhalten), hat das
-//   System den Platz oben abgezogen; die Seite reicht bis zur Unterkante,
-//   meldet unten aber trotzdem eine Safe Area – die darf dann nicht noch
-//   einmal dazugerechnet werden.
-// - Beginnt die Seite ganz oben unter der Statusleiste (iOS 26), endet sie
-//   um genau diesen Streifen zu früh. Dann wird alles, was unten sitzt, um
-//   den Streifen nach unten verlängert (--vb, siehe base.css), und die Safe
-//   Area unten (Home-Balken) gilt wie gemeldet.
-function insetTop() {
-  const probe = document.createElement('div');
-  probe.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:env(safe-area-inset-top,0px);visibility:hidden;pointer-events:none';
-  document.body.appendChild(probe);
-  const h = probe.getBoundingClientRect().height;
-  probe.remove();
-  return h;
-}
-
+// ---------- Safe Area ----------
+// iOS meldet in der installierten Web-App unten eine Safe Area (34 px), auch
+// wenn das System die Ansicht dort schon verkürzt hat. Rechnet man sie dann
+// trotzdem ein, steht die Tableiste doppelt zu hoch. Ist der Bildschirm
+// messbar höher als die Seite, hat das System den Platz bereits abgezogen.
 function calibrateSafeArea() {
-  const root = document.documentElement;
-  const missing = Math.round(window.screen.height - window.innerHeight);
+  const reserved = Math.round(window.screen.height - window.innerHeight);
   const portrait = window.innerWidth < window.innerHeight;
-  const short = navigator.standalone === true && portrait && missing > 8 && missing < 140;
-  const fromTop = short && insetTop() >= missing - 8;
-  root.classList.toggle('vb-fix', fromTop);
-  root.style.setProperty('--vb', fromTop ? `${missing}px` : '0px');
-  root.style.setProperty('--safe-bottom', short && !fromTop ? '0px' : 'env(safe-area-inset-bottom, 0px)');
+  const systemReservedBottom = navigator.standalone === true && portrait && reserved > 8 && reserved < 140;
+  document.documentElement.style.setProperty('--safe-bottom', systemReservedBottom ? '0px' : 'env(safe-area-inset-bottom, 0px)');
 }
 
 // ---------- Globale Ereignisse ----------
