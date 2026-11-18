@@ -373,3 +373,16 @@ html:not(.ios) .hap, html.no-haptics .hap { display: none; }
   .keypad.open { transform: translateX(-50%); }
   .rest { left: 50%; right: auto; width: 460px; transform: translateX(-50%); }
 }
+
+/* iOS 26, installierte App: die Seite endet um die Höhe der Statusleiste zu
+   früh (siehe main.js, calibrateSafeArea). Alles, was am unteren Rand sitzt,
+   wird um diesen Streifen (--vb) nach unten verlängert. */
+html.vb-fix #app-root { height: calc(100dvh + var(--vb)); }
+html.vb-fix #workout-root .workout, html.vb-fix .player, html.vb-fix .focus-timer,
+html.vb-fix .backdrop, html.vb-fix .menu-shade, html.vb-fix .as-shade, html.vb-fix .dlg-shade,
+html.vb-fix .keypad, html.vb-fix .sheet.full { bottom: calc(-1 * var(--vb)); }
+html.vb-fix .sheet:not(.full) { bottom: calc(max(var(--safe-bottom) - 26px, 8px) - var(--vb)); }
+html.vb-fix .action-sheet { bottom: calc(max(var(--safe-bottom) - 20px, 8px) - var(--vb)); }
+html.vb-fix .rest { bottom: calc(max(var(--safe-bottom) - 12px, 10px) - var(--vb)); }
+html.vb-fix #toast-root { translate: 0 var(--vb); }
+html.vb-fix .sheet.full { height: calc(100% + var(--vb) - var(--safe-top) - 10px); }
