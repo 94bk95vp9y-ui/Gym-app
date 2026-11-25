@@ -291,6 +291,47 @@ export const Store = {
   getWorkout(id) {
     return Store.getWorkouts().find((w) => w.id === id) || null;
   },
+  // Ein abgeschlossenes Training ändern (z. B. das Datum nachträglich)
+  updateWorkout(id, patch) {
+    write(KEYS.workouts, read(KEYS.workouts, []).map((w) => (w.id === id ? { ...w, ...patch } : w)));
+  },
+  // Rekord-Markierungen über den ganzen Verlauf neu bestimmen – nötig, wenn
+  // sich die Reihenfolge der Trainings ändert (Datum verschoben). Gleiche
+  // Regel wie beim Abhaken (siehe training.js, refreshPrFlags): bewertet wird
+  // gegen alles davor, getrennt nach Zusatzgewicht und Körpergewicht.
+  recomputePrs(scoreOf) {
+    const list = read(KEYS.workouts, []).map((w) => ({ ...w, entries: w.entries.map((e) => ({ ...e, sets: e.sets.map((x) => ({ ...x })) })) }));
+    const order = list.filter((w) => w && w.finishedAt).sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+    const best = new Map();
+    order.forEach((w) => {
+      const seen = [];
+      w.entries.forEach((entry) => {
+        const hist = best.get(entry.exerciseId) || { load: 0, reps: 0, anyLoad: false, anyReps: false };
+        const cur = { load: hist.load, reps: hist.reps };
+        const winner = { load: -1, reps: -1 };
+        entry.sets.forEach((set, i) => {
+          delete set.pr;
+          const score = scoreOf(set);
+          if (!score) return;
+          seen.push([entry.exerciseId, score]);
+          if (!hist[score.kind === 'load' ? 'anyLoad' : 'anyReps'] || score.value <= cur[score.kind]) return;
+          cur[score.kind] = score.value;
+          winner[score.kind] = i;
+        });
+        const index = winner.load >= 0 ? winner.load : winner.reps;
+        if (index >= 0) entry.sets[index].pr = true;
+      });
+      // Erst nach dem ganzen Training in den Bestand: Sätze desselben Trainings
+      // zählen nicht gegeneinander
+      seen.forEach(([id, score]) => {
+        const b = best.get(id) || { load: 0, reps: 0, anyLoad: false, anyReps: false };
+        b[score.kind] = Math.max(b[score.kind], score.value);
+        if (score.kind === 'load') b.anyLoad = true; else b.anyReps = true;
+        best.set(id, b);
+      });
+    });
+    write(KEYS.workouts, list);
+  },
   deleteWorkout(id) {
     write(KEYS.workouts, read(KEYS.workouts, []).filter((w) => w.id !== id));
   },

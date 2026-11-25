@@ -12,13 +12,13 @@ import {
 import { muscleSets, workoutMuscles } from '../core/muscles.js';
 import { bodyMap } from '../ui/bodymap.js';
 import {
-  formatDuration, formatVolume, formatNumber, formatSet, formatTime, formatDate, formatDayMonth, relativeDay, plural, unitLabel,
+  formatDuration, formatVolume, formatNumber, formatSet, formatTime, formatDate, formatDayMonth, relativeDay, setScore, plural, unitLabel,
 } from '../core/format.js';
 import { esc, qs, registerActions } from '../ui/dom.js';
 import { Icon } from '../ui/icons.js';
 import { haptic, HAP } from '../ui/haptics.js';
 import { registerPage, push, pop, render } from '../ui/router.js';
-import { confirmAction, promptDialog, registerContextMenu } from '../ui/sheet.js';
+import { confirmAction, promptDialog, registerContextMenu, openSheet } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
 import { sparkline } from '../ui/chart.js';
 import { milestones } from '../core/milestones.js';
@@ -458,6 +458,7 @@ registerPage('workout', {
       <div class="section">
         <div class="list">
           ${!w.routineId && w.entries.length ? `<button class="row accent center" data-action="workout-save-plan" data-id="${w.id}"><div class="row-main"><span class="row-title">Als Plan speichern</span></div></button>` : ''}
+          <button class="row accent center" data-action="workout-date" data-id="${w.id}"><div class="row-main"><span class="row-title">Datum ändern</span></div></button>
           <button class="row destructive center" data-action="workout-delete" data-id="${w.id}"><div class="row-main"><span class="row-title">Training löschen</span></div></button>
         </div>
       </div>`;
@@ -469,11 +470,74 @@ registerContextMenu('workout', (el) => {
   if (!w) return null;
   return [
     { label: 'Öffnen', icon: Icon.doc, handler: () => push('workout', { id: w.id }) },
+    { label: 'Datum ändern', icon: Icon.calendar, handler: () => editWorkoutDate(w.id) },
     ...(!w.routineId && w.entries.length ? [{ label: 'Als Plan speichern', icon: Icon.plus, handler: () => saveAsPlan(w) }] : []),
     '-',
     { label: 'Training löschen', icon: Icon.trash, destructive: true, handler: () => deleteWorkout(w.id, false) },
   ];
 });
+
+// ---------- Datum nachträglich ändern ----------
+// Etwa wenn ein Training erst am nächsten Tag eingetragen wurde. Start und
+// Ende verschieben sich gemeinsam, die Dauer bleibt. Danach stimmen Woche,
+// Serie, Kalender und Steigerung von selbst (sie rechnen aus dem Datum);
+// die Rekorde werden neu bestimmt, weil sich die Reihenfolge ändern kann.
+const pad2 = (n) => String(n).padStart(2, '0');
+const dateValue = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const timeValue = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+
+function editWorkoutDate(id) {
+  const w = Store.getWorkout(id);
+  if (!w) return;
+  const start = new Date(w.startedAt);
+  const yesterday = new Date(start.getFullYear(), start.getMonth(), start.getDate() - 1, start.getHours(), start.getMinutes());
+  openSheet({
+    title: 'Datum ändern',
+    left: { label: 'Abbrechen' },
+    right: {
+      label: 'Sichern',
+      style: 'primary',
+      action: (s) => {
+        const day = qs('[data-f="day"]', s.body).value;
+        const time = qs('[data-f="time"]', s.body).value || timeValue(start);
+        const [y, m, d] = day.split('-').map(Number);
+        const [hh, mm] = time.split(':').map(Number);
+        const next = new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0);
+        if (!day || Number.isNaN(next.getTime())) { toast('Bitte ein Datum wählen'); return; }
+        if (next.getTime() > Date.now()) { toast('Das Datum liegt in der Zukunft'); return; }
+        const shift = next.getTime() - start.getTime();
+        if (!shift) { s.close(); return; }
+        Store.updateWorkout(id, {
+          startedAt: next.toISOString(),
+          finishedAt: new Date(new Date(w.finishedAt).getTime() + shift).toISOString(),
+        });
+        try { Store.recomputePrs(setScore); } catch (err) { console.error(err); }
+        s.close();
+        haptic();
+        render();
+        toast(`Verschoben auf ${formatDate(next.toISOString())}`);
+      },
+    },
+    body: `
+      <p class="sheet-sub">${esc(w.routineName || 'Freies Training')} – bisher ${esc(start.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }))}, ${formatTime(w.startedAt)} Uhr.</p>
+      <div class="choices" style="margin-bottom:16px">
+        <button class="choice" data-day="${dateValue(yesterday)}">Einen Tag früher</button>
+      </div>
+      <div class="field"><label class="field-label">Datum</label>
+        <input class="input" type="date" data-f="day" value="${dateValue(start)}" max="${dateValue(new Date())}" /></div>
+      <div class="field"><label class="field-label">Uhrzeit</label>
+        <input class="input" type="time" data-f="time" value="${timeValue(start)}" /></div>
+      <p class="field-hint">Die Dauer bleibt gleich. Wochenziel, Serien, Kalender und Rekorde richten sich danach neu aus.</p>`,
+    onMount: (s) => {
+      s.body.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-day]');
+        if (!b) return;
+        qs('[data-f="day"]', s.body).value = b.dataset.day;
+        haptic();
+      });
+    },
+  });
+}
 
 async function deleteWorkout(id, back) {
   if (!(await confirmAction({ title: 'Training löschen?', message: 'Das lässt sich nicht rückgängig machen.', confirmLabel: 'Training löschen' }))) return;
@@ -527,6 +591,7 @@ registerActions({
   'open-workout': (el) => push('workout', { id: el.dataset.id }),
   'open-exercise-stat': (el) => push('exercise', { id: el.dataset.id }),
   'workout-delete': (el) => deleteWorkout(el.dataset.id, true),
+  'workout-date': (el) => editWorkoutDate(el.dataset.id),
   'workout-save-plan': (el) => {
     const w = Store.getWorkout(el.dataset.id);
     if (w) saveAsPlan(w);
